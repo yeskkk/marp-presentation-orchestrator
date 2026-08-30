@@ -1,100 +1,86 @@
-# Marp presentation workflow
+# Workflow and state machine
 
-## Architecture
-
-```text
-confirmed TASK.md
-  → presentation plan
-    → author coordinator
-      → parallel lesson/content-unit authors
-      → integrated presentation.md + theme.css + local assets
-      → Marp CLI PDF
-    → five parallel specialist reviewers × three rounds
-    → terminal author revision
-    → release coordinator closure
-    → final Marp PDF + source + records
-```
-
-The project deliberately has no Quarto, notebook execution, Reveal.js output, or persistent HTML artifact. Marp CLI may invoke a browser internally to print PDF.
-
-## State sequence
+## 1. Confirmed task
 
 ```text
 task_draft
 → awaiting_user_confirmation
 → confirmed
 → working
+```
 
-presentation:
+Only `TASK.md` uses a confirmation hash. Production initialization freezes the plan. Material policy changes require editing and reconfirming TASK.md; sidecar amendment records are audit history only.
+
+## 2. Planner-owned assignments
+
+Every runnable role or authoring stage has four files:
+
+```text
+ASSIGNMENT-REQUEST.yaml
+ASSIGNMENT-BRIEF.yaml
+ASSIGNMENT-DECISION.yaml
+TASK-....md / STAGE-ASSIGNMENT.md
+```
+
+A coordinator may create the request. The main planner personally writes the structured brief and exact taskbook, then approves it. The CLI rejects placeholders, short generic taskbooks, restricted reference paths and unapproved decisions.
+
+## 3. Parallel staged authoring
+
+Course units use six stages; report units use four compact stages. Each stage moves through:
+
+```text
+awaiting_assignment
+→ active
+→ submitted
+→ accepted
+```
+
+The next stage cannot activate until the planner has written and approved its assignment. An accepted stage may be reopened with a recorded reason. One lesson-author owns one unit; author coordinator supervises multiple units in bounded parallel batches and later assembles them into `presentation.md`.
+
+## 4. Course interaction contract
+
+Each course unit requires two or three diagnostic MCQ prompt/answer pairs. Prompt and response slides are adjacent, reciprocal in manifests, and marked core/support. `INTERACTION-MANIFEST.yaml`, `MCQ-AUDIT.yaml`, `UNIT-MANIFEST.yaml`, `DECK-MANIFEST.yaml` and final source must agree. Academic reports are exempt from the quota.
+
+## 5. Source and reference boundary
+
+System ingestion stores originals and restricted metadata outside worker-readable context and removes read permissions. Workers use only `downloads/text/`. Stage 01, assignments, review bundles and manifests are scanned for `.pdf` and restricted paths. Source gaps are recorded rather than solved by reopening the original.
+
+## 6. Marp build
+
+```text
+canonical presentation.md
+→ source lint
+→ asset + GeoGebra validation
+→ frozen source snapshot
+→ Marp CLI PDF build
+→ PDF structural inspection
+```
+
+No persistent HTML artifact is allowed. The Marp version is deliberately unpinned; doctor accepts any installed version that passes the probe.
+
+## 7. One full review
+
+```text
 authoring
-→ initial_review_requested / initial_reviewing
-→ initial_changes
-→ incremental_review_requested / incremental_reviewing
-→ incremental_changes
-→ final_review_requested / final_reviewing
-→ terminal_revision
-→ release_closure_requested
-→ release_approved
+→ review_requested
+→ reviewing
+→ author_revision
+→ release_ready
 → finalized
 ```
 
-Three rounds and five channels are mandatory. A final candidate with no findings still passes through all three rounds. Release closure verifies final findings and mechanical readiness only.
+The `full` review has five isolated channels. Each channel submits a report and structured findings. Aggregation hands the historical registry to the author. No incremental/final/acceptance-verification round exists.
 
-## Directory layout
+The author response must cover every finding exactly. The author then completes the modification checklist and reruns all deterministic checks. This workflow transition does **not** mark findings resolved and does not send revisions back to reviewers.
 
-```text
-tasks/<slug>/
-├── TASK.md
-├── EXECUTION-POLICY.yaml
-├── REVIEW-PROFILE.yaml
-├── MARP-AUTHORING-STANDARD.md
-├── downloads/
-├── logs/
-├── reviews/<presentation>/
-├── workers/
-│   ├── author-coordinator/
-│   ├── lesson-authors/<presentation>/<unit>/
-│   ├── review-coordinator/
-│   ├── specialist-reviewers/<presentation>/<round>/<channel>/
-│   └── release-coordinator/
-└── deliverables/<presentation>/
-    ├── <presentation>.pdf
-    ├── source/
-    ├── findings.yaml
-    ├── CLOSURE.md
-    ├── render-report.json
-    ├── pdf-inspection.json
-    └── release.json
-```
+## 8. Mechanical release
 
-## Parallel authoring
+`release_ready` is created from the author's successful post-modification source snapshot and evidence. The release coordinator may fix environment/build failures only. Any required semantic change returns the deck to `author_revision`. A successful release copies PDF, canonical source, review aggregate, findings, author responses, revision note, checklist and deterministic reports into `deliverables/<id>/`.
 
-Each course meeting or report section receives an isolated unit directory and assignment. Unit authors do not edit integrated source. The author coordinator establishes shared terminology, semantic objects, example roles, asset policy, and slide-ID namespace before spawning unit authors. Integration validates each unit's `GEOGEBRA-RESOURCES.yaml`, aggregates the records, copies unit handoffs into `source/sections/`, and assembles canonical `presentation.md`. A relevant unit may make a bounded `geogebra.org` search, but selected resources are ordinary Markdown links only; embeds, screenshots, preview images, and downloads are forbidden.
+## 9. Thread lifecycle
 
-## Rendering
+Thread states are active, idle reusable, terminal-not-releasable or closed. A thread that authored a deck cannot review it. Handoff validation is required before reuse or close. Runtime close requests that do not release capacity are recorded honestly as reusable, not closed.
 
-The render transaction:
+## 10. Supervision
 
-1. validates required structured files and placeholders;
-2. lints Marp frontmatter, slide IDs, classes, density, local assets, manifest, and GeoGebra link-only records;
-3. validates `ASSET-DECISIONS.yaml`;
-4. freezes a source snapshot;
-5. runs local Marp CLI with `--pdf --allow-local-files --html --theme-set theme.css` and an explicit PDF output;
-6. removes and reports any unexpected HTML artifact;
-7. checks PDF page count, geometry, text spans, font sizes, clipping, missing glyph markers, and internal production vocabulary.
-
-The `--html` flag enables controlled HTML tags in Marp Markdown; it does not request an HTML output file.
-
-## Review requests
-
-Each request freezes the rendered source snapshot, PDF, source lint, asset validation, PDF inspection, render report, and author self-check. It contains no digest. Reviewers consume the frozen request directory and do not edit it.
-
-Initial and final rounds use complete context. Incremental context includes prior findings, author responses, changed areas, and regressions. Five channel reports are required before aggregation.
-
-## No-screenshot inspection
-
-No code path creates slide screenshots. Layout evidence comes from Marp source structure and PDF geometry/text. OCR rasterization remains available only for scanned reference documents after ordinary text extraction fails; it is not deck review.
-
-## Supervision
-
-Planner supervision is event-aware: a ten-second lightweight poll can observe state, but the planner records/intervenes only when twenty minutes are due or a deck delivery occurs. Author/review coordinators supervise lesson authors/review channels on shorter intervals and use checkpoints before restart.
+Planner supervision is event-aware: it acts after 1200 seconds or a delivery sequence change, whichever occurs first. Coordinators use shorter local intervals and distinguish recent logs, durable file progress, silence and checkpoint age. Inactive future presentations are ignored.

@@ -1,0 +1,23 @@
+schema_version: 2
+presentation_id: "[[PRESENTATION_ID]]"
+unit_id: "[[UNIT_ID]]"
+task_kind: "[[TASK_KIND]]"
+items:
+  - prompt_slide: "[[PROMPT_SLIDE_ID]]"
+    response_slide: "[[RESPONSE_SLIDE_ID]]"
+    purpose: "[[PURPOSE]]"
+    preceding_comparison: "[[WHY_NOT_A_REPEAT]]"
+    requires_fresh_inference: true
+    selection_rationale: "[[SELECTION_RATIONALE]]"
+    visible_labels: [A, B, C, D]
+    option_audit:
+      A:
+        stem_compatible: true
+        truth_status: correct
+        wording_check: "[[WORDING_CHECK]]"
+        justification: "[[JUSTIFICATION]]"
+      B:
+        stem_compatible: true
+        truth_status: incorrect
+        wording_check: "[[WORDING_CHECK]]"
+        misconception: "[[MISCONCEPTION]]"

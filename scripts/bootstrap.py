@@ -58,7 +58,7 @@ def main() -> int:
     run([str(python), "-m", "pip", "install", "--editable", target], root)
     if not args.skip_npm:
         npm_command = "npm.cmd" if os.name == "nt" else "npm"
-        run([npm_command, "install", "--no-audit", "--no-fund"], root)
+        run([npm_command, "install", "--no-audit", "--no-fund", "--no-package-lock"], root)
     marker = {
         "completed_utc": utc_now(),
         "python": str(python),

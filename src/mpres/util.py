@@ -120,10 +120,16 @@ def write_yaml_atomic(path: Path, data: Any) -> None:
 
 
 def task_sha256(path: Path) -> str:
-    """Hash only the top-level TASK.md confirmation target."""
+    """Hash only ``tasks/<slug>/TASK.md`` for the user-confirmation gate."""
 
-    if path.name != "TASK.md":
-        raise MPresError("Only top-level TASK.md may be hashed by this workflow.")
+    resolved = path.expanduser().resolve()
+    if (
+        resolved.name != "TASK.md"
+        or resolved.parent.parent.name != "tasks"
+        or resolved.parent.name in {"", ".", ".."}
+    ):
+        raise MPresError("Only top-level TASK.md at tasks/<slug>/TASK.md may be hashed by this workflow.")
+    path = resolved
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):

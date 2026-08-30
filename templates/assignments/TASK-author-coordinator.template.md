@@ -1,46 +1,22 @@
 # Author coordinator assignment — [[PRESENTATION_ID]]: [[PRESENTATION_TITLE]]
 
-## Task and audience
+## Planner-owned exact brief
+
+Only the main planner may replace the following placeholder. Stop if it remains incomplete.
+
+[[PLANNER_ASSIGNMENT_BRIEF]]
+
+## Confirmed task and content units
 
 Confirmed plan: `[[TASK_MD_PATH]]`
 
-[[PRESENTATION_SCOPE]]
-
-[[AUDIENCE_CONTEXT]]
-
-## Content units
-
 [[CONTENT_UNIT_TABLE]]
 
-Create one exact lesson-author assignment per unit and run them in bounded parallel batches. Do not treat prior exposure as mastery.
+## Hard responsibilities
 
-## Structured design before drafting
+Complete deck-level pedagogy, example, terminology, semantic-object, asset, interaction, MCQ, and GeoGebra maps. Request planner-written exact unit assignments; do not write them yourself. Supervise each unit through the configured stage gates, integrate accepted handoffs, reconcile notation and narrative continuity, build the Marp PDF, run structural checks, submit the sole review, respond to every finding, complete the modification checklist, rebuild, and submit the revised source for automatic mechanical release.
 
-Complete:
-
-- `[[AUTHOR_SOURCE_PATH]]/DECK-MANIFEST.yaml`
-- `PEDAGOGY-MAP.md`
-- `EXAMPLE-MAP.md`
-- `TERMINOLOGY.md`
-- `SEMANTIC-OBJECTS.yaml`
-- `ASSET-DECISIONS.yaml`
-- `GEOGEBRA-RESOURCES.yaml`
-- legacy audit/reuse maps when relevant
-
-[[PRESENTATION_STRATEGY]]
-
-## References
-
-[[REFERENCES]]
-
-## Workflow
-
-1. Complete maps and lesson assignments.
-2. Spawn one lesson-author per unit. Each unit must record whether a bounded GeoGebra-only search is relevant, then either perform it or explain why it is not applicable.
-3. Validate and aggregate unit GeoGebra records. Select only genuinely useful public materials at `https://www.geogebra.org/m/...` and cite them as ordinary Markdown hyperlinks.
-4. Assemble fragments into `presentation.md`; reconcile terminology, slide IDs, semantic objects, examples, links, and transitions.
-5. Run `mpres source lint`, `mpres assets validate`, `mpres render`, and `mpres inspect`.
-6. Submit initial, incremental, final, and terminal requests as state requires.
+The revised deck is not returned to reviewers. You remain responsible for making the changes thoughtfully.
 
 ## Paths
 
@@ -49,10 +25,6 @@ Complete:
 - Lesson-author root: `[[LESSON_AUTHOR_ROOT]]`
 - Reviews: `[[REVIEW_ROOT]]`
 
-## Forbidden actions
+## Boundaries
 
-Do not change TASK.md, self-approve, use screenshots/model vision, edit reviewer reports, generate HTML, or maintain a second lecture source. Python figures require explicit task and asset approval. GeoGebra applets, iframes, remote images, previews, QR codes, downloaded copies, and non-GeoGebra mirrors are forbidden.
-
-## Task-specific acceptance criteria
-
-[[ACCEPTANCE_CRITERIA]]
+Do not alter TASK.md, write subordinate assignments, self-review, inspect screenshots, open original reference PDFs, or maintain a second deck source.

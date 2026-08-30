@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 presentation_id: "[[PRESENTATION_ID]]"
 unit_id: "[[UNIT_ID]]"
 relevant: false
@@ -6,16 +6,18 @@ rationale: "[[GEOGEBRA_RELEVANCE_RATIONALE]]"
 site_scope: geogebra.org
 search_attempted: false
 search_queries: []
-# Allowed values: not_applicable, searched_no_suitable_resource, found_selected
 search_outcome: "[[GEOGEBRA_SEARCH_OUTCOME]]"
 selected_resources: []
-# If a bounded search finds a genuinely useful public material, add at most three entries:
+# Selected resources must use verification_status: verified.
 # - title: "Resource title"
 #   url: "https://www.geogebra.org/m/RESOURCE_ID"
-#   author: "Visible author or source, when available"
-#   concept: "Exact mathematical idea supported"
-#   intended_use: "Optional after-class exploration or a link named on one slide"
-#   link_text: "GeoGebra：resource title"
-#   verified_resource: true
-#   checked_utc: "2026-08-30T00:00:00Z"
+#   author: "Visible author"
+#   verification_status: verified
+#   verified_title: "Title visible on GeoGebra"
+#   verified_author: "Author visible on GeoGebra"
+#   verified_activity: "What the material actually lets the learner manipulate"
+#   verified_utc: "2026-08-30T00:00:00Z"
+#   concept: "Exact mathematical idea"
+#   intended_use: "Optional exploration"
+#   link_text: "GeoGebra：descriptive action"
 #   embedded: false

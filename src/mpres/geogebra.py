@@ -217,15 +217,31 @@ def validate_unit_geogebra_registry(
         embedded = item.get("embedded")
         if embedded is not False:
             errors.append("Every selected GeoGebra resource must declare embedded: false.")
-        for field in ("title", "url", "concept", "intended_use", "link_text", "checked_utc"):
+        for field in (
+            "title",
+            "url",
+            "author",
+            "verification_status",
+            "verified_title",
+            "verified_author",
+            "verified_activity",
+            "verified_utc",
+            "concept",
+            "intended_use",
+            "link_text",
+        ):
             if not str(item.get(field, "")).strip():
                 errors.append(f"Selected GeoGebra resource is missing {field}.")
-        if item.get("checked_utc") and not _valid_checked_utc(item.get("checked_utc")):
-            errors.append("GeoGebra checked_utc must be an ISO-8601 UTC timestamp ending in Z.")
-        if "author" in item and not isinstance(item.get("author"), str):
-            errors.append("GeoGebra author must be text when recorded.")
-        if "verified_resource" in item and item.get("verified_resource") not in {True, False, None}:
-            errors.append("GeoGebra verified_resource must be true, false, or null when recorded.")
+        if item.get("verification_status") != "verified":
+            errors.append(
+                "A selected GeoGebra resource must use verification_status: verified."
+            )
+        if item.get("verified_utc") and not _valid_checked_utc(item.get("verified_utc")):
+            errors.append("GeoGebra verified_utc must be an ISO-8601 UTC timestamp ending in Z.")
+        if "verified_resource" in item:
+            errors.append(
+                "Legacy verified_resource is not accepted; use verification_status: verified."
+            )
         normalised, url_errors, url_warnings = _validate_url(str(item.get("url", "")))
         errors.extend(url_errors)
         warnings.extend(url_warnings)
@@ -363,6 +379,15 @@ def validate_presentation_geogebra_registry(
             warnings.extend(url_warnings)
             if resource.get("embedded") is not False:
                 errors.append(f"GeoGebra resource {normalised} does not declare embedded: false.")
+            if resource.get("verification_status") != "verified":
+                errors.append(
+                    f"GeoGebra resource {normalised} is selected without verification_status: verified."
+                )
+            for field in ("verified_title", "verified_author", "verified_activity", "verified_utc"):
+                if not str(resource.get(field, "")).strip():
+                    errors.append(f"GeoGebra resource {normalised} is missing {field}.")
+            if resource.get("verified_utc") and not _valid_checked_utc(resource.get("verified_utc")):
+                errors.append(f"GeoGebra resource {normalised} has an invalid verified_utc.")
             if normalised in selected_by_url:
                 errors.append(f"GeoGebra resource is registered more than once: {normalised}")
             selected_by_url[normalised] = resource
@@ -403,7 +428,7 @@ def validate_task_geogebra(
     if stage == "author":
         base = task / "workers" / "author-coordinator" / "drafts" / presentation_id
     elif stage == "release":
-        base = task / "workers" / "release-coordinator" / "approved" / presentation_id
+        base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
     else:
         raise MPresError("GeoGebra validation stage must be author or release.")
     source = base / "source"

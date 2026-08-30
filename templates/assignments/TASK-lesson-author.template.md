@@ -1,22 +1,28 @@
 # Lesson/content-unit author assignment — [[PRESENTATION_ID]] / [[UNIT_ID]]: [[UNIT_TITLE]]
 
+## Planner-owned exact brief
+
+Only the main planner may replace this placeholder. Stop if it remains incomplete.
+
+[[PLANNER_ASSIGNMENT_BRIEF]]
+
 ## Instructional job
 
 [[UNIT_SCOPE]]
 
-## Audience and reactivation
+## Audience, prerequisites, and local decision rights
 
 [[AUDIENCE_CONTEXT]]
 
 [[PRIOR_KNOWLEDGE_TO_REACTIVATE]]
 
-## Detailed outline and concept chains
+[[LOCAL_DECISION_RIGHTS]]
 
-[[UNIT_OUTLINE]]
+## Staged workflow
 
-## Unit strategy
+Stage state: `[[STAGE_STATE_PATH]]`
 
-[[UNIT_STRATEGY]]
+Use the `lesson-authoring-stages` skill. Complete only the current stage, submit it, and wait for author-coordinator acceptance before continuing. Course units use all six stages and must design 2–3 valid diagnostic multiple-choice prompt/answer pairs. Academic reports use the compact stage profile and are exempt from the MCQ quota.
 
 ## Shared conventions
 
@@ -24,24 +30,27 @@
 - Semantic objects: `[[SEMANTIC_OBJECTS_PATH]]`
 - Deck manifest: `[[DECK_MANIFEST_PATH]]`
 - Example map: `[[EXAMPLE_MAP_PATH]]`
+- Interaction manifest: `[[INTERACTION_MANIFEST_PATH]]`
+- MCQ audit: `[[MCQ_AUDIT_PATH]]`
 - Asset decisions: `[[ASSET_DECISIONS_PATH]]`
-- GeoGebra unit record: `[[GEOGEBRA_UNIT_RESOURCES_PATH]]`
+- GeoGebra record: `[[GEOGEBRA_UNIT_RESOURCES_PATH]]`
 
-## References and bounded GeoGebra search
+## References
 
 [[REFERENCES]]
 
-Assess whether this unit would genuinely benefit from an interactive GeoGebra resource. If relevant, make no more than the task-policy number of targeted `site:geogebra.org` searches and select only directly useful public materials. Record the decision, queries, outcome, title, URL, author/verification status when visible, checked time, mathematical concept, intended learner action, and exact link text in `GEOGEBRA-RESOURCES.yaml`.
+Workers may read only approved extracted text and explicitly permitted web text. Never open, render, convert, OCR, or otherwise inspect an original reference PDF. Record source gaps rather than guessing.
 
-A selected resource appears in `section.md` only as an ordinary Markdown hyperlink to `https://www.geogebra.org/m/...`. The slide must remain complete without opening it. Never embed or download it, and do not use an iframe, remote image, preview card, screenshot, QR code, copied thumbnail, or non-GeoGebra mirror. If the unit is not suitable for GeoGebra or no suitable resource is found, record that outcome and stop rather than forcing a link.
+GeoGebra search is bounded and optional. A selected link must be a verified `geogebra.org/m/...` resource and appears only as a descriptive Markdown hyperlink.
 
 ## Outputs
 
 - `[[UNIT_SOURCE_PATH]]/section.md`
-- approved local assets under `[[UNIT_SOURCE_PATH]]/assets/`
-- `GEOGEBRA-RESOURCES.yaml`
 - `UNIT-MANIFEST.yaml`
+- `GEOGEBRA-RESOURCES.yaml`
 - `SELF-CHECK.md`
+- stage artifacts and stage state
+- local approved assets
 - checkpoint under `[[UNIT_CHECKPOINT_PATH]]`
 
-The fragment contains no YAML frontmatter and no global theme directives. Do not edit another unit, integrated `presentation.md`, TASK.md, review files, or deliverables. Do not use screenshots or model vision.
+Do not edit another unit, the integrated deck, TASK.md, reviewer files, or deliverables. Do not use screenshots or model vision.

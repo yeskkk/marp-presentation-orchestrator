@@ -1,41 +1,41 @@
 # TASK — [[TASK_TITLE]]
 
 > **Task directory:** `tasks/[[TASK_SLUG]]/`  
-> **Task type:** [[TASK_KIND]]  
+> **Task type:** `[[TASK_KIND_CODE]]`  
 > **Course meetings:** [[SESSION_COUNT_OR_NA]]  
 > **Nominal minutes per meeting:** [[MINUTES_OR_NA]]  
 > **Delivery mode:** `[[STOP_MODE]]`  
-> **Default model policy:** `gpt-5.6-sol`, reasoning effort `medium`  
+> **Default worker policy:** `gpt-5.6-sol`, reasoning effort `high`  
 > **Plan status:** awaiting explicit user confirmation of this exact `TASK.md`
 
-## 1. 任务名称、内容简介与范围
+## 1. 任务名称、简介与范围
 
 **名称：** [[TASK_NAME]]
 
-**目录名：** `[[TASK_SLUG]]`
-
-**内容简介：**
+**目录：** `[[TASK_SLUG]]`
 
 [[CONTENT_DESCRIPTION]]
 
-**范围内：**
+### 范围内
 
 [[IN_SCOPE]]
 
-**明确不做：**
+### 明确不做
 
 [[OUT_OF_SCOPE]]
 
 ## 2. 开始工作前已经提醒用户的固定规则
 
-1. 每份 presentation 必须经过三轮审核：初审全稿、增量复审、终审全稿；终审后的作者修订只进入放行闭环，不构成第四轮探索性审核。
-2. 每轮都有五个独立通道：语言、领域正确性、版式与 PDF 成品行为、教学编排、听众契合。
-3. 审核禁止截图、PDF 栅格图、联系表和模型视觉；使用 Markdown 源、结构化清单、Marp 日志、PDF 页面几何与文本层作为证据。
-4. 只交付 Marp 源和 PDF。Marp CLI 可以在内部借助浏览器生成 PDF，但项目不生成、不保存、不审核 HTML。
-5. 除本文件的用户确认门外，不生成或检查任何哈希码。
-6. 默认推理强度为 `medium`；研究级、学术报告、陌生领域或高风险事实核验应在确认阶段提高到 `high` 或 `max`。
-7. Python 作图默认关闭。只有 TASK.md 明确允许、且资产决策表说明表格、公式、CSS 或普通图片无法完成同一教学任务时，才可生成图形。
-8. 对适合动态数学探索的内容，author 应做一次有界的 `geogebra.org` 站内检索；仅可选用公开 material，并且只能作为普通 Markdown 超链接引用。禁止嵌入、下载、截图、预览图或二维码；不相关或找不到合适资源时记录理由后停止。
+1. 每份 presentation 只做一轮完整审核；五个独立通道同时审核完整冻结稿。
+2. 作者逐条回应 findings、完成修改、自检和重新构建后，直接进入机械发布；修订稿不返回 reviewer，findings 不维护 resolved 状态。
+3. **课程的每个 content unit 必须包含 2—3 道诊断性选择题。** 学术报告/普通报告不设这一配额。
+4. 审核禁止截图、PDF 栅格化、联系表和模型视觉；只使用 Marp 源、结构化记录、构建日志和 PDF 页面几何/文本层。
+5. 项目只交付 Marp 源和 PDF，不生成、保存或审核 HTML。
+6. 除本文件确认门外，不生成或检查哈希。
+7. 所有 worker 默认 `gpt-5.6-sol/high`；极难研究报告可由用户明确提高到 `max`。
+8. worker 只能读取 `downloads/text/` 中的抽取文本。任何原 PDF 即使物理存在也禁止打开、解析、渲染、转换、OCR、截图或交给视觉模型。
+9. Python 作图默认关闭；GeoGebra 仅可做有界站内搜索并以普通超链接引用。
+10. planner 亲自编写每个逻辑 worker 和每个 authoring stage 的精确 assignment；coordinator 只能提交 assignment request，不能代写。
 
 ## 3. 目标听众
 
@@ -47,7 +47,7 @@
 
 [[AUDIENCE_LIKELY_WEAKNESSES]]
 
-### 3.3 听众希望获得什么
+### 3.3 期待获得的能力和理解
 
 [[AUDIENCE_EXPECTED_GAINS]]
 
@@ -55,86 +55,85 @@
 
 [[PRIOR_COURSE_CONTEXT_OR_NA]]
 
-先前出现过的内容只能视为“见过”，不能直接视为已经掌握；每份 assignment 都要写明需要重新激活的最小知识。
+先前出现过只能视为“见过”，不能直接视为掌握。assignment 必须写明本单元需要重新激活的最小知识。
 
 ## 4. 总体逻辑大纲
 
-内容按逻辑关系划分，不按时长机械切片。时长只用于校准材料总量。
-
 [[OVERALL_OUTLINE]]
 
-## 5. presentation 单元与课次/内容单元
+时长只用于校准材料总量；content unit 按逻辑关系划分，不按分钟机械切块。
+
+## 5. presentation 与 content-unit 图
 
 [[PRESENTATION_PLAN]]
 
-每份课程课件把每节课拆成一个独立内容单元，交给一个 `lesson-author`；报告把每个逻辑段落视为内容单元。内容单元可以并行制作，由 `author-coordinator` 统一术语、语义对象、例题角色、主题 CSS 和最终 `presentation.md`。
+课程中一个 content unit 对应一节课；报告按逻辑章节拆分。[[AUTHORING_STAGE_DESCRIPTION]] lesson authors 允许有界并行，author coordinator 统一术语、对象、例题、互动与最终 `presentation.md`。
 
-## 6. 总体演讲策略
+## 6. 演讲策略
 
 [[OVERALL_PRESENTATION_STRATEGY]]
 
-至少说明：为什么主题值得关心、听众进入新概念的认知入口、直觉与精确表述的次序、正例与反例如何建立边界感、例题承担的迁移作用、复杂计算如何压缩、表格何时优先于图形，以及提高内容如何照顾认真学生而不压垮主要叙事。
+至少说明：认知入口、直觉和精确表述次序、正反例、表示变化、必要计算、迁移例题、课程 MCQ 的诊断目标、活动价值、听众注意负担和提高内容安排。
 
-## 7. Marp 与视觉策略
+## 7. Marp、页面与资产策略
 
-- 基础主题：[[MARP_THEME_DECISION]]
+- 主题：[[MARP_THEME_DECISION]]
 - 页面比例：[[MARP_SIZE_DECISION]]
-- HTML 标签：只在 Markdown 表格和原生 Marp 语法无法表达必要结构时使用；最终仍只输出 PDF。
-- 插图策略：[[IMAGE_POLICY_DECISION]]
+- 图片策略：[[IMAGE_POLICY_DECISION]]
 - Python 作图：[[PYTHON_ASSET_DECISION]]
 
-视觉不是“尽量多画图”。优先顺序通常是：简洁文字与公式 → Markdown 表格 → CSS 双栏/提示框 → 已有且合适的本地图片 → 经批准的 Python 图形。
+优先顺序通常是：自然语言/公式 → Markdown 表格 → CSS 布局 → 合适的本地资产 → 经批准的 Python 图。不要把普通表格画成图。
 
-## 8. 参考资料
+## 8. 参考资料与 text-only 协议
 
 [[REFERENCES_AND_USES]]
 
-共享资料统一放在 `tasks/[[TASK_SLUG]]/downloads/`；抽取文本用于检索，公式、图表、精确引文和页码仍须回看原件。
+worker assignment 只能引用抽取文本的路径、行号或检索词。文本不足时写 source-gap，改用其他批准文本、授权网页、收缩/删除表述或升级范围问题。**不得回看原 PDF。**
 
-GeoGebra 属于可选在线探索资源，不属于课件的必需依赖。lesson author 在适用时记录站内检索；author coordinator 决定是否选用。课件离线打开和不访问链接时仍须完整可讲。
+## 9. Authoring stages
 
-## 9. 执行、并发和推理强度
+每个 content unit 按任务类型对应的阶段执行；planner 为每一阶段亲自写精确 assignment：
 
-机器可读策略位于：
+[[AUTHORING_STAGE_LIST]]
 
-- `tasks/[[TASK_SLUG]]/EXECUTION-POLICY.yaml`
-- `tasks/[[TASK_SLUG]]/REVIEW-PROFILE.yaml`
+阶段之间允许带理由回退。[[MCQ_STAGE_REQUIREMENT]]
 
-推理强度决定：
+## 10. 执行、并发与模型
+
+机器策略：
+
+- `EXECUTION-POLICY.yaml`
+- `REVIEW-PROFILE.yaml`
+- `REFERENCE-ACCESS-POLICY.yaml`
+- `POLICY-PRECEDENCE.yaml`
 
 [[REASONING_EFFORT_DECISION]]
 
-并发安排：
-
 [[PARALLELISM_DECISION]]
 
-## 10. 交付与暂停方式
+## 11. 交付与暂停
 
-`[[STOP_MODE]]` 的含义：
-
-- `pilot`：先完整交付第一份课件并暂停一次，等待用户根据真实 PDF 反馈；继续后，其余课件按计划推进。
-- `each`：每份课件交付后暂停。
-- `all`：所有计划课件交付后才暂停。
-
-本任务的具体说明：
+- `pilot`：先完整交付第一份课件，暂停等待用户反馈一次。
+- `each`：每份课件后暂停。
+- `all`：全部完成后暂停。
 
 [[DELIVERY_MODE_NOTES]]
 
-## 11. 角色边界
+## 12. 角色边界
 
-- `planner`：采访、规划、确认门、分配 presentation、每二十分钟或收到一份课件交付事件时做一次高层监督；不写逐页内容。
-- `author-coordinator`：建立结构化教学设计，拆分内容单元，监督并行 lesson authors，整合 `presentation.md`，回应 findings。
-- `lesson-author`：只完成一个课次/内容单元及其结构化证据，不改其他单元。
-- `specialist-reviewer`：只在指定通道和指定轮次独立审核，不改作者源。
-- `review-coordinator`：监督五通道审核，验证报告完整性，汇总但不弱化 finding，推动三轮闭环。
-- `release-coordinator`：终审后验证 closure，做机械最终构建和发布；不得新增实质意见。
+- planner：规划、确认、亲自写全部精确 assignments、政策审计、二十分钟/交付事件高层监督。
+- author-coordinator：结构化设计、请求 assignment、监督 staged lesson authors、整合、构建、自检和 post-review revision。
+- lesson-author：一个 content unit 的一个 active stage，不改其他单元。
+- specialist-reviewer：唯一一轮中的一个通道，不看其他通道或后续修订。
+- review-coordinator：验证 planner assignments、监督五通道并聚合，不写 assignment、不改 findings。
+- release-coordinator：只检查作者回应覆盖和机械门，直接发布；不判断 finding 是否修好。
 
-## 12. 验收标准
+## 13. 验收标准
 
 [[ACCEPTANCE_CRITERIA]]
 
-至少包含：内容覆盖、领域正确性、听众契合、自然语言、例题迁移、结构化地图一致性、Marp 源 lint、PDF 页数和页面几何、PDF 文本层、字体可读性、本地资产、三轮审核记录和终审后放行记录。
+至少包括：覆盖、领域正确性、自然语言、听众契合、课程 unit 每个 2—3 道合格 MCQ、题答相邻分页、结构化地图一致性、Marp lint、PDF 页数/几何/文本层、本地资产、GeoGebra 规则、text-only 来源、一轮五通道报告、作者逐项回应、自修订记录和直接发布记录。
 
-## 13. 规划者的确认清单
+## 14. 规划者确认清单
 
 [[PLANNER_CONFIRMATION_NOTES]]

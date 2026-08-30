@@ -3,6 +3,17 @@ presentation_id: "[[PRESENTATION_ID]]"
 unit_id: "[[UNIT_ID]]"
 title: "[[UNIT_TITLE]]"
 slide_ids: ["[[SLIDE_ID]]"]
+slide_interactions:
+  - id: "[[SLIDE_ID]]"
+    interaction_role: none
+    paired_with: null
+    interaction_format: none
+    selection_rationale: null
+    # For multiple_choice, replace null with a mapping keyed by every visible label:
+    # option_audit:
+    #   A: {stem_compatible: true, truth_status: correct, wording_check: "...", justification: "..."}
+    #   B: {stem_compatible: true, truth_status: incorrect, wording_check: "...", misconception: "..."}
+    option_audit: null
 concept_chains: ["[[CHAIN_ID]]"]
 semantic_objects: []
 examples: []

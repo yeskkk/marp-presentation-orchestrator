@@ -1,0 +1,19 @@
+schema_version: 1
+written_by: planner
+written_utc: "[[UTC]]"
+role: "[[ROLE]]"
+presentation_id: "[[PRESENTATION_ID]]"
+unit_id: "[[UNIT_ID_OR_NULL]]"
+stage_or_channel: "[[STAGE_OR_CHANNEL]]"
+hard_constraints:
+  - "[[HARD_CONSTRAINT]]"
+replaceable_hypotheses:
+  - "[[HYPOTHESIS]]"
+local_decision_rights:
+  - "[[DECISION_RIGHT]]"
+approved_text_sources:
+  - "[[TEXT_SOURCE]]"
+acceptance_criteria:
+  - "[[CRITERION]]"
+deferred_questions:
+  - "[[DEFERRED_OR_NONE]]"

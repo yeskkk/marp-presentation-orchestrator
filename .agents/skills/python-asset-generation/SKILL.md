@@ -1,10 +1,12 @@
 ---
 name: python-asset-generation
-description: Exception-only workflow for approved Python-generated Marp assets with readable labels and structural layout reports.
+description: Exception-only Python asset workflow used only after native Marp alternatives have been rejected and final-PDF readability can be demonstrated.
 ---
 
 # Python asset generation
 
-This skill is inactive unless TASK.md and EXECUTION-POLICY enable Python assets and ASSET-DECISIONS.yaml approves the exact asset.
+Default decision order:
 
-Before writing code, record why a Markdown table, formula, CSS layout, or existing image is insufficient. Prefer SVG. Generated raster images containing text are forbidden. Use the project plotting helper so text sizes and arrow/text overlaps are reported. A failed asset report blocks use of the asset. The figure must explain a relationship that is genuinely hard to express directly; decoration is not a reason.
+`native text/formula → Markdown table → theme CSS → simple manual SVG → approved existing resource → Python figure`.
+
+Never use Python to draw an ordinary table. A Python asset requires explicit task and registry approval, a generator, a structural report, a teaching purpose, documented rejected alternatives, and final-PDF readability evidence. SVG arrow/text overlaps, legend obstruction, excessive label density, bad aspect ratio, and physical text below the configured threshold block the asset. Labelled raster output is forbidden.

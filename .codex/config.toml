@@ -1,6 +1,6 @@
 model = "gpt-5.6-sol"
-model_reasoning_effort = "medium"
-project_doc_max_bytes = 98304
+model_reasoning_effort = "high"
+project_doc_max_bytes = 131072
 model_auto_compact_token_limit = 120000
 model_auto_compact_token_limit_scope = "total"
 
@@ -8,5 +8,5 @@ model_auto_compact_token_limit_scope = "total"
 enabled = true
 max_concurrent_threads_per_session = 16
 default_subagent_model = "gpt-5.6-sol"
-default_subagent_reasoning_effort = "medium"
+default_subagent_reasoning_effort = "high"
 interrupt_message = true

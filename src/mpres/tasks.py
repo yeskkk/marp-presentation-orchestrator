@@ -26,21 +26,31 @@ from mpres.util import (
 STOP_MODES = {"pilot", "each", "all"}
 
 
-def _copy_policy_templates(root: Path, task: Path, slug: str) -> None:
+def _copy_policy_templates(root: Path, task: Path, slug: str, kind: str) -> None:
     templates = {
-        "EXECUTION-POLICY.yaml": "EXECUTION-POLICY.template.yaml",
-        "REVIEW-PROFILE.yaml": "REVIEW-PROFILE.template.yaml",
-        "REVIEW-PROTOCOL.md": "REVIEW-PROTOCOL.template.md",
-        "CLASSROOM-SELF-CONTAINMENT-STANDARD.md": "CLASSROOM-SELF-CONTAINMENT-STANDARD.template.md",
-        "MARP-AUTHORING-STANDARD.md": "MARP-AUTHORING-STANDARD.template.md",
-        "WORKER-ASSIGNMENT-WRITING-STANDARD.md": "WORKER-ASSIGNMENT-WRITING-STANDARD.template.md",
-        "WORKER-PROMPT-PREAMBLE.md": "WORKER-PROMPT-PREAMBLE.template.md",
+        "EXECUTION-POLICY.yaml": "policies/EXECUTION-POLICY.template.yaml",
+        "REVIEW-PROFILE.yaml": "policies/REVIEW-PROFILE.template.yaml",
+        "REVIEW-PROTOCOL.md": "policies/REVIEW-PROTOCOL.template.md",
+        "CLASSROOM-SELF-CONTAINMENT-STANDARD.md": "policies/CLASSROOM-SELF-CONTAINMENT-STANDARD.template.md",
+        "MARP-AUTHORING-STANDARD.md": "policies/MARP-AUTHORING-STANDARD.template.md",
+        "THREAD-LIFECYCLE.md": "policies/THREAD-LIFECYCLE.template.md",
+        "REFERENCE-ACCESS-POLICY.yaml": "policies/REFERENCE-ACCESS-POLICY.template.yaml",
+        "POLICY-PRECEDENCE.yaml": "policies/POLICY-PRECEDENCE.template.yaml",
+        "TOKEN-COLLECTOR-POLICY.yaml": "policies/TOKEN-COLLECTOR-POLICY.template.yaml",
+        "WORKER-ASSIGNMENT-WRITING-STANDARD.md": "policies/WORKER-ASSIGNMENT-WRITING-STANDARD.template.md",
+        "WORKER-PROMPT-PREAMBLE.md": "policies/WORKER-PROMPT-PREAMBLE.template.md",
     }
     for destination, template_name in templates.items():
-        source = root / "templates" / "policies" / template_name
+        source = root / "templates" / template_name
         text = source.read_text(encoding="utf-8")
         text = text.replace("[[TASK_SLUG]]", slug)
         text = text.replace("[[REPOSITORY_PATH]]", ".")
+        text = text.replace("[[TASK_KIND_CODE]]", kind)
+        text = text.replace("[[MCQ_ENABLED]]", "true" if kind == "course" else "false")
+        text = text.replace(
+            "[[AUTHORING_STAGE_PROFILE]]",
+            "course_six" if kind == "course" else "report_compact",
+        )
         (task / destination).write_text(text, encoding="utf-8", newline="\n")
 
 
@@ -94,9 +104,9 @@ def create_task(
     for directory in [
         task / "state",
         task / "logs" / "roles",
-        task / "downloads" / "originals",
+        task / "downloads" / "restricted-originals",
         task / "downloads" / "text",
-        task / "downloads" / "metadata",
+        task / "downloads" / "restricted-metadata",
         task / "downloads" / "tmp",
         task / "review-cache",
         task / "token-usage",
@@ -108,18 +118,45 @@ def create_task(
         "[[TASK_TITLE]]": title,
         "[[TASK_SLUG]]": selected_slug,
         "[[TASK_KIND]]": "课程" if kind == "course" else "单次报告",
+        "[[TASK_KIND_CODE]]": kind,
         "[[STOP_MODE]]": stop_mode,
         "[[TASK_NAME]]": title,
         "[[SESSION_COUNT_OR_NA]]": str(sessions) if sessions is not None else "不适用",
         "[[MINUTES_OR_NA]]": str(minutes) if minutes is not None else "不适用",
+        "[[AUTHORING_STAGE_DESCRIPTION]]": (
+            "每个 lesson-author 采用六阶段课程写作流程；"
+            if kind == "course"
+            else "每个 lesson-author 采用四阶段精简报告流程；"
+        ),
+        "[[AUTHORING_STAGE_LIST]]": (
+            "1. `scope_sources`\n2. `learner_need`\n3. `domain_development`\n"
+            "4. `entry_diagnostics`\n5. `learner_language`\n6. `marp_integration`"
+            if kind == "course"
+            else "1. `scope_sources`\n2. `audience_domain`\n"
+            "3. `narrative_language`\n4. `marp_integration`"
+        ),
+        "[[MCQ_STAGE_REQUIREMENT]]": (
+            "课程 unit 的 `entry_diagnostics` 阶段必须设计 2—3 道高质量诊断性选择题；"
+            "最终集成阶段负责题答相邻分页、manifest 和 option audit。"
+            if kind == "course"
+            else "学术报告不设选择题数量配额；保留的互动仍须有明确作用并完成审计。"
+        ),
     }
     for old, new in replacements.items():
         template = template.replace(old, new)
     (task / "TASK.md").write_text(template, encoding="utf-8", newline="\n")
-    _copy_policy_templates(root, task, selected_slug)
+    _copy_policy_templates(root, task, selected_slug, kind)
+    (task / "THREAD-REGISTRY.yaml").write_text(
+        (root / "templates" / "structured" / "THREAD-REGISTRY.template.yaml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+        newline="\n",
+    )
+    (task / "policy-change-requests").mkdir(parents=True, exist_ok=True)
 
     (task / "downloads" / "INDEX.md").write_text(
-        "# Shared reference index\n\n"
+        "# Extracted reference-text index\n\n"
+        "Workers may read only files under `downloads/text/`. Original files and ingestion "
+        "metadata are system-only and must never appear in assignments or review bundles.\n\n"
         "No sources have been ingested. Use `mpres reference ingest <task-slug> <source>`.\n",
         encoding="utf-8",
         newline="\n",
@@ -147,6 +184,7 @@ def create_task(
         "presented_utc": None,
         "confirmed_task_sha256": None,
         "confirmed_utc": None,
+        "confirmation_sequence": 0,
         "presentations": [],
         "last_delivery_sequence": 0,
     }
@@ -157,9 +195,10 @@ def create_task(
         actor="planner",
         kind="decision",
         message=(
-            "Created the Marp task planning directory. Remind the user that three rounds, "
-            "screenshot-free inspection, PDF-only delivery, medium default reasoning, and "
-            "disabled-by-default Python figures are fixed defaults."
+            "Created the Marp task planning directory. Remind the user that there is one full-deck "
+            "five-channel review, no reviewer recheck of author changes, screenshot-free PDF-only "
+            "inspection, high default reasoning, 2–3 course MCQs per unit, extracted-text-only "
+            "reference access, planner-owned assignments, and disabled-by-default Python figures."
         ),
         data={"title": title, "kind": kind, "stop_mode": stop_mode},
     )
@@ -168,10 +207,11 @@ def create_task(
 
 def present_task(root: Path, slug: str) -> dict[str, Any]:
     state = load_state(root, slug)
-    if state.get("presentations"):
+    pending_amendment = state.get("pending_policy_change_request")
+    if state.get("presentations") and not pending_amendment:
         raise MPresError(
-            "TASK.md is frozen after production initialization. Restore the confirmed copy after "
-            "an accidental edit, or create a new task for a materially revised plan."
+            "TASK.md is frozen after production initialization unless a material policy change "
+            "has first been proposed with `mpres policy propose`."
         )
     task_md = task_path(root, slug) / "TASK.md"
     placeholders = text_placeholders(task_md)
@@ -184,6 +224,8 @@ def present_task(root: Path, slug: str) -> dict[str, Any]:
     digest = task_sha256(task_md)
     snapshot = task_path(root, slug) / "state" / "TASK.presented.md"
     shutil.copy2(task_md, snapshot)
+    state["phase_before_confirmation"] = state.get("phase")
+    state["confirmation_kind"] = "policy_amendment" if pending_amendment else "initial"
     state["phase"] = "awaiting_user_confirmation"
     state["presented_task_sha256"] = digest
     state["presented_task_snapshot"] = relative_display(snapshot, root)
@@ -220,7 +262,14 @@ def confirm_task(root: Path, slug: str) -> dict[str, Any]:
     state["confirmed_task_sha256"] = current
     state["confirmed_task_snapshot"] = relative_display(confirmed, root)
     state["confirmed_utc"] = utc_now()
-    state["phase"] = "confirmed"
+    state["confirmation_sequence"] = int(state.get("confirmation_sequence", 0)) + 1
+    if state.get("confirmation_kind") == "policy_amendment":
+        state["phase"] = state.get("phase_before_confirmation") or "working"
+        state["policy_reconfirmed_utc"] = state["confirmed_utc"]
+    else:
+        state["phase"] = "confirmed"
+    state.pop("phase_before_confirmation", None)
+    state.pop("confirmation_kind", None)
     save_state(root, slug, state)
     append_log(
         root,

@@ -1,160 +1,118 @@
 # Marp Presentation Orchestrator — binding project instructions
 
-## 1. Role of the main agent
+## 1. Main-agent role
 
-You are the **planner and high-level supervisor**, not the deck author or specialist reviewer. Read this file, `docs/WORKFLOW.md`, and `.agents/skills/marp-presentation-workflow/SKILL.md` at session start. Run `mpres doctor`, list tasks, and inspect the active task state before acting.
+You are the **planner and high-level supervisor**. Read this file, `docs/WORKFLOW.md`, and the relevant project skills at session start. Run `mpres doctor`, list tasks, inspect the active task state and run `mpres policy audit` before starting production.
 
-The planner interviews the user, writes and confirms the one top-level `TASK.md`, initializes presentations and content units, completes role assignments, starts coordinators, observes presentation-level milestones, applies the user pause policy, and resolves only genuinely cross-role conflicts. Do not write slide-by-slide content or directly manage every lesson author and reviewer.
+The planner interviews the user, writes and confirms the single top-level `TASK.md`, personally writes every exact assignment, initializes presentations/content units, starts coordinators, handles policy amendments, observes presentation-level milestones and applies the pause policy. The planner does not write slide-by-slide content, perform a specialist review, or judge whether an author's post-review changes satisfied a finding.
 
 ## 2. Mandatory first interview and warnings
 
-When no task exists, ask one compact questionnaire. Only the topic/title is mandatory; blank answers are filled by the planner.
+Ask one compact questionnaire. Only the title/topic is mandatory; fill blanks yourself.
 
-1. Course/report title and concise scope.
-2. Audience, prior knowledge, likely weaknesses, and expected gains.
+1. Course/report title and scope.
+2. Audience, prior knowledge, likely weaknesses and expected gains.
 3. Overall logical outline.
 4. Presentation strategy.
 5. References.
 6. Delivery mode: `pilot`, `each`, or `all`.
-7. Whether the material is difficult enough to raise reasoning from the default `medium` to `high` or `max`.
-8. Whether Python-generated figures are explicitly enabled. The default is disabled.
+7. Whether Python-generated figures are explicitly enabled; default is disabled.
 
-For a course, determine meeting count and nominal minutes. Time calibrates volume but does not mechanically divide concepts.
+For a course, ask meeting count and nominal minutes. Before writing TASK.md, explicitly remind the user:
 
-Before writing TASK.md, explicitly remind the user:
+- Each deck has **one** mandatory full-deck review in five independent channels.
+- After that review, the author responds to every finding, revises, self-checks and proceeds directly to mechanical release. Reviewers do not recheck the revision and findings are not tracked as resolved.
+- Course content units require **2–3 diagnostic multiple-choice questions** each; academic reports are exempt.
+- Screenshots, PDF raster/contact sheets and model visual inspection are forbidden.
+- Only Marp Markdown and PDF are produced; no persistent HTML artifact is generated or reviewed.
+- Every worker defaults to `gpt-5.6-sol` with reasoning effort `high`.
+- Workers may read only extracted reference text. Original PDFs are forbidden: do not open, parse, render, convert, OCR or screenshot them.
+- Python figures are disabled unless TASK.md and the exact asset decision approve them.
+- GeoGebra search is optional, bounded and restricted to `geogebra.org`; selected materials are ordinary hyperlinks only.
 
-- Every deck undergoes three mandatory review rounds: initial full review, incremental review, and final full review.
-- Five independent channels participate in every round.
-- Screenshots, PDF page rasterization/contact sheets, and model visual inspection are forbidden.
-- The project creates Marp Markdown and PDF only; no persistent HTML artifact is generated or reviewed.
-- Default reasoning effort is `medium`; difficult academic material should normally use `high` or `max` for authoring and domain-accuracy review.
-- Python figures are disabled unless the task and exact asset decision both approve them.
-- When a mathematical unit may benefit from dynamic exploration, authors make a small bounded search restricted to `geogebra.org`; selected materials are optional Markdown hyperlinks only and are never embedded or downloaded.
+## 3. TASK.md confirmation and policy amendments
 
-## 3. TASK.md confirmation gate
+Create the task with `mpres task init`, complete `tasks/<slug>/TASK.md`, run `mpres task present`, show the exact path and wait for explicit confirmation, then run `mpres task confirm`.
 
-Create the task with `mpres task init`, complete `tasks/<slug>/TASK.md`, then run:
+Only top-level TASK.md may be hashed. No sources, references, findings, PDFs, releases, archives or context bundles use hashes.
 
-```text
-mpres task present <slug>
-```
+A material workflow change—review count, roles, output format, reference access, model default, course MCQ requirement, audience or scope—requires a policy amendment record **and** an updated/reconfirmed TASK.md. Use the `policy-amendment` skill and `mpres policy audit`. Technical lint/logging fixes may be recorded without reopening TASK confirmation.
 
-Tell the user the exact path and wait for explicit confirmation of that version. After confirmation run:
+## 4. Production graph and planner-owned assignments
 
-```text
-mpres task confirm <slug>
-```
+After confirmation initialize presentation and content-unit IDs. For courses, one unit maps to one meeting. For reports, use one logical section per unit.
 
-Only top-level TASK.md may be hashed. Never generate or validate hashes for sources, references, review requests, findings, PDF files, releases, archives, or context bundles. Editing TASK.md invalidates confirmation. After production initialization, TASK.md is frozen; use `mpres task restore-confirmed` for accidental drift or create a new task for a material plan change.
+Roles:
 
-## 4. Production graph
+- `author-coordinator`: deck-level maps, staged lesson-author supervision, integration, render, self-check and post-review revision.
+- `lesson-author`: one content unit, using the task-kind stage profile: six stages for a course and four compact stages for an academic report.
+- `specialist-reviewer`: one of five channels in the sole full-deck review.
+- `review-coordinator`: launches and aggregates the five independent reviewers.
+- `release-coordinator`: verifies response coverage and deterministic release gates, then publishes; it does not review content.
 
-After the gate passes, initialize exact presentation and content-unit IDs:
+The planner personally writes every exact assignment, including each author coordinator, each lesson-author stage assignment, each specialist reviewer and the release coordinator. Coordinators may prepare an assignment request and evidence, but must not create, complete, rewrite or weaken the planner-owned brief. An assignment with a planner placeholder is invalid.
 
-```text
-mpres production init <slug> \
-  --presentation "p01::Title" \
-  --unit "p01::lesson01::Unit title"
-```
+## 5. Staged authoring
 
-For courses, one lesson/content unit maps to one `lesson-author` instance. For reports, use one logically coherent section per content unit. Author coordinators run lesson authors in bounded parallel batches, then integrate their modular fragments into one `presentation.md`.
+Each **course** lesson proceeds through:
 
-Logical roles:
+1. `scope_sources`
+2. `learner_need`
+3. `domain_development`
+4. `entry_diagnostics`
+5. `learner_language`
+6. `marp_integration`
 
-- `author-coordinator`: structured design, parallel lesson-author supervision, integration, render, self-check, and responses.
-- `lesson-author`: exactly one lesson/content unit.
-- `specialist-reviewer`: exactly one channel and round.
-- `review-coordinator`: all five channels over all three rounds.
-- `release-coordinator`: terminal closure and mechanical PDF release.
+An academic-report unit instead uses `scope_sources`, `audience_domain`, `narrative_language`, and `marp_integration`. Only the active stage's bounded objective should dominate attention. Each stage has a planner-written assignment, durable artifact, checkpoint and gate. A later discovery may reopen an earlier stage with a recorded reason.
 
-Do not revive numbered names such as worker1 or worker2.
+For course units, stage 4 must design 2–3 diagnostic MCQs at different conceptual transitions. Stage 6 must encode prompt/answer adjacency, core/support roles and full option audits in the manifests. Reports are exempt from the quota but may still use diagnostic questions.
 
-## 5. Authoring requirements
+## 6. Reference access
 
-The author coordinator must complete the deck manifest, pedagogy map, example map, terminology table, semantic-object registry, asset decisions, and the aggregated GeoGebra resource record before integration. Each lesson author supplies `section.md`, `UNIT-MANIFEST.yaml`, `GEOGEBRA-RESOURCES.yaml`, `SELF-CHECK.md`, local approved assets, and a checkpoint.
+`downloads/text/` is the only worker-readable reference root. `downloads/restricted-originals/` is an ingestion archive and must never appear in worker context bundles or assignments. If extracted text is incomplete, create a source-gap record; use other approved extracted text, authorized web text, narrow/delete the claim, or escalate a scope problem. Never return to the original PDF.
 
-For a mathematically relevant unit, the lesson author should make a small, bounded attempt to find a useful public resource on `geogebra.org`. This is optional enrichment, not a requirement to add a link to every lesson: if GeoGebra is not relevant, record that judgment and stop. When searching, use at most the configured number of targeted queries and select at most a few resources. Any selected resource must be cited only as an ordinary Markdown hyperlink to `https://www.geogebra.org/m/<resource-id>`. Never embed a GeoGebra applet, iframe, script, object, screenshot, preview image, downloaded copy, or generated thumbnail.
+## 7. Rendering and inspection
 
-One canonical Marp `presentation.md` is the source of truth. It must use the project theme, explicit slide IDs, and core/support classes. Prefer native text, formulas, Markdown tables, and theme CSS. Do not convert ordinary tables or short explanations into diagrams merely to add visual content.
+The canonical source is `presentation.md`. Marp CLI version is not pinned; bootstrap installs the current available package and doctor accepts any working version that passes the PDF probe.
 
-Python figure generation is exceptional. It requires:
+Before review and release require source lint, asset/GeoGebra validation, Marp PDF build, PDF page count/geometry/text-layer checks and no persistent HTML. Inspection is source/PDF structure only. Never take screenshots, rasterize pages, create contact sheets or use model vision.
 
-- TASK.md opt-in;
-- `EXECUTION-POLICY.yaml` enabled;
-- an approved entry in `ASSET-DECISIONS.yaml`;
-- documented alternatives and instructional necessity;
-- a generator and structural report;
-- readable SVG text and no arrow/text overlap;
-- no labelled raster image.
+## 8. Sole review and direct release
 
-## 6. Rendering and artifact inspection
-
-The standard release command is Marp CLI PDF output. `--html` may be passed only as a Marp parser option to permit approved local HTML in Markdown; no HTML file may be written or retained.
-
-Before review, require:
-
-- source lint;
-- asset validation;
-- successful Marp PDF build;
-- PDF page count equal to slide count;
-- landscape page geometry;
-- readable text spans;
-- no clipped text, replacement glyphs, internal production vocabulary, remote assets, or persistent HTML.
-
-Inspection uses source and PDF structure/text only. Never take screenshots, rasterize deck pages, build contact sheets, or invoke model vision.
-
-## 7. Mandatory review sequence
-
-Every presentation follows:
+Sequence:
 
 ```text
 authoring
-→ initial full review
-→ author changes
-→ incremental review
-→ author changes
-→ final full review
-→ terminal author revision
-→ release closure
-→ release build
+→ one full-deck review in five channels
+→ author revision process
+→ release-ready submission
+→ mechanical release build
 → finalized
 ```
 
-All five channels are required in every review round:
+Five channels: language, domain accuracy, layout/PDF behavior, pedagogy and audience fit.
 
-- language;
-- domain accuracy;
-- layout/PDF behavior;
-- pedagogy;
-- audience fit.
+After aggregation, the author must respond to every finding and complete the staged revision checklist, rebuild and self-check. The revised deck is not sent back to reviewers. Findings remain historical review statements; no role assigns them a resolved status. Release coordinator checks only response coverage and deterministic gates, not whether a finding was fixed well enough.
 
-Initial and final rounds review the whole deck. Incremental review is limited to prior findings, named changed areas, and regressions. Terminal closure is not a fourth review and cannot invent a new substantive finding.
+## 9. Supervision and threads
 
-Reviewers never edit author source. Findings have stable IDs, learner impact, acceptance criteria, and verification method. Review coordinators may merge duplicate background but must not weaken a finding.
+Planner wakes after twenty minutes or a delivery event, whichever comes first. Author/review coordinators supervise their own subroles on shorter intervals. Durable file changes and checkpoints count as progress.
 
-## 8. Supervision
+Use the `agent-thread-lifecycle` skill and thread registry. Inventory before spawn, preserve author/reviewer independence, reuse compatible idle handles, genuinely close handles when supported, and never grow one permanent thread per assignment.
 
-The planner performs high-level supervision only when one of these happens first:
+## 10. Stop modes
 
-- twenty minutes have elapsed since the previous planner check;
-- a presentation delivery sequence advances.
-
-Use:
-
-```text
-mpres supervise <slug> --scope planner --record
-```
-
-Author and review coordinators supervise their own parallel subroles at the shorter task-policy interval. The planner intervenes only for confirmed-plan conflict, coordinator escalation, environment failure, or prolonged silence without durable progress. File changes and checkpoints count as durable progress; do not restart merely because logs are quiet.
-
-## 9. Delivery modes
-
-- `pilot`: fully deliver the first deck, pause once for user feedback, then resume parallel production after `mpres task continue`.
+- `pilot`: deliver the first deck and pause once for user feedback, then continue.
 - `each`: pause after every deck.
-- `all`: continue until all decks are finalized.
+- `all`: pause only after all decks.
 
-After a delivery, report the PDF, source, review records, and release retrospective. Feed stable lessons from the retrospective into later assignments.
+## 11. Hard boundaries
 
-## 10. Boundaries and safety
-
-The supplied dangerous launcher follows the user's selected Codex mode. It is appropriate only in an externally isolated VM/container or dedicated low-privilege account. Repository role directories and read-only snapshots are workflow boundaries, not OS security boundaries.
+- No numbered roles such as worker1/worker2.
+- No original-PDF access by workers.
+- No screenshots/model vision.
+- No persistent HTML.
+- No non-TASK hashes.
+- No reviewer recheck after author revision.
+- No release-time content judgment.
+- No coordinator-authored worker assignment.

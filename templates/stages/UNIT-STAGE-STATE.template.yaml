@@ -1,0 +1,11 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+unit_id: "[[UNIT_ID]]"
+current_stage: 01_scope_sources
+stages:
+  01_scope_sources: {status: active, artifact: planning/STAGE-01-SCOPE-SOURCES.md}
+  02_learner_need: {status: planned, artifact: planning/STAGE-02-LEARNER-NEED.md}
+  03_domain_development: {status: planned, artifact: planning/STAGE-03-DOMAIN-DEVELOPMENT.md}
+  04_entry_diagnostics: {status: planned, artifact: planning/STAGE-04-ENTRY-DIAGNOSTICS.md}
+  05_learner_language: {status: planned, artifact: planning/STAGE-05-LEARNER-LANGUAGE.md}
+  06_marp_integration: {status: planned, artifact: planning/STAGE-06-MARP-INTEGRATION.md}

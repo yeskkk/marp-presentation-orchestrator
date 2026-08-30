@@ -1,0 +1,8 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+unit_id: "[[UNIT_ID]]"
+gaps: []
+# - claim_or_need: "..."
+#   extracted_text_checked: ["downloads/text/file.txt:lines or query"]
+#   decision: use_other_approved_text | use_authorized_web_text | narrow_claim | remove_claim | escalate_scope
+#   resolution: "..."

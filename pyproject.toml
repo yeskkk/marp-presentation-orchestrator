@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "marp-presentation-orchestrator"
-version = "0.2.0"
-description = "A Codex + Marp workflow for parallel authoring, mandatory three-round review, and PDF-only presentation delivery."
+version = "0.3.0"
+description = "A Codex + Marp workflow for parallel authoring, one mandatory full-deck review, and PDF-only presentation delivery."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

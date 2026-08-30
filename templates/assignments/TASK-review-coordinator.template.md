@@ -1,11 +1,13 @@
 # Review coordinator assignment — [[PRESENTATION_ID]]: [[PRESENTATION_TITLE]]
 
-Manage all five channels for the three mandatory rounds.
+## Planner-owned exact brief
 
-- Requests: `[[REVIEW_ROOT]]`
-- Findings registry: `[[FINDINGS_REGISTRY_PATH]]`
-- Confirmed plan: `[[TASK_MD_PATH]]`
+[[PLANNER_ASSIGNMENT_BRIEF]]
 
-[[PRESENTATION_SCOPE]]
+Confirmed plan: `[[TASK_MD_PATH]]`
+Review root: `[[REVIEW_ROOT]]`
+Findings registry: `[[FINDINGS_REGISTRY_PATH]]`
 
-For each round, spawn/resume all five reviewers in parallel, check every required output, supervise logs, and run the aggregation gate. Do not edit author source, weaken acceptance criteria, or turn terminal closure into a fourth review.
+Coordinate exactly one full-deck review. Wait until the planner has personally completed and approved five channel-specific assignments, launch five distinct independent reviewer handles, preserve channel isolation, validate all reports, and aggregate findings without weakening them.
+
+After aggregation, hand the finding registry to the author. Do not organize a second review, acceptance verification, or resolved-status check. Do not edit author source or inspect screenshots/original reference PDFs.

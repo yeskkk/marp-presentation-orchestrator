@@ -1,61 +1,60 @@
-# Validation record — v0.2.0
+# Validation record — v0.3.0
 
 Validation date: 2026-08-30 UTC.
 
-## Scope of this release
+## Policy represented by this release
 
-This release adds optional, bounded GeoGebra resource discovery to the Marp authoring workflow.
-The search is restricted to GeoGebra's own site. A selected material must be a public
-`https://www.geogebra.org/m/<resource-id>` URL and may appear in a deck only as an ordinary,
-descriptive Markdown hyperlink. Applets, iframes, scripts, preview images, screenshots, QR codes,
-downloaded copies, and mirrored resources remain forbidden. The deck must remain complete when the
-link is not opened.
+This release implements the confirmed branch policy:
 
-Each content unit now records its decision in `GEOGEBRA-RESOURCES.yaml`:
+- Marp CLI is unpinned; `package.json` requests `latest`, `.npmrc` disables lockfile creation, and `package-lock.json` is rejected.
+- Every worker role uses `gpt-5.6-sol` with reasoning effort `high` by default.
+- There is one frozen full-deck review in five isolated channels.
+- After aggregation, the author responds to every finding, revises, completes the modification checklist, reruns deterministic checks, and proceeds directly to release. Reviewers do not recheck the revision and findings do not carry resolution state.
+- The planner personally writes and approves every role assignment and every authoring-stage assignment.
+- Course content units require two or three diagnostic MCQ prompt/answer pairs; academic reports are exempt.
+- Workers may read only extracted text under `downloads/text/`; original PDF paths and restricted ingestion metadata are blocked from assignments, stage artifacts and review bundles.
+- Formal slide inspection uses source and PDF structure only. Screenshots, page raster/contact sheets and model vision are forbidden.
+- Only the top-level task `TASK.md` may use a confirmation digest.
 
-- `not_applicable` when dynamic GeoGebra exploration is not instructionally relevant;
-- `searched_no_suitable_resource` after a relevant, bounded site-only search finds nothing worth
-  citing;
-- `found_selected` when one to three suitable public materials are selected and linked.
+## Automated validation completed
 
-The author coordinator validates every unit record, consolidates the presentation-level registry,
-and cross-checks selected URLs and link labels against canonical `presentation.md`.
-
-## Automated checks completed
-
-The following commands completed successfully in the build environment:
+The following checks passed in the build tree:
 
 ```bash
-python -m compileall -q src scripts tests
+rm -rf .pytest_cache
+find . -type d -name __pycache__ -prune -exec rm -rf {} +
 PYTHONPATH=src pytest -q
+python -m compileall -q src scripts tests
+PYTHONPATH=src python scripts/validate_project.py --skip-tests
 bash -n start.sh start-safe.sh
 PYTHONPATH=src python -m mpres --help
-PYTHONPATH=src python -m mpres geogebra validate --help
-PYTHONPATH=src python -m mpres render --help
 ```
 
-Test result: **24 passed**.
+Current regression result: **20 passed**.
 
-The test suite covers, among other workflow rules:
+The suite covers, among other rules:
 
-1. TASK.md confirmation and the no-non-TASK-hash policy;
-2. role-based parallel production without `worker1`/`worker2` names;
-3. Marp source lint and PDF-only rendering through a controlled Marp test executable;
-4. three mandatory review rounds, five channels, terminal closure, and delivery pauses;
-5. disabled-by-default Python figure generation and asset-decision enforcement;
-6. valid GeoGebra material links and unit-to-presentation aggregation;
-7. rejection of third-party domains, generic GeoGebra home pages, bare URLs, HTML anchors,
-   autolinks, image links, iframe/applet embedding, unregistered links, malformed resource records,
-   invalid timestamps, excessive search queries, and missing `site:geogebra.org` restrictions.
+1. the TASK-only digest gate and reconfirmation sequence for material policy changes;
+2. one full review and five isolated channels;
+3. no reviewer verification or finding-resolution gate after author revision;
+4. direct release after complete author responses, checklist, self-check and fresh PDF build;
+5. planner-written assignment contracts, including every authoring stage;
+6. six-stage course authoring and compact report authoring;
+7. exactly two or three course MCQs per content unit and report exemption;
+8. prompt/answer adjacency, core/support roles and option audits;
+9. unpinned arbitrary Marp CLI versions and PDF-only rendering through a controlled executable;
+10. rejection of persistent HTML, non-TASK digests, remote images and restricted reference paths;
+11. restricted original-file ingestion and worker-visible extracted-text indexing;
+12. verified GeoGebra material links and rejection of embedding or unverified materials;
+13. author/reviewer thread independence and durable handoff requirements;
+14. exact token accounting without estimates; and
+15. event-aware planner supervision after twenty minutes or a delivery event.
 
-All project TOML files parsed successfully. JSON files and JSON schemas parsed successfully. YAML
-policy and registry templates parsed successfully after substituting their documented placeholders;
-the raw deck-manifest template intentionally contains a multiline insertion placeholder and is
-validated through generated-task tests.
+`validate_project.py` additionally parses all project TOML files, JSON files and JSON schemas; fills documented placeholders and parses every YAML policy/registry template with duplicate-key detection; checks POSIX launcher syntax; and rejects `package-lock.json`.
 
 ## External environment observed
 
-Present:
+Present in the build environment:
 
 - Python 3.13.5;
 - Node.js 22.16.0;
@@ -65,24 +64,28 @@ Present:
 - Tesseract 5.5.0;
 - Git 2.47.3.
 
-Unavailable in this build environment:
+Unavailable:
 
 - Codex CLI;
 - locally installed `@marp-team/marp-cli`;
 - Ruff.
 
-The project pins `@marp-team/marp-cli` to version 4.5.0 in `package.json`. An npm registry probe was
-attempted, but DNS resolution for `registry.npmjs.org` failed with `EAI_AGAIN`. Consequently, this
-build does **not** claim a real Marp CLI → PDF smoke test. The controlled Marp test executable writes
-real, parseable PDF files and exercises source freezing, PDF-only output, report generation, PDF
-inspection, review handoff, and release logic. The target machine must still run:
+A real npm installation was attempted with:
+
+```bash
+npm install --no-audit --no-fund --no-package-lock
+```
+
+The registry request failed because DNS resolution for `registry.npmjs.org` returned `EAI_AGAIN`. Consequently this build does **not** claim a real Marp CLI → PDF smoke test or a real Codex multi-agent run. The regression suite uses a controlled Marp executable that accepts arbitrary version output and writes real, parseable PDFs, thereby testing command construction, frozen-source handling, PDF-only output, source lint, PDF inspection, review handoff, author revision and release state transitions.
+
+The target machine must still run:
 
 ```bash
 python scripts/bootstrap.py
 .venv/bin/mpres doctor --strict
 ```
 
-and complete the doctor's real one-page Marp PDF probe before production use.
+and pass the doctor's real one-page Marp PDF probe before production use.
 
 Ruff remains a development dependency and should be run after bootstrap:
 
@@ -92,7 +95,4 @@ Ruff remains a development dependency and should be run after bootstrap:
 
 ## Packaging policy
 
-The source archive excludes `.venv`, `node_modules`, npm caches, pytest caches, `__pycache__`, `.pyc`
-files, generated tasks, and build products. In accordance with the project rule, no package checksum
-or source manifest hash is generated; only a future task's top-level `TASK.md` may use a confirmation
-digest.
+The source archive excludes `.venv`, `node_modules`, npm caches, pytest caches, `__pycache__`, `.pyc`, generated tasks and build products. In accordance with the project policy, no archive checksum or source-manifest digest is generated; only a future task's top-level `TASK.md` may use a confirmation digest.

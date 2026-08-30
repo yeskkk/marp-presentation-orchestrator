@@ -1,0 +1,18 @@
+schema_version: 1
+precedence:
+  - confirmed_TASK.md
+  - repository_hard_rules
+  - REVIEW-PROFILE.yaml
+  - EXECUTION-POLICY.yaml
+  - role_assignment
+  - role_skill
+material_changes_require_task_reconfirmation:
+  - review_round_count
+  - review_channels
+  - author_revision_release_rule
+  - reference_pdf_access
+  - output_format
+  - screenshot_or_model_vision_policy
+  - assignment_ownership
+  - course_multiple_choice_quota
+sidecar_files_may_not_override_confirmed_TASK: true

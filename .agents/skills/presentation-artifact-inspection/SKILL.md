@@ -1,10 +1,10 @@
 ---
 name: presentation-artifact-inspection
-description: Run deterministic, screenshot-free checks on Marp Markdown, local assets, build logs, and PDF structure/text.
+description: Deterministically inspect Marp source and PDF without HTML, screenshots, page rasterization, or model vision.
 ---
 
 # Artifact inspection
 
-Use `mpres inspect`. Never create slide images and never ask a vision model to judge pages.
+Check frontmatter, slide boundaries, IDs, core/support roles, prompt/answer adjacency, TeX source, course MCQ quotas, MCQ option audits, local assets, GeoGebra hyperlink policy, PDF page count/geometry/text spans, internal production vocabulary, and text clipping.
 
-The report checks source frontmatter, slide separators, slide IDs, core/support classes, text density, tables, local asset paths, asset decisions, PDF page count, landscape geometry, text spans, small fonts, clipped text boxes, missing glyph indicators, and internal production vocabulary. Mechanical checks do not decide pedagogy or mathematical correctness.
+For course tasks, each content unit must contain 2 or 3 valid multiple-choice prompt slides. Reports have no quota. Mechanical checks do not judge whether an author's post-review revision satisfies a finding.

@@ -1,10 +1,10 @@
 ---
 name: presentation-review-coordination
-description: Coordinate five parallel specialist channels over three mandatory rounds and perform terminal closure without becoming a fourth reviewer.
+description: Coordinate five isolated specialist channels for one full-deck review and hand findings to the author without a second review or resolution gate.
 ---
 
 # Review coordination
 
-For each round, verify a frozen request exists, create channel assignments/context bundles, run five reviewers in parallel, supervise logs, validate outputs, and aggregate.
+There is one full-deck review round named `full`. Run five planner-assigned reviewers in parallel. Each receives the frozen request and its own channel guidance, but no other channel findings and no author response.
 
-Do not rewrite finding acceptance criteria. Merge duplicate background only. After final review, return findings for terminal author revision. Release closure checks only that final findings are resolved with evidence and the source is mechanically releasable. It cannot add a new substantive finding.
+Aggregate all channel submissions without weakening findings. Then hand the immutable finding registry to the author. The workflow does not ask reviewers to recheck modifications and does not require findings to become `resolved`. Release depends only on complete author responses, a completed modification checklist, and deterministic build checks.

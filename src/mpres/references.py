@@ -245,9 +245,9 @@ def ingest_reference(
     if ocr_mode not in {"auto", "always", "never"}:
         raise MPresError("OCR mode must be auto, always, or never.")
     task = task_path(root, slug)
-    originals = task / "downloads" / "originals"
+    originals = task / "downloads" / "restricted-originals"
     text_dir = task / "downloads" / "text"
-    metadata_dir = task / "downloads" / "metadata"
+    metadata_dir = task / "downloads" / "restricted-metadata"
     originals.mkdir(parents=True, exist_ok=True)
     text_dir.mkdir(parents=True, exist_ok=True)
     metadata_dir.mkdir(parents=True, exist_ok=True)
@@ -295,33 +295,39 @@ def ingest_reference(
             f"Unsupported reference type {destination.suffix or content_type!r}. Convert it to PDF, HTML, or text first."
         )
 
+    original_size_bytes = destination.stat().st_size
     metadata = {
         "ingested_utc": utc_now(),
         "task_slug": slug,
         "source_input": source_value,
         "resolved_url": resolved_url,
         "content_type": content_type,
-        "original_path": relative_display(destination, root),
-        "original_size_bytes": destination.stat().st_size,
+        "restricted_original_path": relative_display(destination, root),
+        "original_size_bytes": original_size_bytes,
         "text_path": relative_display(text_path, root),
         "text_size_bytes": text_path.stat().st_size,
         "extraction": extraction,
-        "warning": (
-            "OCR/extraction text is a search aid. Check formulas, diagrams, and quotations against the original."
+        "worker_access_policy": (
+            "Workers may use only text_path. The original and this metadata record are "
+            "system-ingestion-only and must not be exposed to worker assignments or contexts."
         ),
     }
     metadata_path = _unique_path(metadata_dir, destination.stem + ".json")
     write_json_atomic(metadata_path, metadata)
+    for restricted in (destination, metadata_path):
+        try:
+            restricted.chmod(0)
+        except OSError as exc:
+            raise MPresError(f"Could not lock system-only reference file: {restricted}: {exc}") from exc
 
     index = task / "downloads" / "INDEX.md"
     with index.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
             f"\n## {destination.name}\n\n"
             f"- Ingested UTC: {metadata['ingested_utc']}\n"
-            f"- Original: `{metadata['original_path']}`\n"
             f"- Extracted text: `{metadata['text_path']}`\n"
             f"- Method: `{extraction.get('selected_method', extraction.get('type'))}`\n"
-            f"- Original size: `{metadata['original_size_bytes']}` bytes\n"
+            "- Worker access: extracted text only; original file access is forbidden.\n"
         )
     append_log(
         root,
@@ -330,9 +336,9 @@ def ingest_reference(
         kind="progress",
         message=f"Ingested shared reference {destination.name}.",
         data={
-            "original": metadata["original_path"],
             "text": metadata["text_path"],
             "method": extraction.get("selected_method", extraction.get("type")),
+            "worker_access": "extracted_text_only",
         },
     )
     return metadata

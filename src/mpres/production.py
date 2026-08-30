@@ -5,9 +5,12 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from mpres.assignments import assignment_contract_status, scaffold_assignment_contract
 from mpres.geogebra import aggregate_unit_geogebra_records, validate_unit_geogebra_registry
+from mpres.interactions import aggregate_unit_interactions, validate_unit_interactions
 from mpres.logs import append_log
-from mpres.state import REVIEW_CHANNELS, get_presentation, save_state
+from mpres.stages import all_stages_accepted, initialize_unit_stages, stage_state_path
+from mpres.state import REVIEW_CHANNELS, get_presentation, save_state, stage_ids_for_kind
 from mpres.tasks import require_gate
 from mpres.util import (
     MPresError,
@@ -98,22 +101,25 @@ def _role_override(role: str) -> str:
             "Work only on the assigned content unit and hand off section.md plus structured evidence."
         ),
         "review-coordinator": (
-            "Supervise five specialist channels over three rounds; do not edit author source."
+            "Supervise five specialist channels for one full review round; do not edit author source."
         ),
         "specialist-reviewer": (
-            "Review exactly one channel and round against a frozen request; do not edit source."
+            "Review exactly one channel of the sole full-deck round against a frozen request; do not edit source."
         ),
         "release-coordinator": (
-            "Perform terminal closure and mechanical PDF release only; do not create new findings."
+            "Perform post-revision mechanical release and PDF packaging only; do not re-review content or create findings."
         ),
     }
     return (
         f"# {role} directory override\n\n"
         f"- {descriptions[role]}\n"
-        "- Read the exact assignment supplied by the parent and the matching local skill.\n"
+        "- Read the exact assignment written by the main planner and the matching local skill.\n"
+        "- If its planner-only brief is incomplete, stop; no coordinator or worker may fill it.\n"
         "- Screenshots, PDF raster images, contact sheets, and model vision are forbidden.\n"
         "- No HTML artifact is generated or reviewed.\n"
         "- Log concise UTC progress and write durable checkpoints.\n"
+        "- Read THREAD-LIFECYCLE.md; finish with a durable handoff and stop executing.\n"
+        "- Coordinators reuse compatible idle handles and use real capacity-releasing close operations when available; a retaining interrupt is not closure.\n"
         "- Do not alter TASK.md or another role's files.\n"
     )
 
@@ -136,6 +142,8 @@ def _write_structured_templates(
     presentation_id: str,
     title: str,
     units: list[tuple[str, str]],
+    *,
+    task_kind: str,
 ) -> None:
     structured = {
         "DECK-MANIFEST.yaml": "DECK-MANIFEST.template.yaml",
@@ -145,6 +153,8 @@ def _write_structured_templates(
         "SEMANTIC-OBJECTS.yaml": "SEMANTIC-OBJECTS.template.yaml",
         "ASSET-DECISIONS.yaml": "ASSET-DECISIONS.template.yaml",
         "GEOGEBRA-RESOURCES.yaml": "GEOGEBRA-RESOURCES.template.yaml",
+        "AUTHOR-MODIFICATION-CHECKLIST.yaml": "AUTHOR-MODIFICATION-CHECKLIST.template.yaml",
+        "AUTHOR-REVISION.md": "AUTHOR-REVISION.template.md",
         "SELF-CHECK.md": "SELF-CHECK.template.md",
         "RELEASE-RETROSPECTIVE.md": "RELEASE-RETROSPECTIVE.template.md",
     }
@@ -164,6 +174,29 @@ def _write_structured_templates(
             },
         )
         (source / destination).write_text(text, encoding="utf-8", newline="\n")
+    write_yaml_atomic(
+        source / "INTERACTION-MANIFEST.yaml",
+        {
+            "schema_version": 1,
+            "presentation_id": presentation_id,
+            "task_kind": task_kind,
+            "units": [],
+        },
+    )
+    write_yaml_atomic(
+        source / "MCQ-AUDIT.yaml",
+        {
+            "schema_version": 1,
+            "presentation_id": presentation_id,
+            "task_kind": task_kind,
+            "quota": {
+                "course_minimum": 2,
+                "course_maximum": 3,
+                "academic_report_exempt": True,
+            },
+            "units": [],
+        },
+    )
 
 
 def initialize_production(
@@ -173,6 +206,14 @@ def initialize_production(
     unit_specs: list[str],
 ) -> dict[str, Any]:
     state = require_gate(root, slug)
+    from mpres.policy import policy_audit
+
+    policy_report = policy_audit(root, slug)
+    if not policy_report.get("ok"):
+        raise MPresError(
+            "Task policy is inconsistent and production cannot start: "
+            + "; ".join(policy_report.get("errors", [])[:8])
+        )
     if state.get("presentations"):
         raise MPresError("Production units have already been initialized for this task.")
     if state.get("phase") != "confirmed":
@@ -231,7 +272,7 @@ def initialize_production(
             review_root,
             review_assignment.parent,
             release_assignment.parent,
-            task / "workers" / "release-coordinator" / "approved" / presentation_id,
+            task / "workers" / "release-coordinator" / "release-ready" / presentation_id,
             task / "deliverables" / presentation_id,
         ]:
             directory.mkdir(parents=True, exist_ok=True)
@@ -254,6 +295,15 @@ def initialize_production(
             encoding="utf-8",
             newline="\n",
         )
+        scaffold_assignment_contract(
+            root,
+            author_assignment,
+            assignment_id=f"{presentation_id}:author-coordinator",
+            role="author-coordinator",
+            presentation_id=presentation_id,
+            requested_by="planner",
+            need="Coordinate structured design, staged lesson authors, integration, build, and author revision.",
+        )
         review_assignment.write_text(
             _replace(
                 templates["review"],
@@ -268,21 +318,32 @@ def initialize_production(
             encoding="utf-8",
             newline="\n",
         )
+        scaffold_assignment_contract(
+            root,
+            review_assignment,
+            assignment_id=f"{presentation_id}:review-coordinator",
+            role="review-coordinator",
+            presentation_id=presentation_id,
+            requested_by="planner",
+            need="Coordinate the one full-deck five-channel review without editing author source.",
+        )
         release_assignment.write_text(
             _replace(
                 templates["release"],
                 {
                     "[[PRESENTATION_ID]]": presentation_id,
                     "[[PRESENTATION_TITLE]]": title,
-                    "[[CLOSURE_REQUEST_PATH]]": relative_display(
-                        review_root / "terminal" / "request" / "request.json", root
+                    "[[AUTHOR_RESPONSES_PATH]]": relative_display(
+                        task / "workers" / "release-coordinator" / "release-ready" / presentation_id / "AUTHOR-RESPONSES.yaml", root
                     ),
-                    "[[FINDINGS_REGISTRY_PATH]]": relative_display(review_root / "findings.yaml", root),
+                    "[[MODIFICATION_CHECKLIST_PATH]]": relative_display(
+                        task / "workers" / "release-coordinator" / "release-ready" / presentation_id / "AUTHOR-MODIFICATION-CHECKLIST.yaml", root
+                    ),
                     "[[APPROVED_SOURCE_PATH]]": relative_display(
                         task
                         / "workers"
                         / "release-coordinator"
-                        / "approved"
+                        / "release-ready"
                         / presentation_id
                         / "source",
                         root,
@@ -291,7 +352,7 @@ def initialize_production(
                         task
                         / "workers"
                         / "release-coordinator"
-                        / "approved"
+                        / "release-ready"
                         / presentation_id
                         / "build",
                         root,
@@ -303,6 +364,15 @@ def initialize_production(
             ),
             encoding="utf-8",
             newline="\n",
+        )
+        scaffold_assignment_contract(
+            root,
+            release_assignment,
+            assignment_id=f"{presentation_id}:release-coordinator",
+            role="release-coordinator",
+            presentation_id=presentation_id,
+            requested_by="planner",
+            need="Perform deterministic post-author-revision approval, Marp PDF build, inspection, and delivery.",
         )
 
         header = _replace(
@@ -320,7 +390,9 @@ def initialize_production(
             encoding="utf-8",
             newline="\n",
         )
-        _write_structured_templates(root, author_source, presentation_id, title, units)
+        _write_structured_templates(
+            root, author_source, presentation_id, title, units, task_kind=str(state.get("kind"))
+        )
 
         unit_state: list[dict[str, Any]] = []
         for unit_id, unit_title in units:
@@ -345,6 +417,15 @@ def initialize_production(
                     "[[ASSET_DECISIONS_PATH]]": relative_display(
                         author_source / "ASSET-DECISIONS.yaml", root
                     ),
+                    "[[INTERACTION_MANIFEST_PATH]]": relative_display(
+                        unit_source / "INTERACTION-MANIFEST.yaml", root
+                    ),
+                    "[[MCQ_AUDIT_PATH]]": relative_display(
+                        unit_source / "MCQ-AUDIT.yaml", root
+                    ),
+                    "[[STAGE_STATE_PATH]]": relative_display(
+                        stage_state_path(root, slug, presentation_id, unit_id), root
+                    ),
                     "[[GEOGEBRA_UNIT_RESOURCES_PATH]]": relative_display(
                         unit_source / "GEOGEBRA-RESOURCES.yaml", root
                     ),
@@ -352,8 +433,25 @@ def initialize_production(
                     "[[UNIT_CHECKPOINT_PATH]]": relative_display(unit_dir / "checkpoints", root),
                 },
             )
-            (unit_dir / "TASK-LESSON-AUTHOR.md").write_text(
-                assignment, encoding="utf-8", newline="\n"
+            lesson_assignment = unit_dir / "TASK-LESSON-AUTHOR.md"
+            lesson_assignment.write_text(assignment, encoding="utf-8", newline="\n")
+            scaffold_assignment_contract(
+                root,
+                lesson_assignment,
+                assignment_id=f"{presentation_id}:{unit_id}:lesson-author",
+                role="lesson-author",
+                presentation_id=presentation_id,
+                unit_id=unit_id,
+                requested_by="author-coordinator",
+                need="Author one content unit through the task-configured stage sequence and hand off a valid Marp fragment.",
+            )
+            initialize_unit_stages(
+                root,
+                slug,
+                presentation_id,
+                unit_id,
+                unit_title=unit_title,
+                task_kind=str(state.get("kind")),
             )
             first_slide_id = f"{presentation_id}-{unit_id}-s01"
             section = _replace(
@@ -378,6 +476,28 @@ def initialize_production(
             )
             (unit_source / "UNIT-MANIFEST.yaml").write_text(
                 unit_manifest, encoding="utf-8", newline="\n"
+            )
+            interaction_text = (
+                root
+                / "templates"
+                / "structured"
+                / "UNIT-INTERACTION-MANIFEST.template.yaml"
+            ).read_text(encoding="utf-8")
+            mcq_text = (
+                root / "templates" / "structured" / "UNIT-MCQ-AUDIT.template.yaml"
+            ).read_text(encoding="utf-8")
+            for old, new in {
+                "[[PRESENTATION_ID]]": presentation_id,
+                "[[UNIT_ID]]": unit_id,
+                "[[TASK_KIND]]": str(state.get("kind")),
+            }.items():
+                interaction_text = interaction_text.replace(old, new)
+                mcq_text = mcq_text.replace(old, new)
+            (unit_source / "INTERACTION-MANIFEST.yaml").write_text(
+                interaction_text, encoding="utf-8", newline="\n"
+            )
+            (unit_source / "MCQ-AUDIT.yaml").write_text(
+                mcq_text, encoding="utf-8", newline="\n"
             )
             geogebra_unit = (
                 root / "templates" / "structured" / "GEOGEBRA-UNIT-RESOURCES.template.yaml"
@@ -414,8 +534,16 @@ def initialize_production(
             (unit_dir / "checkpoints" / "latest.json").write_text(
                 checkpoint, encoding="utf-8", newline="\n"
             )
+            first_stage = stage_ids_for_kind(str(state.get("kind")))[0]
             unit_state.append(
-                {"id": unit_id, "title": unit_title, "status": "assigned", "integrated_utc": None}
+                {
+                    "id": unit_id,
+                    "title": unit_title,
+                    "status": "awaiting_stage_assignment",
+                    "stage": first_stage,
+                    "stage_status": "awaiting_assignment",
+                    "integrated_utc": None,
+                }
             )
 
         write_json_atomic(
@@ -531,11 +659,17 @@ def check_assignment(
     placeholders = text_placeholders(path)
     text = path.read_text(encoding="utf-8")
     minimum = 600 if role == "lesson-author" else 800
+    contract = assignment_contract_status(path)
     return {
-        "ready": not placeholders and len(text.strip()) >= minimum,
+        "ready": (
+            not placeholders
+            and len(text.strip()) >= minimum
+            and contract.get("approved") is True
+        ),
         "path": relative_display(path, root),
         "placeholders": placeholders,
         "characters": len(text),
+        "contract": contract,
     }
 
 
@@ -572,12 +706,7 @@ def _clean_fragment(text: str, path: Path) -> str:
 def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any]:
     state = require_gate(root, slug)
     presentation = get_presentation(state, presentation_id)
-    if presentation.get("status") not in {
-        "authoring",
-        "initial_changes",
-        "incremental_changes",
-        "terminal_revision",
-    }:
+    if presentation.get("status") not in {"authoring", "author_revision"}:
         raise MPresError(f"Cannot assemble units in status {presentation.get('status')!r}.")
     author_check = check_assignment(root, slug, "author-coordinator", presentation_id)
     if not author_check["ready"]:
@@ -594,6 +723,8 @@ def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any
     fragments.append(header.read_text(encoding="utf-8").strip())
     results: list[dict[str, Any]] = []
     geogebra_unit_records: list[dict[str, Any]] = []
+    interaction_unit_records: list[dict[str, Any]] = []
+    mcq_unit_records: list[dict[str, Any]] = []
     policy = read_yaml(task / "EXECUTION-POLICY.yaml") or {}
     geogebra_policy = (
         ((policy.get("online_resources") or {}).get("geogebra") or {})
@@ -610,14 +741,38 @@ def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any
                 f"Lesson-author assignment for {presentation_id}/{unit_id} is incomplete: "
                 f"{assignment['placeholders'][:8]}"
             )
+        if not all_stages_accepted(root, slug, presentation_id, unit_id):
+            raise MPresError(
+                f"Lesson/content unit {presentation_id}/{unit_id} has unaccepted authoring stages."
+            )
         source = task / "workers" / "lesson-authors" / presentation_id / unit_id / "source"
-        for required in ("section.md", "UNIT-MANIFEST.yaml", "GEOGEBRA-RESOURCES.yaml", "SELF-CHECK.md"):
+        for required in (
+            "section.md",
+            "UNIT-MANIFEST.yaml",
+            "INTERACTION-MANIFEST.yaml",
+            "MCQ-AUDIT.yaml",
+            "GEOGEBRA-RESOURCES.yaml",
+            "SELF-CHECK.md",
+        ):
             path = source / required
             if not path.is_file():
                 raise MPresError(f"Missing lesson-author handoff file: {path}")
             placeholders = text_placeholders(path)
             if placeholders:
                 raise MPresError(f"{path} still contains placeholders: {placeholders[:8]}")
+        unit_manifest_value = read_yaml(source / "UNIT-MANIFEST.yaml")
+        if not isinstance(unit_manifest_value, dict):
+            raise MPresError(f"UNIT-MANIFEST.yaml must be a mapping: {source}")
+        interaction_report = validate_unit_interactions(
+            source / "INTERACTION-MANIFEST.yaml",
+            source / "MCQ-AUDIT.yaml",
+            task_kind=str(state.get("kind")),
+        )
+        if not interaction_report.get("success"):
+            raise MPresError(
+                f"Interaction/MCQ contract for {presentation_id}/{unit_id} is invalid: "
+                + "; ".join(interaction_report.get("errors", [])[:8])
+            )
         geogebra_report = validate_unit_geogebra_registry(
             source / "GEOGEBRA-RESOURCES.yaml",
             source / "section.md",
@@ -633,6 +788,12 @@ def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any
         if not isinstance(unit_record, dict):
             raise MPresError(f"GeoGebra unit record must be a mapping: {source}")
         geogebra_unit_records.append(unit_record)
+        interaction_value = read_yaml(source / "INTERACTION-MANIFEST.yaml")
+        mcq_value = read_yaml(source / "MCQ-AUDIT.yaml")
+        if not isinstance(interaction_value, dict) or not isinstance(mcq_value, dict):
+            raise MPresError(f"Interaction and MCQ records must be mappings: {source}")
+        interaction_unit_records.append(interaction_value)
+        mcq_unit_records.append(mcq_value)
         destination = integrated / unit_id
         copy_source_tree(source, destination)
         fragments.append(_clean_fragment((destination / "section.md").read_text(encoding="utf-8"), destination / "section.md"))
@@ -652,6 +813,14 @@ def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any
             presentation_id=presentation_id,
         ),
     )
+    aggregate_interactions, aggregate_mcq = aggregate_unit_interactions(
+        interaction_unit_records,
+        mcq_unit_records,
+        presentation_id=presentation_id,
+        task_kind=str(state.get("kind")),
+    )
+    write_yaml_atomic(author_source / "INTERACTION-MANIFEST.yaml", aggregate_interactions)
+    write_yaml_atomic(author_source / "MCQ-AUDIT.yaml", aggregate_mcq)
     canonical = "\n\n---\n\n".join(fragment for fragment in fragments if fragment.strip()) + "\n"
     (author_source / "presentation.md").write_text(canonical, encoding="utf-8", newline="\n")
     save_state(root, slug, state)

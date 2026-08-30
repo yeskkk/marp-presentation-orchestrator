@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib.metadata
-import json
 import re
 import os
 import platform
@@ -124,15 +123,12 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
     node_version_text = str(binaries["node"].get("version") or "")
     node_match = re.search(r"(?:^|v)(\d+)", node_version_text)
     node_ok = bool(node_match and int(node_match.group(1)) >= 18)
-    expected_marp = json.loads((root / "package.json").read_text(encoding="utf-8"))["devDependencies"]["@marp-team/marp-cli"]
-    marp_version_text = str(marp.get("version") or "").strip().lstrip("v")
-    marp_version_ok = marp_version_text.startswith(str(expected_marp))
     required = {
         "python>=3.11": sys.version_info >= (3, 11),
         "codex": binaries["codex"]["found"],
         "node>=18": node_ok,
         "npm": binaries["npm"]["found"],
-        "marp": marp.get("found") and marp.get("returncode") == 0 and marp_version_ok,
+        "marp": marp.get("found") and marp.get("returncode") == 0,
         "marp_pdf": probe.get("ok") is True if run_pdf_probe else True,
         "pdftotext": binaries["pdftotext"]["found"],
         "tesseract_optional": binaries["tesseract"]["found"],
@@ -164,6 +160,6 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         },
         "packages": packages,
         "binaries": binaries,
-        "marp": {**marp, "expected_version": expected_marp, "version_ok": marp_version_ok},
+        "marp": {**marp, "version_policy": "unpinned-latest-at-install-time"},
         "pdf_probe": probe,
     }

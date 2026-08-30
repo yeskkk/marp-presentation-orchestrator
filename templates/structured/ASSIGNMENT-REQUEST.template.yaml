@@ -1,0 +1,15 @@
+schema_version: 1
+requested_utc: "[[UTC]]"
+requested_by: "[[COORDINATOR_ROLE]]"
+role_needed: "[[ROLE]]"
+presentation_id: "[[PRESENTATION_ID]]"
+unit_id: "[[UNIT_ID_OR_NULL]]"
+stage_or_channel: "[[STAGE_OR_CHANNEL]]"
+objective: "[[OBJECTIVE]]"
+evidence_ready:
+  - "[[EVIDENCE_PATH]]"
+dependencies:
+  - "[[DEPENDENCY]]"
+proposed_acceptance_signals:
+  - "[[SIGNAL]]"
+notes_for_planner: "[[NOTES]]"

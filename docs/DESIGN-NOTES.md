@@ -1,30 +1,34 @@
-# Design decisions
+# Design notes
 
-## Why Marp
+## Deliberate choices
 
-This branch treats slide content as the scarce resource. It removes Quarto/Jupyter/Reveal processing and the associated HTML inspection loop. The source is ordinary Marp Markdown with one academic CSS theme; the sole rendered artifact is PDF.
+- Marp PDF-only instead of Quarto/Reveal HTML inspection.
+- Unpinned Marp CLI; capability is established by a real probe.
+- One complete five-channel review, followed by author-owned revision with no independent recheck.
+- Findings remain historical statements rather than lifecycle objects with resolved states.
+- Planner authors every exact assignment; coordinators only request roles and supervise execution.
+- Course units require 2–3 diagnostic MCQs; reports are exempt.
+- Original PDFs are inaccessible to workers after system extraction.
+- No screenshot/model-vision review.
+- Python figures are exception-only; native text, formula, table and CSS are preferred.
+- GeoGebra is optional hyperlink enrichment restricted to verified `geogebra.org/m/...` materials.
 
-## Preserved lessons
+## Why staged authoring exists
 
-- structured pedagogy, example, terminology, semantic-object, asset, and manifest records;
-- one author per lesson/content unit and bounded parallelism;
-- three mandatory rounds and five independent channels;
-- stable findings and terminal closure rather than an informal fourth review;
-- random-entry classroom self-containment;
-- exact audience profile and expected gains;
-- planner supervision every twenty minutes or delivery event;
-- pilot first-deck feedback option;
-- only top-level TASK.md uses a confirmation digest;
-- optional, bounded GeoGebra enrichment uses registered `geogebra.org` Markdown links only and never reintroduces remote embeds or image-production work.
+The six-stage course profile prevents one worker from simultaneously optimizing scope, domain correctness, learner needs, diagnostic activity, student language and Marp layout. Each accepted artifact becomes the durable input to the next stage. Reports use a compact profile because a short academic narrative does not always justify six separate gates.
 
-## Restrained visual policy
+## Assignment ownership
 
-The system does not assume more pictures are better. Tables remain tables; equations remain native math; simple contrasts use CSS columns or callouts. Python diagrams are disabled by default because text size, arrow placement, semantic drift, and unnecessary conversion of tabular information have repeatedly produced waste. The optional figure helper measures Matplotlib text and arrow/text bounds but cannot prove a diagram is pedagogically worthwhile.
+A coordinator knows when work is needed but the planner owns task meaning. The request/brief/decision contract preserves that distinction while avoiding accidental coordinator-authored assignments. Fixed boilerplate lives in skills and templates; the planner writes the exact scope, constraints and acceptance criteria.
+
+## Quality/cost trade-off
+
+The user selected no reviewer verification after author revision. This reduces repeated review cost but means the sole frozen-deck review is the only independent content check. The release record explicitly states that findings were answered but not independently resolved. Mechanical release cannot compensate for a weak author revision.
 
 ## Future improvements
 
-- richer PDF line/shape collision analysis without rasterization;
-- formal schema validation for every YAML record;
-- domain-specific terminology linters;
-- deterministic CSS regression checks based on Marp/PDF object geometry;
-- Codex App Server orchestration with persistent thread IDs.
+- Deterministic cross-check of stage artifacts against final deck claims.
+- Better PDF text-box overlap diagnostics without rasterization.
+- More robust import adapters for Codex token exports.
+- An App Server scheduler that persists actual thread IDs and close outcomes.
+- Optional task profiles for non-mathematical courses while preserving the same assignment/review boundaries.

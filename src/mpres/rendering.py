@@ -39,7 +39,7 @@ def source_and_build_paths(
     if stage == "author":
         base = task / "workers" / "author-coordinator" / "drafts" / presentation_id
     elif stage == "release":
-        base = task / "workers" / "release-coordinator" / "approved" / presentation_id
+        base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
     else:
         raise MPresError("Render stage must be author or release.")
     return base / "source", base / "build"
@@ -76,8 +76,8 @@ def _marp_command(root: Path, source: Path, output: Path, policy: dict[str, Any]
     return command
 
 
-def _required_source_files(source: Path) -> list[Path]:
-    return [
+def _required_source_files(source: Path, *, presentation_status: str) -> list[Path]:
+    required = [
         source / "presentation.md",
         source / "theme.css",
         source / "DECK-MANIFEST.yaml",
@@ -87,17 +87,38 @@ def _required_source_files(source: Path) -> list[Path]:
         source / "SEMANTIC-OBJECTS.yaml",
         source / "ASSET-DECISIONS.yaml",
         source / "GEOGEBRA-RESOURCES.yaml",
+        source / "INTERACTION-MANIFEST.yaml",
+        source / "MCQ-AUDIT.yaml",
         source / "SELF-CHECK.md",
     ]
+    if presentation_status in {"author_revision", "release_ready"}:
+        required.extend(
+            [
+                source / "AUTHOR-MODIFICATION-CHECKLIST.yaml",
+                source / "AUTHOR-RESPONSES.yaml",
+                source / "AUTHOR-REVISION.md",
+            ]
+        )
+    return required
 
 
-def _validate_source_files(source: Path) -> None:
-    missing = [path for path in _required_source_files(source) if not path.is_file()]
+def _validate_source_files(source: Path, *, presentation_status: str) -> None:
+    missing = [
+        path for path in _required_source_files(source, presentation_status=presentation_status)
+        if not path.is_file()
+    ]
     if missing:
         raise MPresError("Presentation source is missing: " + ", ".join(str(path) for path in missing))
+    deferred_post_review = {
+        "AUTHOR-MODIFICATION-CHECKLIST.yaml",
+        "AUTHOR-RESPONSES.yaml",
+        "AUTHOR-REVISION.md",
+    }
     unfinished: list[str] = []
     for path in source.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in {".md", ".yaml", ".yml", ".json", ".css"}:
+            continue
+        if presentation_status == "authoring" and path.name in deferred_post_review:
             continue
         placeholders = text_placeholders(path)
         if placeholders:
@@ -119,13 +140,13 @@ def render_presentation(
     state = load_state(root, slug)
     presentation = get_presentation(state, presentation_id)
     if stage == "author":
-        allowed = {"authoring", "initial_changes", "incremental_changes", "terminal_revision"}
+        allowed = {"authoring", "author_revision"}
         if presentation.get("status") not in allowed:
             raise MPresError(f"Author rendering is not allowed in status {presentation.get('status')!r}.")
         role = "author-coordinator"
     elif stage == "release":
-        if presentation.get("status") != "release_approved":
-            raise MPresError("Release rendering requires release_approved status.")
+        if presentation.get("status") != "release_ready":
+            raise MPresError("Release rendering requires release_ready status.")
         role = "release-coordinator"
     else:
         raise MPresError("Render stage must be author or release.")
@@ -138,7 +159,7 @@ def render_presentation(
     ensure_within(source, expected_source, label="render source")
     if source != expected_source.resolve():
         raise MPresError(f"Render source must be the stage source root: {expected_source}")
-    _validate_source_files(source)
+    _validate_source_files(source, presentation_status=str(presentation.get("status")))
     task = task_path(root, slug)
     policy = read_yaml(task / "EXECUTION-POLICY.yaml") or {}
     if not isinstance(policy, dict):

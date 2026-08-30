@@ -1,0 +1,8 @@
+schema_version: 1
+enabled: true
+sample_interval_seconds: 300
+counter_source: codex_event_msg_token_count
+extract_message_content: false
+exact_counters_only: true
+freshness_warning_seconds: 900
+required_before_first_coordinator: true

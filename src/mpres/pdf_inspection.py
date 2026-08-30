@@ -180,7 +180,7 @@ def inspect_task_pdf(
     if stage == "author":
         base = task / "workers" / "author-coordinator" / "drafts" / presentation_id
     elif stage == "release":
-        base = task / "workers" / "release-coordinator" / "approved" / presentation_id
+        base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
     else:
         raise MPresError("PDF inspection stage must be author or release.")
     source = base / "source"

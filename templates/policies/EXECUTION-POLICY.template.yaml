@@ -1,17 +1,13 @@
-schema_version: 1
+schema_version: 2
+task_kind: "[[TASK_KIND_CODE]]"
 model: gpt-5.6-sol
-reasoning_effort_default: medium
+reasoning_effort_default: high
 reasoning_effort_note: >-
-  medium is the default. Raise authoring and domain-accuracy review to high or max for
-  research-level, unfamiliar, or high-stakes presentations.
+  All worker roles default to high. Raise selected roles to max only when the confirmed task
+  explicitly requires research-level or unusually difficult reasoning.
 planner_supervision:
   interval_seconds: 1200
   wake_on_delivery: true
-  intervene_only_for:
-    - confirmed-plan conflict
-    - coordinator escalation
-    - prolonged coordinator silence without durable progress
-    - environment unable to produce the agreed PDF
 coordinator_supervision:
   author_interval_seconds: 300
   review_interval_seconds: 300
@@ -19,43 +15,59 @@ authoring:
   one_worker_per_content_unit: true
   max_parallel_lesson_authors: 6
   max_parallel_presentations: 2
-  modular_source: true
-marp:
-  pdf_only: true
-  cli_version: 4.5.0
-  allow_local_files: true
-  allow_html_in_markdown: true
-  theme_file: theme.css
-  browser: auto
-  size: '16:9'
-  math: mathjax
+  stage_profile: "[[AUTHORING_STAGE_PROFILE]]"
+  planner_writes_every_assignment: true
+review:
+  mandatory_full_deck_rounds: 1
+  channels: [language, domain_accuracy, layout, pedagogy, audience]
+  post_review_verification: none
+  author_completed_revision_is_sufficient_for_release: true
+interaction:
+  course_multiple_choice_per_unit:
+    minimum: 2
+    maximum: 3
+  academic_report_multiple_choice_per_unit:
+    minimum: 0
+    maximum: null
+assets:
+  python_generated: disabled
+  generated_svg_min_font_pt: 18
+  decision_order:
+    - native_text_or_formula
+    - markdown_table
+    - theme_css_layout
+    - simple_manual_svg
+    - approved_existing_resource
+    - python_generated_figure
 online_resources:
   geogebra:
     enabled: true
-    discovery: consider_when_mathematically_relevant
     site_scope: geogebra.org
-    public_material_url: 'https://www.geogebra.org/m/<resource-id>'
-    search_mode: bounded_when_relevant
     max_search_queries_per_unit: 3
     max_selected_links_per_unit: 3
-    usage: markdown_hyperlinks_only
-    embedding: forbidden
-review:
-  max_parallel_specialist_reviewers: 5
-  three_rounds_required: true
-  terminal_closure_is_not_a_fourth_review: true
-artifact_inspection:
-  screenshots: forbidden
-  model_vision: forbidden
-  source_and_pdf_only: true
-source_limits:
-  warning_visible_characters_per_slide: 650
-  error_visible_characters_per_slide: 1000
-  warning_bullets_per_slide: 7
-  warning_table_rows_per_slide: 9
+    selected_resource_requires_verified_status: true
+reference_access:
+  workers: extracted_text_only
+  original_pdf_access: system_ingestion_only
+  worker_pdf_open: forbidden
+  worker_pdf_conversion: forbidden
+  worker_ocr: forbidden
+thread_lifecycle:
+  mode: close_or_reuse
+  reuse_idle_when_release_is_unavailable: true
+  interrupt_that_retains_a_handle_counts_as_release: false
+  reserve_unallocated_capacity: 2
+token_accounting:
+  enabled: true
+  sample_interval_seconds: 300
+  exact_counters_only: true
+marp:
+  version_policy: unpinned_latest_at_install_time
+  browser: auto
 pdf_limits:
   warning_min_text_pt: 12
   error_min_text_pt: 8
-context:
-  auto_compact_token_limit: 120000
-  recommended_context_ceiling: 250000
+inspection:
+  screenshots: forbidden
+  model_vision: forbidden
+  persistent_html: forbidden

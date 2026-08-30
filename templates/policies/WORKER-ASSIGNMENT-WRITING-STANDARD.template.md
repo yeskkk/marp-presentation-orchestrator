@@ -1,5 +1,15 @@
-# Role assignment writing standard
+# Planner-owned assignment standard
 
-Every assignment states the exact role, presentation, content unit/channel/round, audience context, prior knowledge to reactivate, scope, references, paths, outputs, acceptance tests, workflow and prohibited actions. Stable repository rules are referenced through skills and task-level policy files instead of being copied repeatedly.
+The main planner personally writes every exact assignment. Coordinators may create an assignment request that explains the need and supplies structured evidence; they may not complete, rewrite, infer, or weaken the assignment itself.
 
-Author assignments distinguish: instructional objective, concept chains, semantic objects, example roles, assets, source files and handoff evidence. Reviewer assignments distinguish: channel, round scope, permitted finding behavior, evidence, reporting path and stopping condition.
+Each assignment contains:
+
+- role, presentation and unit/channel coordinates;
+- exact instructional or review objective;
+- audience state and prerequisites to reactivate;
+- hard constraints;
+- replaceable hypotheses and local decision rights;
+- references restricted to approved extracted text and permitted web text;
+- paths, outputs, acceptance tests, workflow, stop condition, and prohibited actions.
+
+Every scaffold remains invalid until the planner removes all placeholders and runs `mpres assignment approve`. Approval is a record of planner authorship, not a substantive review of future output.

@@ -8,7 +8,8 @@ from typing import Any
 from mpres.logs import append_log, log_file, read_log_tail
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state
 from mpres.tasks import require_gate
-from mpres.util import latest_mtime, parse_utc, read_json, read_yaml, relative_display, task_path, utc_now, write_json_atomic
+from mpres.tokens import collector_status
+from mpres.util import MPresError, latest_mtime, parse_utc, read_json, read_yaml, relative_display, task_path, utc_now, write_json_atomic
 
 
 def _seconds_since(value: str | None) -> int | None:
@@ -37,11 +38,11 @@ def _signal(log: dict[str, Any] | None, watched: Path) -> tuple[int | None, bool
 
 
 def _coordinator(status: str) -> str:
-    if status in {"authoring", "initial_changes", "incremental_changes", "terminal_revision"}:
+    if status in {"authoring", "author_revision"}:
         return "author-coordinator"
-    if status.endswith("review_requested") or status.endswith("reviewing"):
+    if status in {"review_requested", "reviewing"}:
         return "review-coordinator"
-    if status in {"release_closure_requested", "release_approved"}:
+    if status == "release_ready":
         return "release-coordinator"
     return "planner"
 
@@ -77,7 +78,7 @@ def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> d
             elif actor == "review-coordinator":
                 watched = task / "reviews" / pid
             else:
-                watched = watched / "approved" / pid
+                watched = watched / "release-ready" / pid
             age, newer = _signal(log, watched)
             if log is None:
                 recommendation = "inspect_or_spawn_coordinator"
@@ -103,6 +104,38 @@ def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> d
                 "recommendation": recommendation,
                 "reason": reason,
             })
+    token_collector: dict[str, Any] | None = None
+    if due:
+        try:
+            token_collector = collector_status(root, slug)
+        except MPresError as exc:
+            token_collector = {"initialized": False, "fresh": False, "error": str(exc)}
+        token_policy = read_yaml(task / "TOKEN-COLLECTOR-POLICY.yaml") or {}
+        if isinstance(token_policy, dict) and token_policy.get("required_before_first_coordinator") is True:
+            if not token_collector.get("initialized"):
+                checks.append(
+                    {
+                        "presentation_id": "task",
+                        "status": state.get("phase"),
+                        "coordinator": "token-collector",
+                        "last_log": None,
+                        "log_age_seconds": None,
+                        "recommendation": "initialize_token_collector",
+                        "reason": "Token collector is required before coordinator work but is not initialized.",
+                    }
+                )
+            elif not token_collector.get("fresh"):
+                checks.append(
+                    {
+                        "presentation_id": "task",
+                        "status": state.get("phase"),
+                        "coordinator": "token-collector",
+                        "last_log": None,
+                        "log_age_seconds": token_collector.get("age_seconds"),
+                        "recommendation": "refresh_token_collector",
+                        "reason": "Exact token counters are stale; collect before the next high-level decision.",
+                    }
+                )
     result = {
         "checked_utc": utc_now(),
         "scope": "planner",
@@ -111,6 +144,7 @@ def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> d
         "interval_seconds": interval,
         "phase": state.get("phase"),
         "last_seen_delivery_sequence": delivery,
+        "token_collector": token_collector,
         "checks": checks,
         "requires_attention": any(
             item["recommendation"] not in {"healthy", "silent_but_durable_progress"}
@@ -163,7 +197,7 @@ def _author(root: Path, slug: str, state: dict[str, Any], pid: str) -> dict[str,
 def _review(root: Path, slug: str, state: dict[str, Any], pid: str) -> dict[str, Any]:
     presentation = get_presentation(state, pid)
     round_name = presentation.get("active_round")
-    if round_name not in {"initial", "incremental", "final"}:
+    if round_name != "full":
         return {"checked_utc": utc_now(), "scope": "review", "presentation_id": pid, "round": round_name, "checks": [], "requires_attention": False, "note": "No specialist round is active."}
     submitted = presentation.get("rounds", {}).get(round_name, {}).get("channels", {})
     checks: list[dict[str, Any]] = []

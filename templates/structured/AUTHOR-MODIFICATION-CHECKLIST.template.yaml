@@ -1,0 +1,14 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+review_round: full
+completed_utc: null
+steps:
+  reread_all_findings: false
+  responded_to_every_finding: false
+  revised_source: false
+  reran_source_lint: false
+  reran_asset_validation: false
+  rebuilt_pdf: false
+  reran_pdf_inspection: false
+  completed_self_check: false
+author_declaration: null

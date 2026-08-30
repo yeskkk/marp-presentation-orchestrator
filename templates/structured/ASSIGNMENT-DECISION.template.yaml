@@ -1,0 +1,9 @@
+schema_version: 1
+assignment_id: "[[ASSIGNMENT_ID]]"
+decision: "[[DECISION]]"
+decided_by: planner
+decided_utc: "[[UTC]]"
+request: "[[REQUEST_PATH]]"
+brief: "[[BRIEF_PATH]]"
+exact_assignment: "[[ASSIGNMENT_PATH]]"
+notes: "[[NOTES]]"

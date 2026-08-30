@@ -1,31 +1,15 @@
-schema_version: 1
+schema_version: 2
 rounds:
-  - name: initial
-    scope: full_deck
-    may_open_new_findings: true
-  - name: incremental
-    scope: prior_findings_changed_areas_and_regressions
-    may_open_new_findings: regressions_only
-  - name: final
-    scope: full_deck
-    may_open_new_findings: true
-terminal_closure:
-  scope: verify_final_findings_and_release_readiness_only
-  may_open_new_findings: false
-channels:
-  - language
-  - domain_accuracy
-  - layout
-  - pedagogy
-  - audience
-finding_required_fields:
-  - id
-  - channel
-  - round_opened
-  - location
-  - issue
-  - learner_impact
-  - acceptance_criteria
-  - verification_method
+  - name: full
+    scope: complete_frozen_deck
+    channels: [language, domain_accuracy, layout, pedagogy, audience]
+    may_open_findings: true
+post_review:
+  author_must_respond_to_every_finding: true
+  author_must_complete_modification_checklist: true
+  reviewer_recheck: forbidden
+  acceptance_verifier: none
+  finding_resolution_status_required: false
+  release_after_author_workflow: automatic
 screenshots: forbidden
 model_vision: forbidden
