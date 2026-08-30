@@ -1,0 +1,61 @@
+schema_version: 1
+model: gpt-5.6-sol
+reasoning_effort_default: medium
+reasoning_effort_note: >-
+  medium is the default. Raise authoring and domain-accuracy review to high or max for
+  research-level, unfamiliar, or high-stakes presentations.
+planner_supervision:
+  interval_seconds: 1200
+  wake_on_delivery: true
+  intervene_only_for:
+    - confirmed-plan conflict
+    - coordinator escalation
+    - prolonged coordinator silence without durable progress
+    - environment unable to produce the agreed PDF
+coordinator_supervision:
+  author_interval_seconds: 300
+  review_interval_seconds: 300
+authoring:
+  one_worker_per_content_unit: true
+  max_parallel_lesson_authors: 6
+  max_parallel_presentations: 2
+  modular_source: true
+marp:
+  pdf_only: true
+  cli_version: 4.5.0
+  allow_local_files: true
+  allow_html_in_markdown: true
+  theme_file: theme.css
+  browser: auto
+  size: '16:9'
+  math: mathjax
+online_resources:
+  geogebra:
+    enabled: true
+    discovery: consider_when_mathematically_relevant
+    site_scope: geogebra.org
+    public_material_url: 'https://www.geogebra.org/m/<resource-id>'
+    search_mode: bounded_when_relevant
+    max_search_queries_per_unit: 3
+    max_selected_links_per_unit: 3
+    usage: markdown_hyperlinks_only
+    embedding: forbidden
+review:
+  max_parallel_specialist_reviewers: 5
+  three_rounds_required: true
+  terminal_closure_is_not_a_fourth_review: true
+artifact_inspection:
+  screenshots: forbidden
+  model_vision: forbidden
+  source_and_pdf_only: true
+source_limits:
+  warning_visible_characters_per_slide: 650
+  error_visible_characters_per_slide: 1000
+  warning_bullets_per_slide: 7
+  warning_table_rows_per_slide: 9
+pdf_limits:
+  warning_min_text_pt: 12
+  error_min_text_pt: 8
+context:
+  auto_compact_token_limit: 120000
+  recommended_context_ceiling: 250000

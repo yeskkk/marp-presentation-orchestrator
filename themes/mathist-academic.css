@@ -1,0 +1,91 @@
+/* @theme mathist-academic */
+@import 'gaia';
+
+:root {
+  --accent: #2f80b7;
+  --heading: #2c3e50;
+  --text: #263238;
+  --muted: #607d8b;
+  --warning: #fff3cd;
+  --success: #e5f4e8;
+}
+
+section {
+  background: #ffffff;
+  color: var(--text);
+  font-family: Arial, "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  font-size: 26px;
+  line-height: 1.45;
+  padding: 46px 64px 48px;
+}
+
+section.lead {
+  text-align: center;
+  justify-content: center;
+}
+
+h1 {
+  color: var(--heading);
+  font-size: 48px;
+}
+
+h2 {
+  color: var(--heading);
+  font-size: 36px;
+  border-bottom: 3px solid var(--accent);
+  padding-bottom: 8px;
+  margin-bottom: 24px;
+}
+
+h3 {
+  color: #2979a8;
+  font-size: 30px;
+}
+
+strong {
+  color: #c0392b;
+}
+
+table {
+  font-size: 23px;
+  width: 100%;
+}
+
+th {
+  background: #eaf4fb;
+}
+
+blockquote {
+  border-left: 6px solid var(--accent);
+  padding-left: 22px;
+  color: #455a64;
+}
+
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.center { text-align: center; }
+.small { font-size: 0.84em; }
+.warning {
+  background: var(--warning);
+  border-left: 6px solid #e0a800;
+  padding: 14px 18px;
+}
+.success {
+  background: var(--success);
+  border-left: 6px solid #2e8b57;
+  padding: 14px 18px;
+}
+.formula-card {
+  background: #f7f9fa;
+  border: 1px solid #d8e1e6;
+  border-radius: 8px;
+  padding: 14px 18px;
+}
+section.support {
+  background: #fbfcfd;
+}

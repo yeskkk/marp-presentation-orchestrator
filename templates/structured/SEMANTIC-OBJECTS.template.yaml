@@ -1,0 +1,11 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+objects:
+  - id: "[[OBJECT_ID]]"
+    kind: "[[OBJECT_KIND]]"
+    dimension: "[[DIMENSION]]"
+    symbols: ["[[SYMBOL]]"]
+    coordinate_convention: "[[COORDINATE_CONVENTION]]"
+    units: "[[UNITS]]"
+    assumptions: ["[[ASSUMPTION]]"]
+    used_in: ["[[SLIDE_ID]]"]

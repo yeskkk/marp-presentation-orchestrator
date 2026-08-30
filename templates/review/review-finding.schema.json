@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "mpres review finding",
+  "type": "object",
+  "required": ["id", "channel", "round_opened", "location", "issue", "learner_impact", "acceptance_criteria", "verification_method"],
+  "properties": {
+    "id": {"type": "string"},
+    "channel": {"enum": ["language", "domain_accuracy", "layout", "pedagogy", "audience"]},
+    "round_opened": {"enum": ["initial", "incremental", "final"]},
+    "kind": {"enum": ["ordinary", "regression"]},
+    "location": {"type": "object"},
+    "issue": {"type": "string"},
+    "learner_impact": {"type": "string"},
+    "acceptance_criteria": {"type": "string"},
+    "verification_method": {"type": "string"},
+    "author_response": {"type": ["object", "null"]},
+    "review_status": {"enum": ["open", "addressed", "resolved", "disputed"]},
+    "review_rationale": {"type": ["string", "null"]},
+    "planner_ruling": {"type": ["string", "null"]}
+  }
+}

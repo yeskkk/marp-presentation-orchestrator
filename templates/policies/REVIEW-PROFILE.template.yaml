@@ -1,0 +1,31 @@
+schema_version: 1
+rounds:
+  - name: initial
+    scope: full_deck
+    may_open_new_findings: true
+  - name: incremental
+    scope: prior_findings_changed_areas_and_regressions
+    may_open_new_findings: regressions_only
+  - name: final
+    scope: full_deck
+    may_open_new_findings: true
+terminal_closure:
+  scope: verify_final_findings_and_release_readiness_only
+  may_open_new_findings: false
+channels:
+  - language
+  - domain_accuracy
+  - layout
+  - pedagogy
+  - audience
+finding_required_fields:
+  - id
+  - channel
+  - round_opened
+  - location
+  - issue
+  - learner_impact
+  - acceptance_criteria
+  - verification_method
+screenshots: forbidden
+model_vision: forbidden

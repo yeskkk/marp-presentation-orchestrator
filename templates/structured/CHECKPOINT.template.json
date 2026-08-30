@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "utc": "[[UTC]]",
+  "role": "[[ROLE]]",
+  "presentation_id": "[[PRESENTATION_ID]]",
+  "unit_id": "[[UNIT_ID_OR_NULL]]",
+  "completed": ["[[COMPLETED]]"],
+  "decisions": ["[[DECISION]]"],
+  "open_issues": ["[[OPEN_ISSUE_OR_NONE]]"],
+  "next_action": "[[NEXT_ACTION]]",
+  "last_successful_build": null,
+  "durable_paths": ["[[PATH]]"]
+}

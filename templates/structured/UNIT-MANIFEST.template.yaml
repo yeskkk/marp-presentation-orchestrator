@@ -1,0 +1,9 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+unit_id: "[[UNIT_ID]]"
+title: "[[UNIT_TITLE]]"
+slide_ids: ["[[SLIDE_ID]]"]
+concept_chains: ["[[CHAIN_ID]]"]
+semantic_objects: []
+examples: []
+assets: []

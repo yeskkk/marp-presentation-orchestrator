@@ -1,0 +1,16 @@
+{
+  "name": "marp-presentation-orchestrator",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Pinned Marp CLI runtime for PDF-only presentation production.",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@marp-team/marp-cli": "4.5.0"
+  },
+  "scripts": {
+    "marp": "marp",
+    "marp:version": "marp --version"
+  }
+}

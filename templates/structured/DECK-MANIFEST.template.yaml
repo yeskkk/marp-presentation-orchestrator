@@ -1,0 +1,14 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+title: "[[PRESENTATION_TITLE]]"
+content_units:
+[[CONTENT_UNITS_YAML]]
+slides:
+  - id: "[[SLIDE_ID]]"
+    unit: "[[UNIT_ID]]"
+    kind: core
+    concept_chain: "[[CHAIN_ID]]"
+    semantic_objects: []
+    examples: []
+    assets: []
+    source_refs: []

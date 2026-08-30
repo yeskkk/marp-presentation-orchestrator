@@ -1,0 +1,7 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+policy:
+  site_scope: geogebra.org
+  usage: markdown-hyperlinks-only
+  embedding: forbidden
+units: []
