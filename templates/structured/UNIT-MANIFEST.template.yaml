@@ -6,6 +6,11 @@ meeting_number: [[MEETING_NUMBER_OR_NULL]]
 meeting_label: "[[MEETING_LABEL]]"
 organization_basis: "[[ORGANIZATION_BASIS]]"
 slide_ids: ["[[SLIDE_ID]]"]
+slide_density:
+  - id: "[[SLIDE_ID]]"
+    principal_teaching_move: "[[PRINCIPAL_TEACHING_MOVE]]"
+    substantial_blocks: ["[[SUBSTANTIAL_BLOCK]]"]
+    split_rationale: null
 slide_interactions:
   - id: "[[SLIDE_ID]]"
     interaction_role: none

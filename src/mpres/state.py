@@ -5,7 +5,7 @@ from typing import Any
 
 from mpres.util import MPresError, read_json, safe_id, task_path, utc_now, write_json_atomic
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 REVIEW_ROUNDS = ("full",)
 REVIEW_CHANNELS = ("language", "domain_accuracy", "layout", "pedagogy", "audience")
 PRESENTATION_STATUSES = {

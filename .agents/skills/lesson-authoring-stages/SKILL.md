@@ -1,19 +1,22 @@
 ---
 name: lesson-authoring-stages
-description: Stage lesson/content-unit authoring so each worker solves scope, learner need, domain development, diagnostics, language, and Marp integration in a controlled sequence.
+description: Guide one lesson-author thread through the complete course/report stage sequence under one planner-approved assignment.
 ---
 
-# Staged lesson authoring
+# One-thread staged authoring
 
-Course units use six stages:
+The planner writes and approves one exact `TASK-LESSON-AUTHOR.md` for the whole lesson/content unit. The same lesson-author thread completes every stage in order.
 
-1. scope and extracted sources;
-2. learner need;
-3. domain development;
-4. cognitive entry, examples, and 2–3 diagnostic MCQs;
-5. learner-facing language;
-6. Marp integration and self-check.
+For a course: scope/sources → learner need → domain development → entry/diagnostics → learner-facing language → Marp integration. A report uses the compact profile declared by task state.
 
-Academic reports use the compact profile defined in `EXECUTION-POLICY.yaml` and are exempt from the MCQ quota.
+At each stage:
 
-Only the current stage is active. The lesson author completes its artifact and runs `mpres stage submit`; the author coordinator inspects the durable artifact and runs `mpres stage accept` or `reopen`. Acceptance activates the next stage. Unit handoff and integration are blocked until all configured stages are accepted.
+1. Read the prior durable artifacts and the unchanged lesson assignment.
+2. Complete the current `STAGE-ARTIFACT.md`.
+3. Save a checkpoint.
+4. Run `mpres stage submit`; successful validation automatically activates the next stage.
+5. Continue in the same thread.
+
+There is no stage-specific assignment, no new worker spawn, and no coordinator acceptance gate between stages. Reopening a stage keeps the lesson assignment and resumes the same lesson-author thread.
+
+Original PDFs, screenshots and model vision remain forbidden.

@@ -3,11 +3,20 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from mpres.assignments import assignment_contract_status, revoke_assignment, scaffold_assignment_contract
+from mpres.assignments import assignment_contract_status
 from mpres.logs import append_log
 from mpres.state import get_content_unit, get_presentation, load_state, save_state, stage_ids_for_kind
 from mpres.tasks import require_gate
-from mpres.util import MPresError, read_yaml, relative_display, task_path, text_placeholders, utc_now, write_yaml_atomic
+from mpres.threads import list_threads
+from mpres.util import (
+    MPresError,
+    read_yaml,
+    relative_display,
+    task_path,
+    text_placeholders,
+    utc_now,
+    write_yaml_atomic,
+)
 
 STAGE_ARTIFACT_TEMPLATES = {
     "01_scope_sources": "STAGE-01-SCOPE-SOURCES.template.md",
@@ -19,17 +28,6 @@ STAGE_ARTIFACT_TEMPLATES = {
     "02_audience_domain": "STAGE-REPORT-02-AUDIENCE-DOMAIN.template.md",
     "03_narrative_language": "STAGE-REPORT-03-NARRATIVE-LANGUAGE.template.md",
     "04_marp_integration": "STAGE-REPORT-04-MARP-INTEGRATION.template.md",
-}
-STAGE_ASSIGNMENT_TEMPLATES = {
-    "01_scope_sources": "STAGE-01-scope-sources.template.md",
-    "02_learner_need": "STAGE-02-learner-need.template.md",
-    "03_domain_development": "STAGE-03-domain-development.template.md",
-    "04_entry_diagnostics": "STAGE-04-entry-diagnostics.template.md",
-    "05_learner_language": "STAGE-05-learner-language.template.md",
-    "06_marp_integration": "STAGE-06-marp-integration.template.md",
-    "02_audience_domain": "STAGE-REPORT-02-audience-domain.template.md",
-    "03_narrative_language": "STAGE-REPORT-03-narrative-language.template.md",
-    "04_marp_integration": "STAGE-REPORT-04-marp-integration.template.md",
 }
 STAGE_MINIMUM_CHARACTERS = {
     "01_scope_sources": 700,
@@ -56,10 +54,6 @@ def stage_state_path(root: Path, slug: str, presentation_id: str, unit_id: str) 
     return unit_root(root, slug, presentation_id, unit_id) / "stages" / "STAGE-STATE.yaml"
 
 
-def stage_assignment_path(root: Path, slug: str, presentation_id: str, unit_id: str, stage_id: str) -> Path:
-    return stage_root(root, slug, presentation_id, unit_id, stage_id) / "STAGE-ASSIGNMENT.md"
-
-
 def stage_artifact_path(root: Path, slug: str, presentation_id: str, unit_id: str, stage_id: str) -> Path:
     return stage_root(root, slug, presentation_id, unit_id, stage_id) / "STAGE-ARTIFACT.md"
 
@@ -80,51 +74,33 @@ def initialize_unit_stages(
         "[[UNIT_TITLE]]": unit_title,
     }
     stages: dict[str, Any] = {}
-    for index, stage_id in enumerate(stage_order):
+    for stage_id in stage_order:
         directory = stage_root(root, slug, presentation_id, unit_id, stage_id)
         directory.mkdir(parents=True, exist_ok=True)
-        assignment = (
-            root / "templates" / "assignments" / "stages" / STAGE_ASSIGNMENT_TEMPLATES[stage_id]
-        ).read_text(encoding="utf-8")
         artifact = (
             root / "templates" / "stages" / STAGE_ARTIFACT_TEMPLATES[stage_id]
         ).read_text(encoding="utf-8")
         for old, new in values.items():
-            assignment = assignment.replace(old, new)
             artifact = artifact.replace(old, new)
-        assignment_path = directory / "STAGE-ASSIGNMENT.md"
         artifact_path = directory / "STAGE-ARTIFACT.md"
-        assignment_path.write_text(assignment, encoding="utf-8", newline="\n")
         artifact_path.write_text(artifact, encoding="utf-8", newline="\n")
-        scaffold_assignment_contract(
-            root,
-            assignment_path,
-            assignment_id=f"{presentation_id}:{unit_id}:{stage_id}",
-            role="lesson-author-stage",
-            presentation_id=presentation_id,
-            unit_id=unit_id,
-            requested_by="author-coordinator",
-            need=(
-                f"Planner must personally write the exact {stage_id} brief for "
-                f"{presentation_id}/{unit_id}; the coordinator may not write or rewrite it."
-            ),
-        )
         stages[stage_id] = {
-            "status": "awaiting_assignment" if index == 0 else "planned",
-            "assignment": relative_display(assignment_path, root),
+            "status": "planned",
             "artifact": relative_display(artifact_path, root),
             "task_kind": task_kind,
         }
     write_yaml_atomic(
         stage_state_path(root, slug, presentation_id, unit_id),
         {
-            "schema_version": 3,
+            "schema_version": 4,
             "presentation_id": presentation_id,
             "unit_id": unit_id,
             "unit_title": unit_title,
             "task_kind": task_kind,
+            "sequence_status": "awaiting_start",
             "stage_order": stage_order,
             "current_stage": stage_order[0],
+            "thread_handle": None,
             "stages": stages,
         },
     )
@@ -162,47 +138,89 @@ def _stage_order(value: dict[str, Any]) -> list[str]:
     return order
 
 
+def _lesson_assignment(root: Path, slug: str, presentation_id: str, unit_id: str) -> Path:
+    return unit_root(root, slug, presentation_id, unit_id) / "TASK-LESSON-AUTHOR.md"
+
+
+def _require_lesson_assignment(root: Path, slug: str, presentation_id: str, unit_id: str) -> None:
+    assignment = _lesson_assignment(root, slug, presentation_id, unit_id)
+    contract = assignment_contract_status(assignment)
+    if (
+        not assignment.is_file()
+        or text_placeholders(assignment)
+        or len(assignment.read_text(encoding="utf-8").strip()) < 600
+        or not contract.get("approved")
+    ):
+        raise MPresError(
+            "The planner-written lesson assignment must be complete and approved before the "
+            "single lesson-author thread starts its stage sequence."
+        )
+
+
+def _validate_thread_handle(
+    root: Path,
+    slug: str,
+    presentation_id: str,
+    unit_id: str,
+    thread_handle: str,
+) -> None:
+    registry = list_threads(root, slug)
+    rows = [item for item in registry.get("handles", []) if isinstance(item, dict)]
+    row = next((item for item in rows if item.get("handle_id") == thread_handle), None)
+    if row is None:
+        raise MPresError(f"Unknown thread handle: {thread_handle}")
+    expected_assignment = f"{presentation_id}:{unit_id}:lesson-author"
+    if (
+        row.get("state") != "active"
+        or row.get("role") != "lesson-author"
+        or row.get("presentation_id") != presentation_id
+        or row.get("unit_id") != unit_id
+        or row.get("current_assignment") != expected_assignment
+    ):
+        raise MPresError(
+            "The supplied thread handle is not the active lesson-author thread for this whole unit."
+        )
+
+
 def stage_status(root: Path, slug: str, presentation_id: str, unit_id: str) -> dict[str, Any]:
     require_gate(root, slug)
     value = _load_stage_state(root, slug, presentation_id, unit_id)
-    for stage_id, entry in value["stages"].items():
-        if isinstance(entry, dict):
-            assignment = stage_assignment_path(root, slug, presentation_id, unit_id, stage_id)
-            entry["assignment_contract"] = assignment_contract_status(assignment)
+    value["lesson_assignment_contract"] = assignment_contract_status(
+        _lesson_assignment(root, slug, presentation_id, unit_id)
+    )
     return {
         **value,
         "path": relative_display(stage_state_path(root, slug, presentation_id, unit_id), root),
     }
 
 
-def activate_stage(root: Path, slug: str, presentation_id: str, unit_id: str, stage_id: str) -> dict[str, Any]:
+def start_stage_sequence(
+    root: Path,
+    slug: str,
+    presentation_id: str,
+    unit_id: str,
+    *,
+    thread_handle: str | None = None,
+) -> dict[str, Any]:
     require_gate(root, slug)
+    _require_lesson_assignment(root, slug, presentation_id, unit_id)
     task_state = load_state(root, slug)
     presentation = get_presentation(task_state, presentation_id)
     unit = get_content_unit(presentation, unit_id)
     if presentation.get("status") not in {"authoring", "author_revision"}:
-        raise MPresError(f"Cannot activate lesson stages in {presentation.get('status')!r} status.")
+        raise MPresError(f"Cannot start lesson stages in {presentation.get('status')!r} status.")
     value = _load_stage_state(root, slug, presentation_id, unit_id)
-    order = _stage_order(value)
-    if stage_id not in order:
-        raise MPresError(f"Unknown authoring stage for this task profile: {stage_id}")
-    if value.get("current_stage") != stage_id:
-        raise MPresError(f"Current stage is {value.get('current_stage')!r}, not {stage_id!r}.")
-    entry = value["stages"].get(stage_id)
-    if not isinstance(entry, dict) or entry.get("status") not in {"awaiting_assignment", "planned"}:
-        raise MPresError(f"Stage {stage_id} is not awaiting planner activation.")
-    assignment = stage_assignment_path(root, slug, presentation_id, unit_id, stage_id)
-    contract = assignment_contract_status(assignment)
-    placeholders = text_placeholders(assignment) if assignment.is_file() else ["missing"]
-    if not contract.get("approved") or placeholders:
-        raise MPresError(
-            "The planner must personally complete and approve the exact stage assignment before activation."
-        )
-    if len(assignment.read_text(encoding="utf-8").strip()) < 700:
-        raise MPresError("Stage assignment is too short to be an exact planner-written brief.")
-    entry["status"] = "active"
-    entry["activated_utc"] = utc_now()
-    unit.update({"status": "stage_active", "stage": stage_id, "stage_status": "active"})
+    if value.get("sequence_status") not in {"awaiting_start", "reopened"}:
+        raise MPresError("The lesson-author stage sequence has already started.")
+    if thread_handle:
+        _validate_thread_handle(root, slug, presentation_id, unit_id, thread_handle)
+        value["thread_handle"] = thread_handle
+    first = str(value.get("current_stage") or _stage_order(value)[0])
+    value["sequence_status"] = "active"
+    value["started_utc"] = value.get("started_utc") or utc_now()
+    value["stages"][first]["status"] = "active"
+    value["stages"][first]["activated_utc"] = utc_now()
+    unit.update({"status": "stage_active", "stage": first, "stage_status": "active"})
     save_state(root, slug, task_state)
     write_yaml_atomic(stage_state_path(root, slug, presentation_id, unit_id), value)
     append_log(
@@ -212,37 +230,47 @@ def activate_stage(root: Path, slug: str, presentation_id: str, unit_id: str, st
         kind="decision",
         presentation_id=presentation_id,
         unit_id=unit_id,
-        message=f"Activated planner-written lesson-author stage {stage_id}.",
-        data={"assignment": relative_display(assignment, root)},
+        message=(
+            "Started the complete lesson-author stage sequence. The same lesson-author thread "
+            "continues through every stage without new stage assignments or coordinator acceptance."
+        ),
+        data={"first_stage": first, "thread_handle": thread_handle},
     )
     return stage_status(root, slug, presentation_id, unit_id)
 
 
-def submit_stage(root: Path, slug: str, presentation_id: str, unit_id: str, stage_id: str) -> dict[str, Any]:
-    require_gate(root, slug)
-    lesson_assignment = unit_root(root, slug, presentation_id, unit_id) / "TASK-LESSON-AUTHOR.md"
-    lesson_contract = assignment_contract_status(lesson_assignment)
-    if (
-        not lesson_assignment.is_file()
-        or text_placeholders(lesson_assignment)
-        or len(lesson_assignment.read_text(encoding="utf-8").strip()) < 600
-        or not lesson_contract.get("approved")
-    ):
-        raise MPresError("The planner-written lesson assignment is incomplete or unapproved.")
-    task_state = load_state(root, slug)
-    presentation = get_presentation(task_state, presentation_id)
-    unit = get_content_unit(presentation, unit_id)
-    if presentation.get("status") not in {"authoring", "author_revision"}:
-        raise MPresError(f"Lesson stages cannot advance in {presentation.get('status')!r} status.")
+def activate_stage(
+    root: Path,
+    slug: str,
+    presentation_id: str,
+    unit_id: str,
+    stage_id: str,
+    *,
+    thread_handle: str | None = None,
+) -> dict[str, Any]:
+    """Compatibility entry point: only the first/current stage starts the whole sequence."""
+
     value = _load_stage_state(root, slug, presentation_id, unit_id)
-    order = _stage_order(value)
-    if stage_id not in order:
-        raise MPresError(f"Unknown authoring stage for this task profile: {stage_id}")
     if value.get("current_stage") != stage_id:
-        raise MPresError(f"Current stage is {value.get('current_stage')!r}, not {stage_id!r}.")
-    entry = value["stages"].get(stage_id)
-    if not isinstance(entry, dict) or entry.get("status") != "active":
-        raise MPresError(f"Stage {stage_id} is not active.")
+        raise MPresError(
+            f"The stage sequence can start only at current stage {value.get('current_stage')!r}."
+        )
+    return start_stage_sequence(
+        root,
+        slug,
+        presentation_id,
+        unit_id,
+        thread_handle=thread_handle,
+    )
+
+
+def _validate_stage_artifact(
+    root: Path,
+    slug: str,
+    presentation_id: str,
+    unit_id: str,
+    stage_id: str,
+) -> Path:
     artifact = stage_artifact_path(root, slug, presentation_id, unit_id, stage_id)
     if not artifact.is_file():
         raise MPresError(f"Stage artifact is missing: {artifact}")
@@ -266,73 +294,84 @@ def submit_stage(root: Path, slug: str, presentation_id: str, unit_id: str, stag
             raise MPresError(
                 "Stage 01 must cite downloads/text/ or explicitly state that no external reference is used."
             )
-    entry["status"] = "submitted"
-    entry["submitted_utc"] = utc_now()
-    unit.update({"status": "stage_submitted", "stage_status": "submitted"})
-    save_state(root, slug, task_state)
-    write_yaml_atomic(stage_state_path(root, slug, presentation_id, unit_id), value)
-    append_log(
-        root,
-        slug,
-        actor=f"lesson-author:{unit_id}",
-        kind="handoff",
-        presentation_id=presentation_id,
-        unit_id=unit_id,
-        message=f"Submitted authoring stage {stage_id} for coordinator acceptance.",
-        data={"artifact": relative_display(artifact, root)},
-    )
-    return stage_status(root, slug, presentation_id, unit_id)
+    return artifact
 
 
-def accept_stage(root: Path, slug: str, presentation_id: str, unit_id: str, stage_id: str) -> dict[str, Any]:
+def submit_stage(
+    root: Path,
+    slug: str,
+    presentation_id: str,
+    unit_id: str,
+    stage_id: str,
+    *,
+    thread_handle: str | None = None,
+) -> dict[str, Any]:
     require_gate(root, slug)
+    _require_lesson_assignment(root, slug, presentation_id, unit_id)
     task_state = load_state(root, slug)
     presentation = get_presentation(task_state, presentation_id)
     unit = get_content_unit(presentation, unit_id)
+    if presentation.get("status") not in {"authoring", "author_revision"}:
+        raise MPresError(f"Lesson stages cannot advance in {presentation.get('status')!r} status.")
     value = _load_stage_state(root, slug, presentation_id, unit_id)
     order = _stage_order(value)
-    if stage_id not in order:
-        raise MPresError(f"Unknown authoring stage for this task profile: {stage_id}")
+    if value.get("sequence_status") != "active":
+        raise MPresError("The lesson-author stage sequence is not active.")
     if value.get("current_stage") != stage_id:
         raise MPresError(f"Current stage is {value.get('current_stage')!r}, not {stage_id!r}.")
     entry = value["stages"].get(stage_id)
-    if not isinstance(entry, dict) or entry.get("status") != "submitted":
-        raise MPresError(f"Stage {stage_id} must be submitted before acceptance.")
-    entry["status"] = "accepted"
-    entry["accepted_utc"] = utc_now()
+    if not isinstance(entry, dict) or entry.get("status") != "active":
+        raise MPresError(f"Stage {stage_id} is not active.")
+    recorded_handle = value.get("thread_handle")
+    if recorded_handle:
+        if thread_handle != recorded_handle:
+            raise MPresError(
+                "The stage must be submitted by the same lesson-author thread that started the sequence."
+            )
+        _validate_thread_handle(root, slug, presentation_id, unit_id, str(recorded_handle))
+    elif thread_handle:
+        _validate_thread_handle(root, slug, presentation_id, unit_id, thread_handle)
+        value["thread_handle"] = thread_handle
+    artifact = _validate_stage_artifact(root, slug, presentation_id, unit_id, stage_id)
+    entry["status"] = "completed"
+    entry["completed_utc"] = utc_now()
     index = order.index(stage_id)
     if index + 1 < len(order):
         next_stage = order[index + 1]
         value["current_stage"] = next_stage
-        value["stages"][next_stage]["status"] = "awaiting_assignment"
-        unit.update(
-            {
-                "status": "awaiting_stage_assignment",
-                "stage": next_stage,
-                "stage_status": "awaiting_assignment",
-            }
-        )
-        next_action = f"planner_write_and_activate:{next_stage}"
+        value["stages"][next_stage]["status"] = "active"
+        value["stages"][next_stage]["activated_utc"] = utc_now()
+        unit.update({"status": "stage_active", "stage": next_stage, "stage_status": "active"})
+        next_action = f"continue_same_thread:{next_stage}"
     else:
         value["current_stage"] = None
+        value["sequence_status"] = "completed"
         value["completed_utc"] = utc_now()
-        unit.update({"status": "handoff_ready", "stage": None, "stage_status": "accepted"})
+        unit.update({"status": "handoff_ready", "stage": None, "stage_status": "completed"})
         next_action = "handoff_ready"
     save_state(root, slug, task_state)
     write_yaml_atomic(stage_state_path(root, slug, presentation_id, unit_id), value)
     append_log(
         root,
         slug,
-        actor="author-coordinator",
-        kind="decision",
+        actor=f"lesson-author:{unit_id}",
+        kind="handoff" if next_action == "handoff_ready" else "checkpoint",
         presentation_id=presentation_id,
         unit_id=unit_id,
         message=(
-            f"Accepted stage {stage_id}; next action is {next_action}. The coordinator cannot "
-            "write or approve the next planner-owned assignment."
+            f"Completed authoring stage {stage_id}; {next_action}. No new worker or stage assignment is created."
         ),
+        data={"artifact": relative_display(artifact, root), "thread_handle": value.get("thread_handle")},
     )
     return stage_status(root, slug, presentation_id, unit_id)
+
+
+def accept_stage(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    del args, kwargs
+    raise MPresError(
+        "Stage acceptance was removed in v0.5.0. submit-stage automatically advances the same "
+        "lesson-author thread after validating the durable stage artifact."
+    )
 
 
 def reopen_stage(
@@ -346,36 +385,31 @@ def reopen_stage(
 ) -> dict[str, Any]:
     require_gate(root, slug)
     if not reason.strip():
-        raise MPresError("A non-empty reopen reason is required.")
+        raise MPresError("Reopening an authoring stage requires a reason.")
     task_state = load_state(root, slug)
     presentation = get_presentation(task_state, presentation_id)
     unit = get_content_unit(presentation, unit_id)
     value = _load_stage_state(root, slug, presentation_id, unit_id)
     order = _stage_order(value)
     if stage_id not in order:
-        raise MPresError(f"Unknown authoring stage for this task profile: {stage_id}")
-    target_index = order.index(stage_id)
-    for index, candidate in enumerate(order):
-        entry = value["stages"][candidate]
-        if index < target_index:
-            entry["status"] = "accepted"
-            continue
-        entry["status"] = "awaiting_assignment" if index == target_index else "planned"
-        for key in ("submitted_utc", "accepted_utc", "activated_utc"):
-            entry.pop(key, None)
-        assignment = stage_assignment_path(root, slug, presentation_id, unit_id, candidate)
-        contract = assignment_contract_status(assignment)
-        if contract.get("approved"):
-            revoke_assignment(root, slug, assignment, reason=reason.strip())
+        raise MPresError(f"Unknown authoring stage: {stage_id}")
+    index = order.index(stage_id)
+    for current_index, current_stage in enumerate(order):
+        stage_entry = value["stages"][current_stage]
+        if current_index < index:
+            stage_entry["status"] = "completed"
+        elif current_index == index:
+            stage_entry["status"] = "active"
+            stage_entry["reopened_utc"] = utc_now()
+            stage_entry["reopen_reason"] = reason.strip()
+        else:
+            stage_entry["status"] = "planned"
+            for key in ("completed_utc", "activated_utc"):
+                stage_entry.pop(key, None)
     value["current_stage"] = stage_id
+    value["sequence_status"] = "active"
     value.pop("completed_utc", None)
-    unit.update(
-        {
-            "status": "awaiting_stage_assignment",
-            "stage": stage_id,
-            "stage_status": "awaiting_assignment",
-        }
-    )
+    unit.update({"status": "stage_active", "stage": stage_id, "stage_status": "active"})
     save_state(root, slug, task_state)
     write_yaml_atomic(stage_state_path(root, slug, presentation_id, unit_id), value)
     append_log(
@@ -386,18 +420,23 @@ def reopen_stage(
         presentation_id=presentation_id,
         unit_id=unit_id,
         message=(
-            f"Reopened {stage_id}: {reason.strip()}. Planner must rewrite and reapprove this "
-            "and all later stage assignments before work resumes."
+            f"Reopened stage {stage_id} inside the existing lesson assignment; the same lesson-author "
+            "thread resumes from this stage."
         ),
+        data={"reason": reason.strip(), "thread_handle": value.get("thread_handle")},
     )
     return stage_status(root, slug, presentation_id, unit_id)
 
 
-def all_stages_accepted(root: Path, slug: str, presentation_id: str, unit_id: str) -> bool:
+def all_stages_completed(root: Path, slug: str, presentation_id: str, unit_id: str) -> bool:
     value = _load_stage_state(root, slug, presentation_id, unit_id)
     order = _stage_order(value)
-    return all(
-        isinstance(value["stages"].get(stage_id), dict)
-        and value["stages"][stage_id].get("status") == "accepted"
-        for stage_id in order
+    return value.get("sequence_status") == "completed" and all(
+        value["stages"].get(stage_id, {}).get("status") == "completed" for stage_id in order
     )
+
+
+def all_stages_accepted(root: Path, slug: str, presentation_id: str, unit_id: str) -> bool:
+    """Compatibility alias for older callers; v0.5.0 has no coordinator acceptance step."""
+
+    return all_stages_completed(root, slug, presentation_id, unit_id)

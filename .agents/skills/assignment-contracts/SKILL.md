@@ -14,3 +14,6 @@ An assignment is runnable only when:
 - `ASSIGNMENT-DECISION.yaml` records `status: approved` and `written_by: planner`.
 
 Approval records planner authorship; it is not approval of future worker output.
+
+
+The CLI may deterministically expand paths, stable role rules and launch plans after planner approval. This does not transfer semantic ownership: scope, hard constraints, replaceable hypotheses, local decision rights, references and acceptance criteria remain planner-written.

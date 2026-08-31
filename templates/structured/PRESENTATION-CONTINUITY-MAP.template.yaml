@@ -1,0 +1,7 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+incoming_from: [[INCOMING_FROM_OR_NULL]]
+reactivated_terms: []
+reactivated_objects: []
+anchor_objects: []
+bridges: []

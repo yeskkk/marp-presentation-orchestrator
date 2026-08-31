@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +10,7 @@ from mpres.assignments import scaffold_assignment_contract
 from mpres.logs import append_log
 from mpres.production import assignment_path, check_assignment
 from mpres.rendering import RENDER_PIPELINE, source_and_build_paths
+from mpres.revision_routing import build_revision_routing, write_revision_work_queues
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state, save_state
 from mpres.tasks import require_gate
 from mpres.util import (
@@ -72,6 +75,10 @@ def _validate_render(build: Path, stage: str) -> tuple[dict[str, Any], list[Path
     mechanical_reports = [
         build / f"source-lint-{stage}.json",
         build / f"asset-validation-{stage}.json",
+        build / f"math-source-inventory-{stage}.json",
+        build / f"math-renderer-probe-{stage}.json",
+        build / f"slide-density-audit-{stage}.json",
+        build / f"course-consistency-{stage}.json",
         build / f"html-layout-inspection-{stage}.json",
         build / f"pdf-inspection-{stage}.json",
     ]
@@ -282,6 +289,21 @@ def _normalize_findings_file(path: Path) -> list[dict[str, Any]]:
     return normalized
 
 
+def _stable_finding_fields(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: item.get(key)
+        for key in (
+            "id",
+            "channel",
+            "round_opened",
+            "issue",
+            "learner_impact",
+            "acceptance_criteria",
+            "verification_method",
+        )
+    }
+
+
 def submit_channel_review(
     root: Path,
     slug: str,
@@ -292,6 +314,13 @@ def submit_channel_review(
     report_path: Path,
     findings_path: Path,
 ) -> dict[str, Any]:
+    """Submit or narrowly correct one channel handoff before aggregation.
+
+    A resubmission may correct location, evidence_path, or reviewer_note, but it may not add/remove
+    finding IDs or change the substantive finding fields. The shared findings registry is untouched
+    until all five current handoffs validate and aggregate atomically.
+    """
+
     require_gate(root, slug)
     if round_name != REVIEW_ROUND or channel not in REVIEW_CHANNELS:
         raise MPresError("Only the full round and the five configured channels are valid.")
@@ -299,6 +328,9 @@ def submit_channel_review(
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") not in {"review_requested", "reviewing"}:
         raise MPresError(f"Cannot submit a channel in {presentation.get('status')!r} status.")
+    round_state = presentation["rounds"][REVIEW_ROUND]
+    if round_state.get("status") == "completed":
+        raise MPresError("The review has already been aggregated; channel resubmission is closed.")
     assignment = check_assignment(
         root,
         slug,
@@ -313,21 +345,13 @@ def submit_channel_review(
     findings_path = findings_path.resolve()
     if not report_path.is_file() or text_placeholders(report_path):
         raise MPresError("Specialist report is missing or incomplete.")
-    if len(report_path.read_text(encoding="utf-8").strip()) < 250:
+    report_text = report_path.read_text(encoding="utf-8")
+    if len(report_text.strip()) < 250:
         raise MPresError("Specialist report is too short to document scope and evidence.")
     submitted = _normalize_findings_file(findings_path)
     for item in submitted:
         if item["channel"] != channel or item["round_opened"] != REVIEW_ROUND:
             raise MPresError(f"Finding {item['id']} has the wrong channel or round.")
-
-    registry = _load_findings(root, slug, presentation_id)
-    existing_ids = {str(item.get("id")) for item in registry["findings"] if isinstance(item, dict)}
-    for item in submitted:
-        if str(item["id"]) in existing_ids:
-            raise MPresError(f"Finding ID is already used: {item['id']}")
-        registry["findings"].append(item)
-        existing_ids.add(str(item["id"]))
-    _save_findings(root, slug, presentation_id, registry)
 
     channel_root = (
         task_path(root, slug)
@@ -337,17 +361,82 @@ def submit_channel_review(
         / REVIEW_ROUND
         / channel
     )
+    channel_state = round_state.setdefault("channels", {}).get(channel)
+    previous: list[dict[str, Any]] | None = None
+    previous_attempt: int | None = None
+    if isinstance(channel_state, dict) and channel_state.get("submission"):
+        previous_attempt = int(channel_state.get("attempt") or 1)
+        previous_path = root / str(channel_state["submission"]) / "findings.yaml"
+        previous = _normalize_findings_file(previous_path)
+        previous_by_id = {str(item["id"]): item for item in previous}
+        current_by_id = {str(item["id"]): item for item in submitted}
+        if set(previous_by_id) != set(current_by_id):
+            raise MPresError(
+                "A channel resubmission may not add or remove finding IDs after first submission."
+            )
+        for finding_id in sorted(previous_by_id):
+            if _stable_finding_fields(previous_by_id[finding_id]) != _stable_finding_fields(
+                current_by_id[finding_id]
+            ):
+                raise MPresError(
+                    f"Resubmission of {finding_id} changes substantive finding fields. Only "
+                    "location, evidence_path, and reviewer_note may be corrected."
+                )
+            allowed = {
+                *REQUIRED_FINDING_FIELDS,
+                "author_response",
+                "evidence_path",
+                "reviewer_note",
+            }
+            unexpected = set(current_by_id[finding_id]) - allowed
+            if unexpected:
+                raise MPresError(
+                    f"Resubmission of {finding_id} contains unsupported mutable field(s): "
+                    + ", ".join(sorted(unexpected))
+                )
+    attempt = (previous_attempt or 0) + 1
+    submission_root = channel_root / "submissions" / f"attempt-{attempt:04d}"
+    if submission_root.exists():
+        raise MPresError(f"Review submission attempt already exists: {submission_root}")
+    submission_root.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="mpres-review-submit-", dir=submission_root.parent) as raw:
+        staged = Path(raw)
+        (staged / "report.md").write_text(report_text, encoding="utf-8", newline="\n")
+        write_yaml_atomic(
+            staged / "findings.yaml",
+            {
+                "schema_version": 4,
+                "presentation_id": presentation_id,
+                "round": REVIEW_ROUND,
+                "channel": channel,
+                "findings": submitted,
+            },
+        )
+        write_json_atomic(
+            staged / "receipt.json",
+            {
+                "schema_version": 1,
+                "presentation_id": presentation_id,
+                "round": REVIEW_ROUND,
+                "channel": channel,
+                "attempt": attempt,
+                "supersedes_attempt": previous_attempt,
+                "submitted_utc": utc_now(),
+                "finding_ids": [str(item["id"]) for item in submitted],
+                "mutable_fields": ["location", "evidence_path", "reviewer_note"],
+            },
+        )
+        os.replace(staged, submission_root)
     canonical_report = channel_root / "report.md"
     canonical_findings = channel_root / "findings.yaml"
-    if report_path != canonical_report.resolve():
-        shutil.copy2(report_path, canonical_report)
-    if findings_path != canonical_findings.resolve():
-        shutil.copy2(findings_path, canonical_findings)
+    shutil.copy2(submission_root / "report.md", canonical_report)
+    shutil.copy2(submission_root / "findings.yaml", canonical_findings)
     presentation["status"] = "reviewing"
-    round_state = presentation["rounds"][REVIEW_ROUND]
     round_state["status"] = "reviewing"
     round_state["channels"][channel] = {
         "submitted_utc": utc_now(),
+        "attempt": attempt,
+        "submission": relative_display(submission_root, root),
         "report": relative_display(canonical_report, root),
         "findings": relative_display(canonical_findings, root),
         "finding_count": len(submitted),
@@ -361,8 +450,11 @@ def submit_channel_review(
         presentation_id=presentation_id,
         round_name=REVIEW_ROUND,
         channel=channel,
-        message=f"Submitted the {channel} report for the sole full review.",
-        data={"finding_count": len(submitted)},
+        message=(
+            f"Submitted {channel} review attempt {attempt}. The shared registry remains unchanged "
+            "until all five handoffs aggregate atomically."
+        ),
+        data={"finding_count": len(submitted), "attempt": attempt},
     )
     return round_state["channels"][channel]
 
@@ -382,67 +474,113 @@ def aggregate_round(
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") not in {"review_requested", "reviewing"}:
         raise MPresError(f"Cannot aggregate in {presentation.get('status')!r} status.")
-    channels = presentation["rounds"][REVIEW_ROUND].get("channels", {})
+    round_state = presentation["rounds"][REVIEW_ROUND]
+    channels = round_state.get("channels", {})
     missing = [channel for channel in REVIEW_CHANNELS if channel not in channels]
     if missing:
         raise MPresError("Cannot aggregate before all channels submit: " + ", ".join(missing))
     aggregate_path = aggregate_path.resolve()
     if not aggregate_path.is_file() or text_placeholders(aggregate_path):
         raise MPresError("Aggregate report is missing or incomplete.")
-    if len(aggregate_path.read_text(encoding="utf-8").strip()) < 350:
+    aggregate_text = aggregate_path.read_text(encoding="utf-8")
+    if len(aggregate_text.strip()) < 350:
         raise MPresError("Aggregate report is too short.")
+
+    # Validate every current handoff before changing the shared registry or task state.
+    collected: list[dict[str, Any]] = []
+    source_submissions: dict[str, str] = {}
+    ids: set[str] = set()
+    for channel in REVIEW_CHANNELS:
+        channel_state = channels[channel]
+        submission_root = root / str(channel_state.get("submission") or "")
+        report = submission_root / "report.md"
+        findings = submission_root / "findings.yaml"
+        receipt = submission_root / "receipt.json"
+        if not report.is_file() or len(report.read_text(encoding="utf-8").strip()) < 250:
+            raise MPresError(f"Current {channel} report is missing or incomplete.")
+        if not receipt.is_file():
+            raise MPresError(f"Current {channel} submission receipt is missing.")
+        rows = _normalize_findings_file(findings)
+        for item in rows:
+            finding_id = str(item["id"])
+            if finding_id in ids:
+                raise MPresError(f"Finding ID is duplicated across channels: {finding_id}")
+            if item["channel"] != channel or item["round_opened"] != REVIEW_ROUND:
+                raise MPresError(f"Finding {finding_id} has the wrong channel or round.")
+            ids.add(finding_id)
+            collected.append(item)
+        source_submissions[channel] = relative_display(submission_root, root)
+
+    request = read_json(_request_root(root, slug, presentation_id) / "request.json")
+    request_source = root / str(request["source_path"])
+    routing = build_revision_routing(
+        root,
+        slug,
+        presentation_id,
+        findings=collected,
+        request_source=request_source,
+    )
+
     canonical = _review_root(root, slug, presentation_id) / REVIEW_ROUND / "aggregate.md"
-    if aggregate_path != canonical.resolve():
-        shutil.copy2(aggregate_path, canonical)
-    registry = _load_findings(root, slug, presentation_id)
-    response_path = (
+    registry_value = {
+        "schema_version": 4,
+        "presentation_id": presentation_id,
+        "findings": collected,
+        "source_submissions": source_submissions,
+    }
+    # Commit only after all validation and routing have succeeded.
+    canonical.write_text(aggregate_text, encoding="utf-8", newline="\n")
+    _save_findings(root, slug, presentation_id, registry_value)
+    routing_result = write_revision_work_queues(root, slug, presentation_id, routing)
+
+    source = (
         task_path(root, slug)
         / "workers"
         / "author-coordinator"
         / "drafts"
         / presentation_id
         / "source"
-        / "AUTHOR-RESPONSES.yaml"
     )
+    response_path = source / "AUTHOR-RESPONSES.yaml"
     write_yaml_atomic(
         response_path,
         {
-            "schema_version": 3,
+            "schema_version": 4,
             "presentation_id": presentation_id,
             "responding_to_round": REVIEW_ROUND,
             "responses": [
                 {
-                    "id": str(item.get("id")),
+                    "id": str(item["id"]),
                     "disposition": "[[DISPOSITION]]",
                     "evidence": "[[EVIDENCE]]",
                     "location": "[[LOCATION]]",
                     "remaining_uncertainty": "[[UNCERTAINTY_OR_NONE]]",
                 }
-                for item in registry["findings"]
-                if isinstance(item, dict)
+                for item in collected
             ],
         },
     )
-    checklist_path = response_path.parent / "AUTHOR-MODIFICATION-CHECKLIST.yaml"
+    checklist_path = source / "AUTHOR-MODIFICATION-CHECKLIST.yaml"
     template = (
         root / "templates" / "structured" / "AUTHOR-MODIFICATION-CHECKLIST.template.yaml"
     ).read_text(encoding="utf-8").replace("[[PRESENTATION_ID]]", presentation_id)
     checklist_path.write_text(template, encoding="utf-8", newline="\n")
     decision = {
-        "schema_version": 3,
+        "schema_version": 4,
         "presentation_id": presentation_id,
         "round": REVIEW_ROUND,
         "completed_utc": utc_now(),
         "required_channels": list(REVIEW_CHANNELS),
-        "finding_ids": [str(item.get("id")) for item in registry["findings"] if isinstance(item, dict)],
+        "finding_ids": sorted(ids),
+        "source_submissions": source_submissions,
         "aggregate_report": relative_display(canonical, root),
+        "revision_routing": routing_result["routing"],
         "author_response_template": relative_display(response_path, root),
         "modification_checklist": relative_display(checklist_path, root),
         "next_status": "author_revision",
         "post_revision_review": "none",
     }
     write_json_atomic(canonical.parent / "decision.json", decision)
-    round_state = presentation["rounds"][REVIEW_ROUND]
     round_state["status"] = "completed"
     round_state["completed_utc"] = decision["completed_utc"]
     round_state["aggregate"] = decision["aggregate_report"]
@@ -457,9 +595,10 @@ def aggregate_round(
         presentation_id=presentation_id,
         round_name=REVIEW_ROUND,
         message=(
-            f"Completed the sole full review across five channels with {len(decision['finding_ids'])} "
-            "finding(s); handed all findings to the author without scheduling re-review."
+            f"Atomically collected five current channel handoffs with {len(ids)} finding(s), "
+            "generated mechanical revision routing, and handed work to the author without re-review."
         ),
+        data={"routing": routing_result["routing"]},
     )
     return decision
 
@@ -704,7 +843,34 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
     if not pdf.is_file():
         raise MPresError("Release PDF is missing.")
     deliverable = task / "deliverables" / presentation_id
+    maintenance_cycle = presentation.get("maintenance_cycle")
+    revision = 1
+    if isinstance(maintenance_cycle, dict):
+        revision = int(maintenance_cycle.get("revision") or 1)
+        cycle_root = root / str(maintenance_cycle.get("root") or "")
+        retrospective = cycle_root / "MAINTENANCE-RETROSPECTIVE.md"
+        if not retrospective.is_file():
+            template = (
+                root / "templates" / "structured" / "MAINTENANCE-RETROSPECTIVE.template.md"
+            ).read_text(encoding="utf-8")
+            for old_value, new_value in {
+                "[[PRESENTATION_ID]]": presentation_id,
+                "[[REVISION_NUMBER]]": str(revision),
+            }.items():
+                template = template.replace(old_value, new_value)
+            retrospective.write_text(template, encoding="utf-8", newline="\n")
+        if text_placeholders(retrospective) or len(retrospective.read_text(encoding="utf-8").strip()) < 250:
+            raise MPresError("Maintenance retrospective is missing or incomplete.")
     if deliverable.exists():
+        previous_release_path = deliverable / "release.json"
+        previous_revision = 1
+        if previous_release_path.is_file():
+            previous_revision = int(read_json(previous_release_path).get("revision") or 1)
+        history = task / "deliverable-history" / presentation_id / f"r{previous_revision:04d}"
+        if history.exists():
+            raise MPresError(f"Deliverable history already exists: {history}")
+        history.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(deliverable, history)
         make_tree_writable(deliverable)
         shutil.rmtree(deliverable)
     deliverable.mkdir(parents=True, exist_ok=True)
@@ -724,6 +890,15 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
     shutil.copy2(ready / "build" / "render-report-release.json", deliverable / "render-report.json")
     shutil.copy2(ready / "build" / "source-lint-release.json", deliverable / "source-lint.json")
     shutil.copy2(ready / "build" / "asset-validation-release.json", deliverable / "asset-validation.json")
+    for source_name, destination_name in (
+        ("math-source-inventory-release.json", "math-source-inventory.json"),
+        ("math-renderer-probe-release.json", "math-renderer-probe.json"),
+        ("slide-density-audit-release.json", "slide-density-audit.json"),
+        ("course-consistency-release.json", "course-consistency.json"),
+    ):
+        source_report = ready / "build" / source_name
+        if source_report.is_file():
+            shutil.copy2(source_report, deliverable / destination_name)
     shutil.copy2(
         ready / "build" / "html-layout-inspection-release.json",
         deliverable / "html-layout-inspection.json",
@@ -737,6 +912,8 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
         "title": presentation.get("title"),
         "finalized_utc": utc_now(),
         "delivery_sequence": sequence,
+        "revision": revision,
+        "maintenance_mode": (maintenance_cycle.get("mode") if isinstance(maintenance_cycle, dict) else None),
         "pdf": relative_display(deliverable / pdf.name, root),
         "source": relative_display(deliverable / "source", root),
         "render_pipeline": RENDER_PIPELINE,
@@ -746,6 +923,10 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
     write_json_atomic(deliverable / "release.json", release)
     presentation["status"] = "finalized"
     presentation["active"] = False
+    if isinstance(maintenance_cycle, dict):
+        maintenance_cycle["status"] = "finalized"
+        maintenance_cycle["finalized_utc"] = release["finalized_utc"]
+        maintenance_cycle["release_revision"] = revision
     presentation["finalized_utc"] = release["finalized_utc"]
     presentation["delivery_sequence"] = sequence
     presentation["artifacts"] = {

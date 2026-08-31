@@ -35,7 +35,7 @@
 7. planner 默认 `gpt-5.6-sol/max`；所有 worker 默认 `gpt-5.6-sol/high`。极难研究报告可由用户明确把特定 worker 提高到 `max`。
 8. worker 只能读取 `downloads/text/` 中的抽取文本。任何原 PDF 即使物理存在也禁止打开、解析、渲染、转换、OCR、截图或交给视觉模型。
 9. Python 作图默认关闭；GeoGebra 仅可做有界站内搜索并以普通超链接引用。
-10. planner 亲自编写每个逻辑 worker 和每个 authoring stage 的精确 assignment；coordinator 只能提交 assignment request，不能代写。
+10. planner 亲自编写每个逻辑 worker 的精确 assignment；一个 lesson/content unit 只有一份 lesson-author assignment，同一 thread 在内部依次完成全部 authoring stages。coordinator 只能提交 assignment request，不能代写。
 
 ## 3. 目标听众
 
@@ -94,11 +94,11 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 
 ## 9. Authoring stages
 
-每个 content unit 按任务类型对应的阶段执行；planner 为每一阶段亲自写精确 assignment：
+每个 content unit 按任务类型对应的阶段执行；planner 为整个 unit 亲自写一份精确 assignment，同一个 lesson-author thread 在该 assignment 下依次完成全部阶段：
 
 [[AUTHORING_STAGE_LIST]]
 
-阶段之间允许带理由回退。[[MCQ_STAGE_REQUIREMENT]]
+每阶段写耐久 artifact 和 checkpoint；`mpres stage submit` 验证后自动激活下一阶段，不重新 spawn、不另写 stage assignment，也不等待 coordinator 验收。阶段之间允许带理由回退。[[MCQ_STAGE_REQUIREMENT]]
 
 ## 10. 执行、并发与模型
 
@@ -125,7 +125,7 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 
 - planner：规划、确认、亲自写全部精确 assignments、政策审计、二十分钟/交付事件高层监督。
 - author-coordinator：结构化设计、请求 assignment、监督 staged lesson authors、整合、构建、自检和 post-review revision。
-- lesson-author：一个 content unit 的一个 active stage，不改其他单元。
+- lesson-author：一个 content unit、一份 planner assignment、一个连续 thread，依次完成全部内部 stages，不改其他单元。
 - specialist-reviewer：唯一一轮中的一个通道，不看其他通道或后续修订。
 - review-coordinator：验证 planner assignments、监督五通道并聚合，不写 assignment、不改 findings。
 - release-coordinator：只检查作者回应覆盖和机械门，直接发布；不判断 finding 是否修好。

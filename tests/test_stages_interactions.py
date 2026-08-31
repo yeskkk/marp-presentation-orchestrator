@@ -5,13 +5,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from mpres.assignments import approve_assignment
 from mpres.interactions import validate_unit_interactions
 from mpres.marp_source import lint_deck
-from mpres.stages import activate_stage, stage_assignment_path, stage_status
+from mpres.stages import stage_artifact_path, stage_status, start_stage_sequence, submit_stage
 from mpres.util import MPresError, read_yaml
 
 from .conftest import (
+    approve_core_assignments,
     complete_authoring_stages,
     fill_placeholders,
     initialize_one_deck,
@@ -20,21 +20,32 @@ from .conftest import (
 )
 
 
-def test_stage_cannot_activate_without_planner_assignment(project_root: Path) -> None:
-    slug, task = initialize_one_deck(project_root)
-    stage = stage_status(project_root, slug, "p01", "u01")["current_stage"]
-    assignment = stage_assignment_path(project_root, slug, "p01", "u01", stage)
-    fill_placeholders(assignment)
-    with pytest.raises(MPresError, match="personally complete and approve"):
-        activate_stage(project_root, slug, "p01", "u01", stage)
+def test_stage_sequence_requires_planner_approved_lesson_assignment(project_root: Path) -> None:
+    slug, _ = initialize_one_deck(project_root)
+    with pytest.raises(MPresError, match="planner-written lesson assignment"):
+        start_stage_sequence(project_root, slug, "p01", "u01")
 
 
-def test_all_stages_require_separate_planner_activation(project_root: Path) -> None:
+def test_one_assignment_and_one_sequence_advance_all_authoring_stages(project_root: Path) -> None:
     slug, task = initialize_one_deck(project_root)
-    complete_authoring_stages(project_root, slug, task)
-    status = stage_status(project_root, slug, "p01", "u01")
-    assert status["current_stage"] is None
-    assert all(item["status"] == "accepted" for item in status["stages"].values())
+    approve_core_assignments(project_root, slug, task)
+    initial = start_stage_sequence(project_root, slug, "p01", "u01")
+    assert initial["sequence_status"] == "active"
+    order = list(initial["stage_order"])
+    for stage_id in order:
+        status = stage_status(project_root, slug, "p01", "u01")
+        assert status["current_stage"] == stage_id
+        artifact = stage_artifact_path(project_root, slug, "p01", "u01", stage_id)
+        fill_placeholders(artifact, value="同一个 lesson-author 线程完成的阶段分析")
+        text = artifact.read_text(encoding="utf-8")
+        if stage_id == "01_scope_sources":
+            text += "\n\n只读取 tasks/test-task/downloads/text/reference.txt。"
+        artifact.write_text(text + "\n" + ("耐久阶段证据。" * 180), encoding="utf-8")
+        result = submit_stage(project_root, slug, "p01", "u01", stage_id)
+    assert result["sequence_status"] == "completed"
+    assert result["current_stage"] is None
+    assert all(item["status"] == "completed" for item in result["stages"].values())
+    assert not any((task / "workers" / "lesson-authors" / "p01" / "u01" / "stages").rglob("STAGE-ASSIGNMENT.md"))
 
 
 def test_course_requires_two_or_three_mcqs(project_root: Path) -> None:

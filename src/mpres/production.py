@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from mpres.assignments import assignment_contract_status, scaffold_assignment_contract
+from mpres.course_consistency import initialize_course_registries
 from mpres.geogebra import aggregate_unit_geogebra_records, validate_unit_geogebra_registry
 from mpres.interactions import aggregate_unit_interactions, validate_unit_interactions
 from mpres.logs import append_log
@@ -145,13 +146,17 @@ def _write_structured_templates(
     units: list[tuple[str, str]],
     *,
     task_kind: str,
+    incoming_from: str | None,
 ) -> None:
     structured = {
         "DECK-MANIFEST.yaml": "DECK-MANIFEST.template.yaml",
         "PEDAGOGY-MAP.md": "PEDAGOGY-MAP.template.md",
         "EXAMPLE-MAP.md": "EXAMPLE-MAP.template.md",
         "TERMINOLOGY.md": "TERMINOLOGY.template.md",
+        "TERMINOLOGY.yaml": "TERMINOLOGY-YAML.template.yaml",
         "SEMANTIC-OBJECTS.yaml": "SEMANTIC-OBJECTS.template.yaml",
+        "PRESENTATION-CONTINUITY-MAP.yaml": "PRESENTATION-CONTINUITY-MAP.template.yaml",
+        "SLIDE-DENSITY-AUDIT.yaml": "SLIDE-DENSITY-AUDIT.template.yaml",
         "ASSET-DECISIONS.yaml": "ASSET-DECISIONS.template.yaml",
         "GEOGEBRA-RESOURCES.yaml": "GEOGEBRA-RESOURCES.template.yaml",
         "LESSON-TIME-PLANS.yaml": "LESSON-TIME-PLANS.template.yaml",
@@ -191,6 +196,7 @@ def _write_structured_templates(
                 "[[CONTENT_UNITS_YAML]]": unit_yaml,
                 "[[SCOPE_ID]]": presentation_id,
                 "[[TASK_KIND]]": task_kind,
+                "[[INCOMING_FROM_OR_NULL]]": (f'"{incoming_from}"' if incoming_from else "null"),
             },
         )
         (source / destination).write_text(text, encoding="utf-8", newline="\n")
@@ -243,6 +249,8 @@ def initialize_production(
     units_by_presentation = parse_unit_specs(unit_specs, {item[0] for item in presentations})
     task = task_path(root, slug)
     templates = _templates(root)
+    if state.get("kind") == "course":
+        initialize_course_registries(root, task)
 
     role_dirs = {
         "author-coordinator": "author-coordinator",
@@ -259,7 +267,7 @@ def initialize_production(
         )
 
     state_presentations: list[dict[str, Any]] = []
-    for presentation_id, title in presentations:
+    for presentation_index, (presentation_id, title) in enumerate(presentations):
         units = units_by_presentation[presentation_id]
         author_root = task / "workers" / "author-coordinator"
         author_assignment = author_root / "assignments" / presentation_id / "TASK-AUTHOR-COORDINATOR.md"
@@ -420,14 +428,20 @@ def initialize_production(
             newline="\n",
         )
         _write_structured_templates(
-            root, author_source, presentation_id, title, units, task_kind=str(state.get("kind"))
+            root,
+            author_source,
+            presentation_id,
+            title,
+            units,
+            task_kind=str(state.get("kind")),
+            incoming_from=(presentations[presentation_index - 1][0] if presentation_index > 0 else None),
         )
 
         unit_state: list[dict[str, Any]] = []
         for meeting_number, (unit_id, unit_title) in enumerate(units, start=1):
             unit_dir = lesson_root / unit_id
             unit_source = unit_dir / "source"
-            for directory in [unit_source / "assets", unit_dir / "logs", unit_dir / "checkpoints"]:
+            for directory in [unit_source / "assets", unit_dir / "checkpoints"]:
                 directory.mkdir(parents=True, exist_ok=True)
             assignment = _replace(
                 templates["lesson"],
@@ -640,9 +654,9 @@ def initialize_production(
                     "organization_basis": (
                         "course_meeting" if state.get("kind") == "course" else "report_section"
                     ),
-                    "status": "awaiting_stage_assignment",
+                    "status": "stage_active",
                     "stage": first_stage,
-                    "stage_status": "awaiting_assignment",
+                    "stage_status": "active",
                     "integrated_utc": None,
                 }
             )

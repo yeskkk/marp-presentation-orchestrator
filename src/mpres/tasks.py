@@ -103,7 +103,7 @@ def create_task(
 
     for directory in [
         task / "state",
-        task / "logs" / "roles",
+        task / "logs",
         task / "downloads" / "restricted-originals",
         task / "downloads" / "text",
         task / "downloads" / "restricted-metadata",
@@ -124,9 +124,9 @@ def create_task(
         "[[SESSION_COUNT_OR_NA]]": str(sessions) if sessions is not None else "不适用",
         "[[MINUTES_OR_NA]]": str(minutes) if minutes is not None else "不适用",
         "[[AUTHORING_STAGE_DESCRIPTION]]": (
-            "每个 lesson-author 采用六阶段课程写作流程；"
+            "每个 lesson-author 在一份 planner assignment 和同一个 thread 内采用六阶段课程写作流程；"
             if kind == "course"
-            else "每个 lesson-author 采用四阶段精简报告流程；"
+            else "每个 lesson-author 在一份 planner assignment 和同一个 thread 内采用四阶段精简报告流程；"
         ),
         "[[AUTHORING_STAGE_LIST]]": (
             "1. `scope_sources`\n2. `learner_need`\n3. `domain_development`\n"

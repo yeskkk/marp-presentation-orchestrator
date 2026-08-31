@@ -90,7 +90,15 @@ def test_geogebra_requires_verified_material_and_plain_markdown_link(project_roo
 
 def test_thread_that_authored_deck_cannot_review_it(project_root: Path) -> None:
     slug, _ = initialize_one_deck(project_root)
-    register_thread(project_root, slug, handle_id="t1", runtime_name="author", role="lesson-author")
+    register_thread(
+        project_root,
+        slug,
+        handle_id="t1",
+        runtime_name="author",
+        role="lesson-author",
+        actual_model="gpt-5.6-sol",
+        actual_reasoning_effort="high",
+    )
     assign_thread(
         project_root,
         slug,

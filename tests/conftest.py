@@ -13,11 +13,9 @@ import yaml
 from mpres.assignments import approve_assignment, contract_paths
 from mpres.production import initialize_production
 from mpres.stages import (
-    accept_stage,
-    activate_stage,
     stage_artifact_path,
-    stage_assignment_path,
     stage_status,
+    start_stage_sequence,
     submit_stage,
 )
 from mpres.tasks import confirm_task, create_task, present_task
@@ -25,7 +23,8 @@ from mpres.util import read_yaml, utc_now, write_yaml_atomic
 
 
 @pytest.fixture
-def project_root(tmp_path: Path) -> Path:
+def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("MPRES_LOG_MODE", "direct-test")
     source = Path(__file__).resolve().parents[1]
     for name in ["templates", "themes", ".agents", ".codex"]:
         shutil.copytree(source / name, tmp_path / name)
@@ -211,14 +210,12 @@ def approve_core_assignments(root: Path, slug: str, task: Path) -> None:
 
 def complete_authoring_stages(root: Path, slug: str, task: Path) -> None:
     approve_core_assignments(root, slug, task)
+    start_stage_sequence(root, slug, "p01", "u01")
     while True:
         status = stage_status(root, slug, "p01", "u01")
         stage_id = status.get("current_stage")
         if stage_id is None:
             break
-        assignment = stage_assignment_path(root, slug, "p01", "u01", stage_id)
-        planner_write_and_approve(root, slug, assignment)
-        activate_stage(root, slug, "p01", "u01", stage_id)
         artifact = stage_artifact_path(root, slug, "p01", "u01", stage_id)
         fill_placeholders(artifact, value="本阶段已经完成的具体分析和决定")
         text = artifact.read_text(encoding="utf-8")
@@ -230,7 +227,6 @@ def complete_authoring_stages(root: Path, slug: str, task: Path) -> None:
         text += "\n\n" + (f"{stage_id} 的耐久分析、证据和下一阶段约束。" * 100)
         artifact.write_text(text, encoding="utf-8", newline="\n")
         submit_stage(root, slug, "p01", "u01", stage_id)
-        accept_stage(root, slug, "p01", "u01", stage_id)
 
 
 def _option_audit(correct: str = "A") -> dict[str, dict[str, Any]]:
@@ -332,6 +328,18 @@ def write_unit_source(task: Path, *, kind: str = "course") -> None:
                 "purpose": "区分条件和结论，避免只记住表面口号。",
                 "preceding_comparison": "上一页只建立对象，本题要求独立判断四个陈述。",
                 "requires_fresh_inference": True,
+                "information_state": {
+                    "available_before_prompt": ["当前对象、定义和必要条件已经在前页给出。"],
+                    "intentionally_withheld": [],
+                },
+                "new_inference": "学生必须把定义中的条件应用到四个新陈述，而不是复制上一页。",
+                "decision_unit": "判断哪一个陈述满足当前定义",
+                "prerequisite_available": True,
+                "cue_leakage_audit": "题干和选项没有重复答案页措辞，也没有强调正确选项。",
+                "composite_option_check": {
+                    "single_decision": True,
+                    "rationale": "四个选项都回答同一个关于条件与结论的判断问题。",
+                },
                 "selection_rationale": "concept_discrimination",
                 "visible_labels": ["A", "B", "C", "D"],
                 "option_audit": _option_audit("A"),
@@ -342,6 +350,18 @@ def write_unit_source(task: Path, *, kind: str = "course") -> None:
                 "purpose": "检查学生能否在新对象上重新选择方法。",
                 "preceding_comparison": "该题改变对象结构，不能从上一页直接复制答案。",
                 "requires_fresh_inference": True,
+                "information_state": {
+                    "available_before_prompt": ["旧方法的适用条件和新对象的结构均已给出。"],
+                    "intentionally_withheld": [],
+                },
+                "new_inference": "学生必须重新检查适用条件，并据此选择方法。",
+                "decision_unit": "选择适用于新对象的方法",
+                "prerequisite_available": True,
+                "cue_leakage_audit": "题干不出现答案页中的重新核对条件表述。",
+                "composite_option_check": {
+                    "single_decision": True,
+                    "rationale": "每个选项都是对同一个方法选择问题的回答。",
+                },
                 "selection_rationale": "transfer",
                 "visible_labels": ["A", "B", "C", "D"],
                 "option_audit": _option_audit("B"),
@@ -563,74 +583,37 @@ def prepare_author_source(root: Path, slug: str, task: Path, *, kind: str = "cou
             "slides": slide_rows,
         },
     )
+    write_yaml_atomic(
+        author / "SLIDE-DENSITY-AUDIT.yaml",
+        {
+            "schema_version": 1,
+            "presentation_id": "p01",
+            "slides": [
+                {
+                    "id": row["id"],
+                    "principal_teaching_move": (
+                        "建立本页唯一的主要教学动作并服务于当前概念链"
+                    ),
+                    "substantial_blocks": ["一个连贯的教学信息组"],
+                    "split_rationale": "",
+                }
+                for row in slide_rows
+            ],
+        },
+    )
     return author
 
 
 def install_fake_marp(root: Path, *, version: str = "9.9.9", overflow_html: bool = False) -> Path:
+    """Install a fast deterministic Marp test double."""
+
     binary = root / "node_modules" / ".bin" / "marp"
     binary.parent.mkdir(parents=True, exist_ok=True)
-    overflow_literal = "True" if overflow_html else "False"
-    binary.write_text(
-        f'''#!/usr/bin/env python3
-from __future__ import annotations
-import html
-import re
-import sys
-from pathlib import Path
-import fitz
-
-OVERFLOW_HTML = {overflow_literal}
-if '--version' in sys.argv:
-    print('{version}')
-    raise SystemExit(0)
-args = sys.argv[1:]
-source = Path(args[0])
-output = Path(args[args.index('--output') + 1])
-text = source.read_text(encoding='utf-8')
-lines = text.splitlines()
-front_end = next(i for i, line in enumerate(lines[1:], start=1) if line.strip() == '---')
-body = lines[front_end + 1:]
-chunks = []
-current = []
-in_fence = False
-for line in body:
-    if line.lstrip().startswith('```'):
-        in_fence = not in_fence
-    if line.strip() == '---' and not in_fence:
-        chunks.append(current)
-        current = []
-    else:
-        current.append(line)
-chunks.append(current)
-output.parent.mkdir(parents=True, exist_ok=True)
-if output.suffix.lower() == '.html':
-    sections = []
-    for index, chunk in enumerate(chunks, start=1):
-        chunk_text = '\\n'.join(chunk)
-        match = re.search(r'<!--\\s*slide-id:\\s*([^\\s]+)\\s*-->', chunk_text)
-        slide_id = match.group(1) if match else f'slide-{{index}}'
-        visible = html.escape(re.sub(r'<!--.*?-->', '', chunk_text, flags=re.S))
-        extra = '<div style="height:900px">overflow</div>' if OVERFLOW_HTML and index == 1 else ''
-        sections.append(
-            f'<section data-marpit-scope="1" id="{{slide_id}}" style="box-sizing:border-box;width:1280px;height:720px;overflow:hidden;padding:40px"><pre style="white-space:pre-wrap">{{visible}}</pre>{{extra}}</section>'
-        )
-    output.write_text(
-        '<!doctype html><html><head><meta charset="utf-8"><style>html,body{{margin:0}}.marpit>section{{position:relative;display:block}}</style></head><body><div class="marpit">'
-        + ''.join(sections) + '</div></body></html>',
-        encoding='utf-8',
+    template = (Path(__file__).with_name("fake_marp_cli.py")).read_text(encoding="utf-8")
+    template = template.replace("__VERSION__", version).replace(
+        "__OVERFLOW__", "True" if overflow_html else "False"
     )
-else:
-    doc = fitz.open()
-    for index in range(len(chunks)):
-        page = doc.new_page(width=960, height=540)
-        page.insert_text((72, 90), f'Marp test slide {{index + 1}}', fontsize=28)
-        page.insert_text((72, 140), 'Readable mathematical presentation content.', fontsize=22)
-    doc.save(output)
-    doc.close()
-print(f'Wrote {{output}}')
-''',
-        encoding="utf-8",
-    )
+    binary.write_text(template, encoding="utf-8", newline="\n")
     binary.chmod(0o755)
     return binary
 
@@ -654,3 +637,83 @@ def complete_specialist_assignments(root: Path, slug: str, task: Path) -> None:
             / "TASK-SPECIALIST-REVIEWER.md"
         )
         planner_write_and_approve(root, slug, assignment)
+
+
+def release_zero_finding_deck(
+    root: Path, *, slug: str = "maintenance-task"
+) -> tuple[str, Path, dict[str, Any]]:
+    """Produce one fully released deck with the standard no-recheck workflow."""
+
+    from mpres.rendering import render_presentation
+    from mpres.review import (
+        aggregate_round,
+        complete_author_revision,
+        finalize_release,
+        request_review,
+        submit_channel_review,
+    )
+    from mpres.state import REVIEW_CHANNELS
+
+    slug, task = initialize_one_deck(root, slug=slug)
+    install_fake_marp(root, version="55.0.0")
+    source = prepare_author_source(root, slug, task)
+    render_presentation(root, slug, "p01", stage="author", timeout=60)
+    request_review(root, slug, "p01")
+    for channel in REVIEW_CHANNELS:
+        channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel
+        planner_write_and_approve(root, slug, channel_root / "TASK-SPECIALIST-REVIEWER.md")
+        report = channel_root / "report.md"
+        report.write_text(
+            f"# {channel} review\n\n" + "完整阅读冻结稿，当前通道没有 finding。\n" * 45,
+            encoding="utf-8",
+        )
+        structured = channel_root / "findings.yaml"
+        write_yaml_atomic(
+            structured,
+            {
+                "schema_version": 3,
+                "presentation_id": "p01",
+                "round": "full",
+                "channel": channel,
+                "findings": [],
+            },
+        )
+        submit_channel_review(
+            root,
+            slug,
+            "p01",
+            round_name="full",
+            channel=channel,
+            report_path=report,
+            findings_path=structured,
+        )
+    aggregate = task / "reviews" / "p01" / "full" / "aggregate.md"
+    aggregate.write_text(
+        "# Review aggregate\n\n" + "五个通道均完整审核，当前无 finding。\n" * 45,
+        encoding="utf-8",
+    )
+    aggregate_round(root, slug, "p01", round_name="full", aggregate_path=aggregate)
+    responses = source / "AUTHOR-RESPONSES.yaml"
+    response_value = read_yaml(responses)
+    assert response_value["responses"] == []
+    checklist = source / "AUTHOR-MODIFICATION-CHECKLIST.yaml"
+    checklist_value = read_yaml(checklist)
+    checklist_value["steps"] = {key: True for key in checklist_value["steps"]}
+    checklist_value["completed_utc"] = utc_now()
+    checklist_value["author_declaration"] = (
+        "The author completed the required revision workflow even though no findings were opened."
+    )
+    write_yaml_atomic(checklist, checklist_value)
+    (source / "AUTHOR-REVISION.md").write_text(
+        "# Author revision\n\n" + "已重新检查整份课件并完成规定流程。\n" * 45,
+        encoding="utf-8",
+    )
+    (source / "SELF-CHECK.md").write_text(
+        "# Revised self-check\n\n" + "已重新运行全部 author 机械检查。\n" * 45,
+        encoding="utf-8",
+    )
+    render_presentation(root, slug, "p01", stage="author", timeout=60)
+    complete_author_revision(root, slug, "p01", checklist_file=checklist)
+    render_presentation(root, slug, "p01", stage="release", timeout=60)
+    release = finalize_release(root, slug, "p01")
+    return slug, task, release

@@ -1,25 +1,39 @@
-# Design notes — v0.4.1
+# Design notes — v0.5.0
 
-## Deliberate choices
+## Main changes from v0.4.1
 
-- Marp source and PDF are the only durable presentation artifacts.
-- Disposable Marp HTML is allowed only for author/release mechanical overflow inspection.
-- Mechanical overflow is an author self-check and submission gate, not a reviewer responsibility.
-- Planner defaults to Sol/max; workers default to Sol/high, from one global policy file.
-- Course decks are organized by numbered meetings, not textbook chapters.
-- A course normally prepares about 1.5× nominal time; optional explanatory examples come after the natural stopping point and need not be presented.
-- One complete five-channel review, followed by author-owned revision with no independent recheck.
-- Findings remain historical statements rather than resolved lifecycle objects.
-- Planner personally writes every exact assignment.
-- Original PDFs are inaccessible to workers after system extraction.
-- Screenshots and model-vision review are forbidden.
-- Python figures are exception-only.
-- Verified GeoGebra materials may be reused across meetings; there is no deduplication policy.
+- Replaced per-role JSONL logs with a persistent project-level logging daemon and one append-only task log.
+- Unified each lesson's authoring stages under one planner-approved assignment and one continuous lesson-author thread.
+- Added deterministic current author/review launch plans without an orchestration journal.
+- Added thread runtime verification and reserved-capacity preflight.
+- Added atomic five-channel aggregation and narrowly constrained pre-aggregation resubmission.
+- Added mechanical finding routing back to original lesson units or coordinator reconciliation.
+- Added course-level terminology, semantic-object and cross-deck continuity validation.
+- Added principal-teaching-move density audit.
+- Added source and disposable-HTML mathematics inspection; deliberately omitted PDF-math evidence.
+- Added numbered targeted/full-review corrective maintenance without overwriting historical releases.
+- Added contextual language finding templates.
 
-## Why temporary HTML is not a second output
+## Why one log daemon
 
-Marp's HTML output exposes each slide as a real DOM section. That permits deterministic scroll/client dimension checks which PDF text extraction cannot reliably provide. The HTML is generated in a temporary directory, is never given to reviewers, is deleted immediately, and never enters deliverables. It is analogous to a compiler's temporary intermediate representation, not a parallel teaching artifact.
+Many agents may report progress concurrently, but they should not know about filesystem locking or write coordination. A long-running Python daemon receives requests, serializes them through its own queue and writes one `project.jsonl`. Startup coordination and socket details remain hidden under `.mpres/` and are implementation details, not part of the worker protocol.
 
-## Time planning philosophy
+## Why internal stages, not stage workers
 
-The nominal class duration marks the point where essential teaching should be complete. Preparing additional examples gives the instructor flexibility to respond to audience speed. The framework checks that the stopping point and extension bank are explicit; it does not reject a deck merely because the prepared-time estimate differs from 1.5×.
+The six-stage method improves author attention, but repeated assignment approval and respawn add cost without improving semantics. A whole lesson now has one planner-owned contract; stage artifacts/checkpoints preserve structure while the same thread continues.
+
+## Why source + HTML math checks only
+
+Source lint catches delimiter/environment/command errors. Disposable HTML reveals renderer failures and raw-marker leakage. A separate PDF-math evidence layer would add cost while still not proving mathematical correctness; general PDF structural inspection and domain review are sufficient boundaries.
+
+## Why no crash-recovery subsystem
+
+The user explicitly rejected a heavier recovery design. v0.5.0 preserves durable state, one project log, checkpoints, handoffs and thread registry, but recovery decisions remain planner work rather than a new workflow/skill/template system.
+
+## Why no workflow freeze
+
+The project does not implement engine-generation locks or migration transactions. Material policy changes still require TASK reconfirmation; ordinary source-code maintenance relies on normal testing and careful task supervision.
+
+## Why token accounting remains limited
+
+Exact counters can still be imported and reported. v0.5.0 does not add orchestration-attempt attribution or budget automation.

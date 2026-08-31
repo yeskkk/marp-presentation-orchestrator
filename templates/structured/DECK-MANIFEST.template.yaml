@@ -8,6 +8,9 @@ slides:
     unit: "[[UNIT_ID]]"
     kind: core
     concept_chain: "[[CHAIN_ID]]"
+    principal_teaching_move: "[[PRINCIPAL_TEACHING_MOVE]]"
+    substantial_blocks: ["[[SUBSTANTIAL_BLOCK]]"]
+    split_rationale: null
     interaction_role: none
     paired_with: null
     interaction_format: none

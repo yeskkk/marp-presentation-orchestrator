@@ -42,9 +42,10 @@ def test_single_review_author_owned_revision_and_direct_release(project_root: Pa
 
     for i, channel in enumerate(REVIEW_CHANNELS, start=1):
         channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel
-        planner_write_and_approve(
-            project_root, slug, channel_root / "TASK-SPECIALIST-REVIEWER.md"
-        )
+        assignment_path = channel_root / "TASK-SPECIALIST-REVIEWER.md"
+        from mpres.assignments import assignment_contract_status
+        if not assignment_contract_status(assignment_path).get("approved"):
+            planner_write_and_approve(project_root, slug, assignment_path)
         report = channel_root / "report.md"
         report.write_text(
             f"# {channel} review\n\n" + "完整范围、证据、finding 与结论。\n" * 45,
@@ -84,6 +85,10 @@ def test_single_review_author_owned_revision_and_direct_release(project_root: Pa
         project_root, slug, "p01", round_name="full", aggregate_path=aggregate
     )
     assert decision["post_revision_review"] == "none"
+    assert (task / "reviews" / "p01" / "REVISION-ROUTING.yaml").is_file()
+    unit_queue = task / "workers" / "lesson-authors" / "p01" / "u01" / "REVISION-FINDINGS.yaml"
+    assert unit_queue.is_file()
+    assert len(yaml.safe_load(unit_queue.read_text(encoding="utf-8"))["finding_ids"]) == 5
     assert load_state(project_root, slug)["presentations"][0]["status"] == "author_revision"
 
     responses_path = source / "AUTHOR-RESPONSES.yaml"
@@ -193,3 +198,83 @@ def test_finding_resolution_fields_are_rejected(project_root: Path) -> None:
             report_path=report,
             findings_path=findings_path,
         )
+
+
+def test_review_resubmission_is_narrow_and_aggregation_is_atomic(project_root: Path) -> None:
+    import pytest
+
+    from mpres.util import MPresError, read_yaml, write_yaml_atomic
+
+    slug, task = initialize_one_deck(project_root, slug="atomic-review-task")
+    install_fake_marp(project_root, version="91.0.0")
+    prepare_author_source(project_root, slug, task)
+    render_presentation(project_root, slug, "p01", stage="author", timeout=60)
+    request_review(project_root, slug, "p01")
+
+    def submit(channel: str, row: dict[str, object]) -> dict[str, object]:
+        channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel
+        assignment_path = channel_root / "TASK-SPECIALIST-REVIEWER.md"
+        from mpres.assignments import assignment_contract_status
+        if not assignment_contract_status(assignment_path).get("approved"):
+            planner_write_and_approve(project_root, slug, assignment_path)
+        report = channel_root / "report.md"
+        report.write_text(
+            f"# {channel} review\n\n" + "完整范围、证据和 finding 说明。\n" * 45,
+            encoding="utf-8",
+        )
+        structured = channel_root / "findings.yaml"
+        write_yaml_atomic(
+            structured,
+            {
+                "schema_version": 3,
+                "presentation_id": "p01",
+                "round": "full",
+                "channel": channel,
+                "findings": [row],
+            },
+        )
+        return submit_channel_review(
+            project_root,
+            slug,
+            "p01",
+            round_name="full",
+            channel=channel,
+            report_path=report,
+            findings_path=structured,
+        )
+
+    language = finding("language", 1)
+    first = submit("language", language)
+    assert first["attempt"] == 1
+    registry = read_yaml(task / "reviews" / "p01" / "findings.yaml")
+    assert registry["findings"] == []
+
+    corrected = dict(language)
+    corrected["location"] = {"slide_id": "p01-u01-q2"}
+    corrected["evidence_path"] = "presentation.md#p01-u01-q2"
+    corrected["reviewer_note"] = "The original issue was correct; only the slide location was corrected."
+    second = submit("language", corrected)
+    assert second["attempt"] == 2
+    receipt = task / "workers" / "specialist-reviewers" / "p01" / "full" / "language" / "submissions" / "attempt-0002" / "receipt.json"
+    assert receipt.is_file()
+
+    changed_issue = dict(corrected)
+    changed_issue["issue"] = "A different substantive issue must not replace the original finding."
+    with pytest.raises(MPresError, match="changes substantive finding fields"):
+        submit("language", changed_issue)
+
+    for index, channel in enumerate(REVIEW_CHANNELS[1:], start=2):
+        row = finding(channel, index)
+        if channel == "domain_accuracy":
+            row["id"] = language["id"]  # Cross-channel duplicate, detected only at atomic aggregate.
+        submit(channel, row)
+
+    aggregate = task / "reviews" / "p01" / "full" / "aggregate.md"
+    aggregate.write_text(
+        "# Aggregate\n\n" + "所有当前 handoff 均已到达，准备原子提交。\n" * 45,
+        encoding="utf-8",
+    )
+    with pytest.raises(MPresError, match="duplicated across channels"):
+        aggregate_round(project_root, slug, "p01", round_name="full", aggregate_path=aggregate)
+    registry_after = read_yaml(task / "reviews" / "p01" / "findings.yaml")
+    assert registry_after["findings"] == []

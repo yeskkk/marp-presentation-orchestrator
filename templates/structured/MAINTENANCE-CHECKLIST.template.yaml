@@ -1,0 +1,19 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+revision: [[REVISION_NUMBER]]
+mode: "[[MODE]]"
+steps:
+  reread_scope: false
+  changed_only_allowed_material: false
+  updated_source: false
+  completed_self_check: false
+  reran_source_lint: false
+  reran_asset_validation: false
+  reran_math_source_and_renderer_checks: false
+  reran_density_audit: false
+  reran_course_consistency: false
+  reran_html_layout_inspection: false
+  rebuilt_pdf: false
+  reran_pdf_inspection: false
+completed_utc: null
+author_declaration: "[[AUTHOR_DECLARATION]]"

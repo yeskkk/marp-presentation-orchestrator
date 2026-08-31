@@ -16,3 +16,5 @@ tasks/*
 !tasks/.gitkeep
 
 *.pdf
+.mpres/
+tasks/*/logs/project.jsonl

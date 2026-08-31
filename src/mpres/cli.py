@@ -16,9 +16,23 @@ from mpres.audit import audit_task
 from mpres.checkpoints import checkpoint_status, save_checkpoint
 from mpres.doctor import doctor_report
 from mpres.geogebra import validate_task_geogebra
+from mpres.course_consistency import validate_course_consistency
+from mpres.density import validate_slide_density
 from mpres.html_layout import inspect_task_html_layout
-from mpres.logs import append_log
+from mpres.log_daemon import daemon_status, start_log_daemon, stop_log_daemon
+from mpres.logs import append_log, log_file, read_log_tail
+from mpres.orchestration import author_launch_plan, review_launch_plan
+from mpres.maintenance import (
+    aggregate_maintenance_review,
+    complete_maintenance,
+    maintenance_status,
+    open_maintenance,
+    publish_maintenance,
+    request_maintenance_review,
+    submit_maintenance_channel,
+)
 from mpres.marp_source import lint_task_source
+from mpres.math_inspection import inspect_math_renderer, inspect_math_source
 from mpres.pdf_inspection import inspect_task_pdf
 from mpres.policy import confirm_policy_change, policy_audit, propose_policy_change
 from mpres.production import (
@@ -41,13 +55,7 @@ from mpres.review import (
     review_status,
     submit_channel_review,
 )
-from mpres.stages import (
-    accept_stage,
-    activate_stage,
-    reopen_stage,
-    stage_status,
-    submit_stage,
-)
+from mpres.stages import reopen_stage, stage_status, start_stage_sequence, submit_stage
 from mpres.state import REVIEW_CHANNELS, REVIEW_ROUNDS
 from mpres.supervision import supervise_once, watch_supervision
 from mpres.tasks import (
@@ -62,6 +70,7 @@ from mpres.tasks import (
 )
 from mpres.threads import (
     assign_thread,
+    capacity_preflight,
     list_threads,
     register_thread,
     release_thread,
@@ -206,15 +215,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     stage = commands.add_parser("stage")
     stage_sub = stage.add_subparsers(dest="stage_command", required=True)
-    for name in ("status", "activate", "submit", "accept", "reopen"):
+    for name in ("status", "start", "submit", "complete", "reopen"):
         sub = stage_sub.add_parser(name)
         sub.add_argument("slug")
         sub.add_argument("--presentation", required=True)
         sub.add_argument("--unit", required=True)
-        if name != "status":
+        if name in {"submit", "complete", "reopen"}:
             sub.add_argument("--stage", required=True)
+        if name in {"start", "submit", "complete"}:
+            sub.add_argument("--thread-handle")
         if name == "reopen":
             sub.add_argument("--reason", required=True)
+
+    orchestration = commands.add_parser(
+        "orchestration", help="Generate deterministic current author/review launch plans."
+    )
+    orchestration_sub = orchestration.add_subparsers(dest="orchestration_command", required=True)
+    for name in ("author-plan", "review-plan"):
+        sub = orchestration_sub.add_parser(name)
+        sub.add_argument("slug")
+        sub.add_argument("--presentation", required=True)
+        sub.add_argument("--save", action="store_true")
 
     role = commands.add_parser("role")
     role_sub = role.add_subparsers(dest="role_command", required=True)
@@ -250,11 +271,16 @@ def build_parser() -> argparse.ArgumentParser:
     thread_sub = thread.add_subparsers(dest="thread_command", required=True)
     thread_list = thread_sub.add_parser("list")
     thread_list.add_argument("slug")
+    thread_capacity = thread_sub.add_parser("capacity")
+    thread_capacity.add_argument("slug")
+    thread_capacity.add_argument("--requested", type=int, default=1)
     thread_register = thread_sub.add_parser("register")
     thread_register.add_argument("slug")
     thread_register.add_argument("--handle", required=True)
     thread_register.add_argument("--runtime-name", required=True)
     thread_register.add_argument("--role", required=True)
+    thread_register.add_argument("--actual-model", required=True)
+    thread_register.add_argument("--actual-reasoning-effort", required=True)
     thread_assign = thread_sub.add_parser("assign")
     thread_assign.add_argument("slug")
     thread_assign.add_argument("--handle", required=True)
@@ -276,6 +302,11 @@ def build_parser() -> argparse.ArgumentParser:
     thread_release.add_argument("--capacity-released", action="store_true")
     thread_release.add_argument("--notes")
 
+    log_daemon = commands.add_parser("log-daemon")
+    log_daemon_sub = log_daemon.add_subparsers(dest="log_daemon_command", required=True)
+    for name in ("start", "status", "stop"):
+        log_daemon_sub.add_parser(name)
+
     log = commands.add_parser("log")
     log_sub = log.add_subparsers(dest="log_command", required=True)
     add = log_sub.add_parser("add")
@@ -295,6 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
             "handoff",
             "delivery",
             "checkpoint",
+            "maintenance",
         ],
         required=True,
     )
@@ -304,6 +336,14 @@ def build_parser() -> argparse.ArgumentParser:
     add.add_argument("--channel")
     add.add_argument("--message", required=True)
     add.add_argument("--data-json")
+    tail = log_sub.add_parser("tail")
+    tail.add_argument("slug")
+    tail.add_argument("--count", type=int, default=50)
+    tail.add_argument("--actor")
+    tail.add_argument("--presentation")
+    tail.add_argument("--unit")
+    tail.add_argument("--round")
+    tail.add_argument("--channel")
 
     reference = commands.add_parser("reference")
     reference_sub = reference.add_subparsers(dest="reference_command", required=True)
@@ -343,7 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
     render = commands.add_parser("render")
     render.add_argument("slug")
     render.add_argument("--presentation", required=True)
-    render.add_argument("--stage", choices=["author", "release"], required=True)
+    render.add_argument("--stage", choices=["author", "release", "maintenance"], required=True)
     render.add_argument("--source", type=Path)
     render.add_argument("--timeout", type=int, default=1800)
 
@@ -358,6 +398,49 @@ def build_parser() -> argparse.ArgumentParser:
     ihtml.add_argument("--presentation", required=True)
     ihtml.add_argument("--stage", choices=["author", "release"], required=True)
     ihtml.add_argument("--timeout", type=int, default=1800)
+    imath = inspect_sub.add_parser("math-source")
+    imath.add_argument("slug")
+    imath.add_argument("--presentation", required=True)
+    imath.add_argument("--stage", choices=["author", "release"], required=True)
+    idensity = inspect_sub.add_parser("density")
+    idensity.add_argument("slug")
+    idensity.add_argument("--presentation", required=True)
+    idensity.add_argument("--stage", choices=["author", "release"], required=True)
+    icourse = inspect_sub.add_parser("course-consistency")
+    icourse.add_argument("slug")
+    icourse.add_argument("--presentation", required=True)
+    icourse.add_argument("--stage", choices=["author", "release"], required=True)
+
+    maintenance = commands.add_parser("maintenance")
+    maintenance_sub = maintenance.add_subparsers(dest="maintenance_command", required=True)
+    mopen = maintenance_sub.add_parser("open")
+    mopen.add_argument("slug")
+    mopen.add_argument("--presentation", required=True)
+    mopen.add_argument("--mode", choices=["targeted_patch", "full_corrective_review"], required=True)
+    mopen.add_argument("--reason", required=True)
+    mopen.add_argument("--allowed-change", action="append", required=True)
+    mrequest = maintenance_sub.add_parser("request-review")
+    mrequest.add_argument("slug")
+    mrequest.add_argument("--presentation", required=True)
+    msubmit = maintenance_sub.add_parser("submit-channel")
+    msubmit.add_argument("slug")
+    msubmit.add_argument("--presentation", required=True)
+    msubmit.add_argument("--channel", choices=REVIEW_CHANNELS, required=True)
+    msubmit.add_argument("--report", type=Path, required=True)
+    msubmit.add_argument("--findings", type=Path, required=True)
+    maggregate = maintenance_sub.add_parser("aggregate")
+    maggregate.add_argument("slug")
+    maggregate.add_argument("--presentation", required=True)
+    maggregate.add_argument("--report", type=Path, required=True)
+    mcomplete = maintenance_sub.add_parser("complete")
+    mcomplete.add_argument("slug")
+    mcomplete.add_argument("--presentation", required=True)
+    mpublish = maintenance_sub.add_parser("publish")
+    mpublish.add_argument("slug")
+    mpublish.add_argument("--presentation", required=True)
+    mstatus = maintenance_sub.add_parser("status")
+    mstatus.add_argument("slug")
+    mstatus.add_argument("--presentation", required=True)
 
     review = commands.add_parser("review")
     review_sub = review.add_subparsers(dest="review_command", required=True)
@@ -535,17 +618,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "stage":
             if args.stage_command == "status":
                 result = stage_status(root, args.slug, args.presentation, args.unit)
-            elif args.stage_command == "activate":
-                result = activate_stage(
-                    root, args.slug, args.presentation, args.unit, args.stage
+            elif args.stage_command == "start":
+                result = start_stage_sequence(
+                    root,
+                    args.slug,
+                    args.presentation,
+                    args.unit,
+                    thread_handle=args.thread_handle,
                 )
-            elif args.stage_command == "submit":
+            elif args.stage_command in {"submit", "complete"}:
                 result = submit_stage(
-                    root, args.slug, args.presentation, args.unit, args.stage
-                )
-            elif args.stage_command == "accept":
-                result = accept_stage(
-                    root, args.slug, args.presentation, args.unit, args.stage
+                    root,
+                    args.slug,
+                    args.presentation,
+                    args.unit,
+                    args.stage,
+                    thread_handle=args.thread_handle,
                 )
             else:
                 result = reopen_stage(
@@ -558,6 +646,18 @@ def main(argv: list[str] | None = None) -> int:
                 )
             _json(result)
             return 0
+
+        if args.command == "orchestration":
+            if args.orchestration_command == "author-plan":
+                result = author_launch_plan(
+                    root, args.slug, args.presentation, save=args.save
+                )
+            else:
+                result = review_launch_plan(
+                    root, args.slug, args.presentation, save=args.save
+                )
+            _json(result)
+            return 0 if result.get("capacity", {}).get("ok", True) else 1
 
         if args.command == "role":
             if args.role_command == "assignment-check":
@@ -616,6 +716,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "thread":
             if args.thread_command == "list":
                 result = list_threads(root, args.slug)
+            elif args.thread_command == "capacity":
+                result = capacity_preflight(root, args.slug, requested=args.requested)
             elif args.thread_command == "register":
                 result = register_thread(
                     root,
@@ -623,6 +725,8 @@ def main(argv: list[str] | None = None) -> int:
                     handle_id=args.handle,
                     runtime_name=args.runtime_name,
                     role=args.role,
+                    actual_model=args.actual_model,
+                    actual_reasoning_effort=args.actual_reasoning_effort,
                 )
             elif args.thread_command == "assign":
                 result = assign_thread(
@@ -656,7 +760,30 @@ def main(argv: list[str] | None = None) -> int:
             _json(result)
             return 0
 
+        if args.command == "log-daemon":
+            if args.log_daemon_command == "start":
+                result = start_log_daemon(root)
+            elif args.log_daemon_command == "stop":
+                result = stop_log_daemon(root)
+            else:
+                result = daemon_status(root)
+            _json(result)
+            return 0 if result.get("running", result.get("stopped", False)) else 1
+
         if args.command == "log":
+            if args.log_command == "tail":
+                _json(
+                    read_log_tail(
+                        log_file(root, args.slug),
+                        count=args.count,
+                        actor=args.actor,
+                        presentation_id=args.presentation,
+                        unit_id=args.unit,
+                        round_name=args.round,
+                        channel=args.channel,
+                    )
+                )
+                return 0
             extra = json.loads(args.data_json) if args.data_json else None
             if extra is not None and not isinstance(extra, dict):
                 raise MPresError("--data-json must decode to an object.")
@@ -749,12 +876,64 @@ def main(argv: list[str] | None = None) -> int:
                     stage=args.stage,
                     timeout=args.timeout,
                 )
-            else:
+            elif args.inspect_command == "pdf":
                 result = inspect_task_pdf(
                     root, args.slug, args.presentation, stage=args.stage
                 )
+            else:
+                source_path, _ = source_and_build_paths(
+                    root, args.slug, args.presentation, args.stage
+                )
+                if args.inspect_command == "math-source":
+                    result = inspect_math_source(source_path)
+                elif args.inspect_command == "density":
+                    result = validate_slide_density(source_path)
+                else:
+                    result = validate_course_consistency(
+                        root,
+                        args.slug,
+                        args.presentation,
+                        source=source_path,
+                    )
             _json(result)
             return 0 if result.get("success") else 1
+
+        if args.command == "maintenance":
+            if args.maintenance_command == "open":
+                result = open_maintenance(
+                    root,
+                    args.slug,
+                    args.presentation,
+                    mode=args.mode,
+                    reason=args.reason,
+                    allowed_changes=args.allowed_change,
+                )
+            elif args.maintenance_command == "request-review":
+                result = request_maintenance_review(root, args.slug, args.presentation)
+            elif args.maintenance_command == "submit-channel":
+                result = submit_maintenance_channel(
+                    root,
+                    args.slug,
+                    args.presentation,
+                    channel=args.channel,
+                    report_path=args.report,
+                    findings_path=args.findings,
+                )
+            elif args.maintenance_command == "aggregate":
+                result = aggregate_maintenance_review(
+                    root,
+                    args.slug,
+                    args.presentation,
+                    aggregate_path=args.report,
+                )
+            elif args.maintenance_command == "complete":
+                result = complete_maintenance(root, args.slug, args.presentation)
+            elif args.maintenance_command == "publish":
+                result = publish_maintenance(root, args.slug, args.presentation)
+            else:
+                result = maintenance_status(root, args.slug, args.presentation)
+            _json(result)
+            return 0
 
         if args.command == "review":
             if args.review_command == "request":

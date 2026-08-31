@@ -22,7 +22,7 @@ Only the main planner may replace this placeholder. Stop if it remains incomplet
 
 Stage state: `[[STAGE_STATE_PATH]]`
 
-Use the `lesson-authoring-stages` skill. Complete only the current stage, submit it, and wait for author-coordinator acceptance before continuing. Course units use all six stages and must design 2–3 valid diagnostic multiple-choice prompt/answer pairs. Academic reports use the compact stage profile and are exempt from the MCQ quota.
+Use the `lesson-authoring-stages` skill. This single planner-approved assignment governs the whole unit. One lesson-author thread completes the stages in order, writes a durable artifact and checkpoint for each stage, and immediately continues to the next stage after `mpres stage submit` validates the current artifact. Do not spawn a new worker, request a new stage assignment, or wait for coordinator acceptance between stages. Course units use all six stages and must design 2–3 valid diagnostic multiple-choice prompt/answer pairs. Academic reports use the compact stage profile and are exempt from the MCQ quota.
 
 ## Shared conventions
 
@@ -53,7 +53,7 @@ For a course, organize the fragment explicitly as the assigned numbered class me
 - `GEOGEBRA-RESOURCES.yaml`
 - `LESSON-TIME-PLAN.yaml`
 - `SELF-CHECK.md`
-- stage artifacts and stage state
+- stage artifacts, one stage-sequence state, and one continuous thread handoff
 - local approved assets
 - checkpoint under `[[UNIT_CHECKPOINT_PATH]]`
 

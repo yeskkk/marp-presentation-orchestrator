@@ -19,9 +19,15 @@ def _seconds_since(value: str | None) -> int | None:
     return max(0, int((datetime.now(UTC) - parsed).total_seconds()))
 
 
-def _last_log(path: Path, presentation_id: str | None = None) -> dict[str, Any] | None:
-    for record in reversed(read_log_tail(path, count=200)):
+def _last_log(
+    path: Path,
+    presentation_id: str | None = None,
+    actor: str | None = None,
+) -> dict[str, Any] | None:
+    for record in reversed(read_log_tail(path, count=500)):
         if presentation_id and record.get("presentation_id") != presentation_id:
+            continue
+        if actor and record.get("actor") != actor:
             continue
         return record
     return None
@@ -71,7 +77,7 @@ def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> d
                 continue
             pid = presentation["id"]
             actor = _coordinator(str(presentation.get("status")))
-            log = _last_log(log_file(root, slug, actor), pid)
+            log = _last_log(log_file(root, slug, actor), pid, actor)
             watched = task / "workers" / actor
             if actor == "author-coordinator":
                 watched = watched / "drafts" / pid
@@ -177,7 +183,7 @@ def _author(root: Path, slug: str, state: dict[str, Any], pid: str) -> dict[str,
             continue
         unit_id = unit["id"]
         actor = f"lesson-author:{unit_id}"
-        log = _last_log(log_file(root, slug, actor), pid)
+        log = _last_log(log_file(root, slug, actor), pid, actor)
         watched = task / "workers" / "lesson-authors" / pid / unit_id / "source"
         age, newer = _signal(log, watched)
         if log is None:
@@ -205,7 +211,7 @@ def _review(root: Path, slug: str, state: dict[str, Any], pid: str) -> dict[str,
         if channel in submitted:
             continue
         actor = f"specialist-reviewer:{channel}"
-        log = _last_log(log_file(root, slug, actor), pid)
+        log = _last_log(log_file(root, slug, actor), pid, actor)
         age = _seconds_since(log.get("utc") if log else None)
         if log is None:
             rec, reason = "spawn_or_resume", "No reviewer log exists."

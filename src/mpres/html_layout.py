@@ -200,6 +200,9 @@ def _inspect_with_playwright(html_path: Path, asset_root: Path, *, timeout: int)
                 page.evaluate(
                     """async () => {
                       if (document.fonts && document.fonts.ready) await document.fonts.ready;
+                      if (window.MathJax && window.MathJax.startup && window.MathJax.startup.promise) {
+                        await window.MathJax.startup.promise;
+                      }
                       const images = [...document.images];
                       await Promise.all(images.map(img => img.complete ? Promise.resolve() :
                         new Promise(resolve => {
@@ -210,6 +213,25 @@ def _inspect_with_playwright(html_path: Path, asset_root: Path, *, timeout: int)
                     }"""
                 )
                 slides = page.evaluate(_LAYOUT_SCRIPT)
+                math_renderer = page.evaluate(
+                    r"""() => {
+                      const candidates = [
+                        ...document.querySelectorAll('section[data-marpit-scope]'),
+                        ...document.querySelectorAll('.marpit > section')
+                      ];
+                      const sections = [...new Set(candidates)];
+                      return sections.map((slide, index) => {
+                        const id = slide.id || `slide-${index + 1}`;
+                        const rendered = slide.querySelectorAll('mjx-container, .MathJax, .katex, math[xmlns]').length;
+                        const errors = [...slide.querySelectorAll('merror, .MathJax_Error, .katex-error')]
+                          .map(node => (node.textContent || '').trim()).filter(Boolean);
+                        const text = (slide.innerText || '');
+                        const leaked = [...text.matchAll(/(?:\\begin\{|\\end\{|\\frac\{|\\sqrt\{|\$\$|\\\[|\\\])/g)]
+                          .map(match => match[0]).slice(0, 20);
+                        return {id, rendered_math_nodes: rendered, renderer_errors: errors, leaked_markers: leaked};
+                      });
+                    }"""
+                )
                 browser_version = browser.version
                 context.close()
             finally:
@@ -252,6 +274,7 @@ def _inspect_with_playwright(html_path: Path, asset_root: Path, *, timeout: int)
         "browser_version": browser_version,
         "slide_count": len(slides),
         "slides": slides,
+        "math_renderer": math_renderer,
         "overflow_slide_count": len(overflow_slides),
         "overflow_slides": overflow_slides,
         "duplicate_slide_ids": duplicate_ids,

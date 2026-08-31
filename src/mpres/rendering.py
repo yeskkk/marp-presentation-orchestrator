@@ -7,9 +7,13 @@ from pathlib import Path
 from typing import Any
 
 from mpres.assets import validate_assets
+from mpres.assignments import assignment_contract_status
+from mpres.course_consistency import validate_course_consistency
+from mpres.density import validate_slide_density
 from mpres.html_layout import inspect_marp_html_layout
 from mpres.logs import append_log
 from mpres.marp_source import lint_deck
+from mpres.math_inspection import inspect_math_renderer, inspect_math_source
 from mpres.pdf_inspection import inspect_pdf_file
 from mpres.production import check_assignment
 from mpres.state import get_presentation, load_state
@@ -41,8 +45,18 @@ def source_and_build_paths(
         base = task / "workers" / "author-coordinator" / "drafts" / presentation_id
     elif stage == "release":
         base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
+    elif stage == "maintenance":
+        state = load_state(root, slug)
+        presentation = get_presentation(state, presentation_id)
+        maintenance = presentation.get("maintenance")
+        if not isinstance(maintenance, dict) or maintenance.get("status") not in {"open", "author_revision"}:
+            raise MPresError("Maintenance rendering requires an active open or author_revision cycle.")
+        revision = int(maintenance.get("revision") or 0)
+        if revision < 1:
+            raise MPresError("Active maintenance revision is malformed.")
+        base = task / "maintenance" / presentation_id / f"r{revision:04d}"
     else:
-        raise MPresError("Render stage must be author or release.")
+        raise MPresError("Render stage must be author, release, or maintenance.")
     return base / "source", base / "build"
 
 
@@ -77,7 +91,9 @@ def _marp_command(root: Path, source: Path, output: Path, policy: dict[str, Any]
     return command
 
 
-def _required_source_files(source: Path, *, presentation_status: str) -> list[Path]:
+def _required_source_files(
+    source: Path, *, presentation_status: str, stage: str
+) -> list[Path]:
     required = [
         source / "presentation.md",
         source / "theme.css",
@@ -85,7 +101,10 @@ def _required_source_files(source: Path, *, presentation_status: str) -> list[Pa
         source / "PEDAGOGY-MAP.md",
         source / "EXAMPLE-MAP.md",
         source / "TERMINOLOGY.md",
+        source / "TERMINOLOGY.yaml",
         source / "SEMANTIC-OBJECTS.yaml",
+        source / "PRESENTATION-CONTINUITY-MAP.yaml",
+        source / "SLIDE-DENSITY-AUDIT.yaml",
         source / "ASSET-DECISIONS.yaml",
         source / "GEOGEBRA-RESOURCES.yaml",
         source / "LESSON-TIME-PLANS.yaml",
@@ -93,7 +112,7 @@ def _required_source_files(source: Path, *, presentation_status: str) -> list[Pa
         source / "MCQ-AUDIT.yaml",
         source / "SELF-CHECK.md",
     ]
-    if presentation_status in {"author_revision", "release_ready"}:
+    if presentation_status in {"author_revision", "release_ready"} and stage != "maintenance":
         required.extend(
             [
                 source / "AUTHOR-MODIFICATION-CHECKLIST.yaml",
@@ -101,12 +120,25 @@ def _required_source_files(source: Path, *, presentation_status: str) -> list[Pa
                 source / "AUTHOR-REVISION.md",
             ]
         )
+    if stage == "maintenance":
+        required.extend(
+            [
+                source / "CORRECTIVE-SCOPE.md",
+                source / "MAINTENANCE-CHECKLIST.yaml",
+                source / "MAINTENANCE-RETROSPECTIVE.md",
+            ]
+        )
     return required
 
 
-def _validate_source_files(source: Path, *, presentation_status: str) -> None:
+def _validate_source_files(
+    source: Path, *, presentation_status: str, stage: str
+) -> None:
     missing = [
-        path for path in _required_source_files(source, presentation_status=presentation_status)
+        path
+        for path in _required_source_files(
+            source, presentation_status=presentation_status, stage=stage
+        )
         if not path.is_file()
     ]
     if missing:
@@ -116,11 +148,18 @@ def _validate_source_files(source: Path, *, presentation_status: str) -> None:
         "AUTHOR-RESPONSES.yaml",
         "AUTHOR-REVISION.md",
     }
+    deferred_maintenance = {
+        "MAINTENANCE-CHECKLIST.yaml",
+        "MAINTENANCE-RETROSPECTIVE.md",
+        "MAINTENANCE-AUTHOR-RESPONSES.yaml",
+    }
     unfinished: list[str] = []
     for path in source.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in {".md", ".yaml", ".yml", ".json", ".css"}:
             continue
         if presentation_status == "authoring" and path.name in deferred_post_review:
+            continue
+        if stage == "maintenance" and path.name in deferred_maintenance:
             continue
         placeholders = text_placeholders(path)
         if placeholders:
@@ -150,18 +189,34 @@ def render_presentation(
         if presentation.get("status") != "release_ready":
             raise MPresError("Release rendering requires release_ready status.")
         role = "release-coordinator"
+    elif stage == "maintenance":
+        maintenance = presentation.get("maintenance")
+        if not isinstance(maintenance, dict) or maintenance.get("status") not in {"open", "author_revision"}:
+            raise MPresError("Maintenance rendering requires an active corrective cycle.")
+        role = "author-coordinator"
     else:
-        raise MPresError("Render stage must be author or release.")
-    assignment = check_assignment(root, slug, role, presentation_id)
-    if not assignment.get("ready"):
-        raise MPresError(f"{role} assignment is incomplete: {assignment.get('placeholders', [])[:8]}")
+        raise MPresError("Render stage must be author, release, or maintenance.")
+    if stage == "maintenance":
+        expected_source, build = source_and_build_paths(root, slug, presentation_id, stage)
+        assignment_path = expected_source.parent / "TASK-MAINTENANCE.md"
+        assignment = assignment_contract_status(assignment_path)
+        if not assignment.get("approved") or text_placeholders(assignment_path):
+            raise MPresError("The planner-written maintenance assignment is incomplete or unapproved.")
+    else:
+        assignment = check_assignment(root, slug, role, presentation_id)
+        if not assignment.get("ready"):
+            raise MPresError(f"{role} assignment is incomplete: {assignment.get('placeholders', [])[:8]}")
+        expected_source, build = source_and_build_paths(root, slug, presentation_id, stage)
 
-    expected_source, build = source_and_build_paths(root, slug, presentation_id, stage)
     source = source_override.resolve() if source_override else expected_source.resolve()
     ensure_within(source, expected_source, label="render source")
     if source != expected_source.resolve():
         raise MPresError(f"Render source must be the stage source root: {expected_source}")
-    _validate_source_files(source, presentation_status=str(presentation.get("status")))
+    _validate_source_files(
+        source,
+        presentation_status=("maintenance" if stage == "maintenance" else str(presentation.get("status"))),
+        stage=stage,
+    )
     task = task_path(root, slug)
     policy = read_yaml(task / "EXECUTION-POLICY.yaml") or {}
     if not isinstance(policy, dict):
@@ -175,13 +230,26 @@ def render_presentation(
         source_root=source,
         stage=stage,
     )
-    if not source_lint.get("success") or not asset_report.get("success"):
-        build.mkdir(parents=True, exist_ok=True)
-        write_json_atomic(build / f"source-lint-{stage}.json", source_lint)
-        write_json_atomic(build / f"asset-validation-{stage}.json", asset_report)
-        raise MPresError("Source lint or asset validation failed; inspect the build reports.")
-
+    math_source_report = inspect_math_source(source)
+    density_report = validate_slide_density(source)
+    course_report = validate_course_consistency(
+        root, slug, presentation_id, source=source
+    )
     build.mkdir(parents=True, exist_ok=True)
+    write_json_atomic(build / f"source-lint-{stage}.json", source_lint)
+    write_json_atomic(build / f"asset-validation-{stage}.json", asset_report)
+    write_json_atomic(build / f"math-source-inventory-{stage}.json", math_source_report)
+    write_json_atomic(build / f"slide-density-audit-{stage}.json", density_report)
+    write_json_atomic(build / f"course-consistency-{stage}.json", course_report)
+    if not all(
+        report.get("success")
+        for report in (source_lint, asset_report, math_source_report, density_report, course_report)
+    ):
+        raise MPresError(
+            "Source, asset, mathematics, density, or course-consistency validation failed; "
+            "inspect the build reports."
+        )
+
     logs = build / "logs"
     logs.mkdir(parents=True, exist_ok=True)
     snapshot = build / "source-snapshot"
@@ -204,9 +272,9 @@ def render_presentation(
         }
     html_layout_path = build / f"html-layout-inspection-{stage}.json"
     write_json_atomic(html_layout_path, html_layout_report)
-    write_json_atomic(build / f"source-lint-{stage}.json", source_lint)
-    write_json_atomic(build / f"asset-validation-{stage}.json", asset_report)
-    if not html_layout_report.get("success"):
+    math_renderer_report = inspect_math_renderer(math_source_report, html_layout_report)
+    write_json_atomic(build / f"math-renderer-probe-{stage}.json", math_renderer_report)
+    if not html_layout_report.get("success") or not math_renderer_report.get("success"):
         report = {
             "schema_version": 2,
             "render_transaction_id": str(uuid.uuid4()),
@@ -220,14 +288,22 @@ def render_presentation(
             "source_inventory": directory_inventory(snapshot),
             "source_lint": relative_display(build / f"source-lint-{stage}.json", root),
             "asset_validation": relative_display(build / f"asset-validation-{stage}.json", root),
+            "math_source_inventory": relative_display(build / f"math-source-inventory-{stage}.json", root),
+            "math_renderer_probe": relative_display(build / f"math-renderer-probe-{stage}.json", root),
+            "slide_density_audit": relative_display(build / f"slide-density-audit-{stage}.json", root),
+            "course_consistency": relative_display(build / f"course-consistency-{stage}.json", root),
             "html_layout_inspection": relative_display(html_layout_path, root),
             "pdf": None,
             "html_artifacts_generated": [],
-            "errors": list(html_layout_report.get("errors", [])),
+            "errors": [
+                *html_layout_report.get("errors", []),
+                *math_renderer_report.get("errors", []),
+            ],
             "warnings": [
                 *source_lint.get("warnings", []),
                 *asset_report.get("warnings", []),
                 *html_layout_report.get("warnings", []),
+                *math_renderer_report.get("warnings", []),
             ],
             "success": False,
             "integrity_policy": "frozen snapshot and structured records; no hashes except TASK.md confirmation",
@@ -281,6 +357,7 @@ def render_presentation(
     success = (
         process.returncode == 0
         and html_layout_report.get("success") is True
+        and math_renderer_report.get("success") is True
         and pdf_report.get("success") is True
         and not unexpected_html
     )
@@ -303,6 +380,10 @@ def render_presentation(
         "pdf_size_bytes": final_pdf.stat().st_size if final_pdf.is_file() else None,
         "source_lint": relative_display(build / f"source-lint-{stage}.json", root),
         "asset_validation": relative_display(build / f"asset-validation-{stage}.json", root),
+        "math_source_inventory": relative_display(build / f"math-source-inventory-{stage}.json", root),
+        "math_renderer_probe": relative_display(build / f"math-renderer-probe-{stage}.json", root),
+        "slide_density_audit": relative_display(build / f"slide-density-audit-{stage}.json", root),
+        "course_consistency": relative_display(build / f"course-consistency-{stage}.json", root),
         "html_layout_inspection": relative_display(html_layout_path, root),
         "pdf_inspection": relative_display(build / f"pdf-inspection-{stage}.json", root),
         "html_artifacts_generated": [],
@@ -315,6 +396,9 @@ def render_presentation(
             *source_lint.get("warnings", []),
             *asset_report.get("warnings", []),
             *html_layout_report.get("warnings", []),
+            *math_renderer_report.get("warnings", []),
+            *density_report.get("warnings", []),
+            *course_report.get("warnings", []),
             *pdf_report.get("warnings", []),
         ],
         "success": success,

@@ -86,6 +86,38 @@ def validate_interaction_records(
             )
         if item.get("requires_fresh_inference") is not True:
             errors.append(f"MCQ {prompt} must record requires_fresh_inference: true.")
+        information_state = item.get("information_state")
+        if not isinstance(information_state, dict):
+            errors.append(f"MCQ {prompt} information_state must be a mapping.")
+        else:
+            available = information_state.get("available_before_prompt")
+            withheld = information_state.get("intentionally_withheld")
+            if not isinstance(available, list) or not available or any(
+                not str(value).strip() for value in available
+            ):
+                errors.append(
+                    f"MCQ {prompt} must list the prerequisite information available before the prompt."
+                )
+            if not isinstance(withheld, list) or any(not str(value).strip() for value in withheld):
+                errors.append(
+                    f"MCQ {prompt} intentionally_withheld must be a list, even when empty."
+                )
+        if len(str(item.get("new_inference") or "").strip()) < 12:
+            errors.append(f"MCQ {prompt} must state the new inference required from the learner.")
+        if len(str(item.get("decision_unit") or "").strip()) < 8:
+            errors.append(f"MCQ {prompt} must define one coherent decision_unit.")
+        if item.get("prerequisite_available") is not True:
+            errors.append(f"MCQ {prompt} must confirm prerequisite_available: true.")
+        if len(str(item.get("cue_leakage_audit") or "").strip()) < 12:
+            errors.append(f"MCQ {prompt} needs a substantive cue_leakage_audit.")
+        composite = item.get("composite_option_check")
+        if not isinstance(composite, dict):
+            errors.append(f"MCQ {prompt} composite_option_check must be a mapping.")
+        else:
+            if composite.get("single_decision") is not True:
+                errors.append(f"MCQ {prompt} options must implement one single decision.")
+            if len(str(composite.get("rationale") or "").strip()) < 12:
+                errors.append(f"MCQ {prompt} composite_option_check needs a rationale.")
         if len(str(item.get("preceding_comparison") or "").strip()) < 12:
             errors.append(
                 f"MCQ {prompt} must explain why it is not a mechanical repeat of the preceding slide."
