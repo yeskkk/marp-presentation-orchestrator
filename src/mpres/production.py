@@ -10,6 +10,7 @@ from mpres.geogebra import aggregate_unit_geogebra_records, validate_unit_geogeb
 from mpres.interactions import aggregate_unit_interactions, validate_unit_interactions
 from mpres.logs import append_log
 from mpres.stages import all_stages_accepted, initialize_unit_stages, stage_state_path
+from mpres.time_planning import aggregate_lesson_time_plans, validate_lesson_time_plan
 from mpres.state import REVIEW_CHANNELS, get_presentation, save_state, stage_ids_for_kind
 from mpres.tasks import require_gate
 from mpres.util import (
@@ -116,7 +117,7 @@ def _role_override(role: str) -> str:
         "- Read the exact assignment written by the main planner and the matching local skill.\n"
         "- If its planner-only brief is incomplete, stop; no coordinator or worker may fill it.\n"
         "- Screenshots, PDF raster images, contact sheets, and model vision are forbidden.\n"
-        "- No HTML artifact is generated or reviewed.\n"
+        "- Temporary Marp HTML may be generated only by the author/release mechanical overflow gate; it is deleted immediately and never given to reviewers.\n"
         "- Log concise UTC progress and write durable checkpoints.\n"
         "- Read THREAD-LIFECYCLE.md; finish with a durable handoff and stop executing.\n"
         "- Coordinators reuse compatible idle handles and use real capacity-releasing close operations when available; a retaining interrupt is not closure.\n"
@@ -153,15 +154,33 @@ def _write_structured_templates(
         "SEMANTIC-OBJECTS.yaml": "SEMANTIC-OBJECTS.template.yaml",
         "ASSET-DECISIONS.yaml": "ASSET-DECISIONS.template.yaml",
         "GEOGEBRA-RESOURCES.yaml": "GEOGEBRA-RESOURCES.template.yaml",
+        "LESSON-TIME-PLANS.yaml": "LESSON-TIME-PLANS.template.yaml",
         "AUTHOR-MODIFICATION-CHECKLIST.yaml": "AUTHOR-MODIFICATION-CHECKLIST.template.yaml",
         "AUTHOR-REVISION.md": "AUTHOR-REVISION.template.md",
         "SELF-CHECK.md": "SELF-CHECK.template.md",
         "RELEASE-RETROSPECTIVE.md": "RELEASE-RETROSPECTIVE.template.md",
     }
-    unit_yaml = "\n".join(
-        f"  - id: \"{unit_id}\"\n    title: \"{unit_title}\"\n    source: \"sections/{unit_id}/section.md\""
-        for unit_id, unit_title in units
-    )
+    unit_yaml_rows: list[str] = []
+    for meeting_number, (unit_id, unit_title) in enumerate(units, start=1):
+        if task_kind == "course":
+            unit_yaml_rows.append(
+                f'  - id: "{unit_id}"\n'
+                f'    title: "{unit_title}"\n'
+                f'    meeting_number: {meeting_number}\n'
+                f'    meeting_label: "第 {meeting_number} 节课"\n'
+                f'    organization_basis: "course_meeting"\n'
+                f'    source: "sections/{unit_id}/section.md"'
+            )
+        else:
+            unit_yaml_rows.append(
+                f'  - id: "{unit_id}"\n'
+                f'    title: "{unit_title}"\n'
+                f'    meeting_number: null\n'
+                f'    meeting_label: "报告部分 {meeting_number}"\n'
+                f'    organization_basis: "report_section"\n'
+                f'    source: "sections/{unit_id}/section.md"'
+            )
+    unit_yaml = "\n".join(unit_yaml_rows)
     for destination, template_name in structured.items():
         text = (root / "templates" / "structured" / template_name).read_text(encoding="utf-8")
         text = _replace(
@@ -171,6 +190,7 @@ def _write_structured_templates(
                 "[[PRESENTATION_TITLE]]": title,
                 "[[CONTENT_UNITS_YAML]]": unit_yaml,
                 "[[SCOPE_ID]]": presentation_id,
+                "[[TASK_KIND]]": task_kind,
             },
         )
         (source / destination).write_text(text, encoding="utf-8", newline="\n")
@@ -277,7 +297,16 @@ def initialize_production(
         ]:
             directory.mkdir(parents=True, exist_ok=True)
 
-        unit_table = "\n".join(f"- `{unit_id}` — {unit_title}" for unit_id, unit_title in units)
+        if state.get("kind") == "course":
+            unit_table = "\n".join(
+                f"- 第 {number} 节课：`{unit_id}` — {unit_title}"
+                for number, (unit_id, unit_title) in enumerate(units, start=1)
+            )
+        else:
+            unit_table = "\n".join(
+                f"- 报告部分 {number}：`{unit_id}` — {unit_title}"
+                for number, (unit_id, unit_title) in enumerate(units, start=1)
+            )
         author_assignment.write_text(
             _replace(
                 templates["author"],
@@ -395,7 +424,7 @@ def initialize_production(
         )
 
         unit_state: list[dict[str, Any]] = []
-        for unit_id, unit_title in units:
+        for meeting_number, (unit_id, unit_title) in enumerate(units, start=1):
             unit_dir = lesson_root / unit_id
             unit_source = unit_dir / "source"
             for directory in [unit_source / "assets", unit_dir / "logs", unit_dir / "checkpoints"]:
@@ -429,6 +458,9 @@ def initialize_production(
                     "[[GEOGEBRA_UNIT_RESOURCES_PATH]]": relative_display(
                         unit_source / "GEOGEBRA-RESOURCES.yaml", root
                     ),
+                    "[[LESSON_TIME_PLAN_PATH]]": relative_display(
+                        unit_source / "LESSON-TIME-PLAN.yaml", root
+                    ),
                     "[[UNIT_SOURCE_PATH]]": relative_display(unit_source, root),
                     "[[UNIT_CHECKPOINT_PATH]]": relative_display(unit_dir / "checkpoints", root),
                 },
@@ -458,7 +490,16 @@ def initialize_production(
                 templates["section"],
                 {
                     "[[SLIDE_ID]]": first_slide_id,
-                    "[[SLIDE_TITLE]]": unit_title,
+                    "[[SLIDE_TITLE]]": (
+                        f"第 {meeting_number} 节课：{unit_title}"
+                        if state.get("kind") == "course"
+                        else f"报告部分 {meeting_number}：{unit_title}"
+                    ),
+                    "[[UNIT_LABEL]]": (
+                        f"第 {meeting_number} 节课"
+                        if state.get("kind") == "course"
+                        else f"报告部分 {meeting_number}"
+                    ),
                 },
             )
             (unit_source / "section.md").write_text(section, encoding="utf-8", newline="\n")
@@ -472,6 +513,17 @@ def initialize_production(
                     "[[UNIT_ID]]": unit_id,
                     "[[UNIT_TITLE]]": unit_title,
                     "[[SLIDE_ID]]": first_slide_id,
+                    "[[MEETING_NUMBER_OR_NULL]]": (
+                        str(meeting_number) if state.get("kind") == "course" else "null"
+                    ),
+                    "[[MEETING_LABEL]]": (
+                        f"第 {meeting_number} 节课"
+                        if state.get("kind") == "course"
+                        else f"报告部分 {meeting_number}"
+                    ),
+                    "[[ORGANIZATION_BASIS]]": (
+                        "course_meeting" if state.get("kind") == "course" else "report_section"
+                    ),
                 },
             )
             (unit_source / "UNIT-MANIFEST.yaml").write_text(
@@ -512,6 +564,46 @@ def initialize_production(
             (unit_source / "GEOGEBRA-RESOURCES.yaml").write_text(
                 geogebra_unit, encoding="utf-8", newline="\n"
             )
+            nominal_minutes = int(state.get("minutes") or 0) if state.get("kind") == "course" else 0
+            prepared_target = int(round(nominal_minutes * 1.5)) if nominal_minutes else 0
+            extension_target = max(0, prepared_target - nominal_minutes)
+            time_plan = (
+                root / "templates" / "structured" / "LESSON-TIME-PLAN.template.yaml"
+            ).read_text(encoding="utf-8")
+            time_plan = _replace(
+                time_plan,
+                {
+                    "[[TASK_KIND]]": str(state.get("kind")),
+                    "[[PRESENTATION_ID]]": presentation_id,
+                    "[[UNIT_ID]]": unit_id,
+                    "[[MEETING_NUMBER_OR_NULL]]": (
+                        str(meeting_number) if state.get("kind") == "course" else "null"
+                    ),
+                    "[[MEETING_LABEL]]": (
+                        f"第 {meeting_number} 节课"
+                        if state.get("kind") == "course"
+                        else f"报告部分 {meeting_number}"
+                    ),
+                    "[[ORGANIZATION_BASIS]]": (
+                        "course_meeting" if state.get("kind") == "course" else "report_section"
+                    ),
+                    "[[NOMINAL_MINUTES_OR_NULL]]": (
+                        str(nominal_minutes) if nominal_minutes else "null"
+                    ),
+                    "[[PREPARED_TARGET_MINUTES_OR_NULL]]": (
+                        str(prepared_target) if prepared_target else "null"
+                    ),
+                    "[[CORE_TARGET_MINUTES_OR_NULL]]": (
+                        str(nominal_minutes) if nominal_minutes else "null"
+                    ),
+                    "[[EXTENSION_TARGET_MINUTES_OR_NULL]]": (
+                        str(extension_target) if nominal_minutes else "null"
+                    ),
+                },
+            )
+            (unit_source / "LESSON-TIME-PLAN.yaml").write_text(
+                time_plan, encoding="utf-8", newline="\n"
+            )
             self_check = (
                 root / "templates" / "structured" / "SELF-CHECK.template.md"
             ).read_text(encoding="utf-8")
@@ -539,6 +631,15 @@ def initialize_production(
                 {
                     "id": unit_id,
                     "title": unit_title,
+                    "meeting_number": meeting_number if state.get("kind") == "course" else None,
+                    "meeting_label": (
+                        f"第 {meeting_number} 节课"
+                        if state.get("kind") == "course"
+                        else f"报告部分 {meeting_number}"
+                    ),
+                    "organization_basis": (
+                        "course_meeting" if state.get("kind") == "course" else "report_section"
+                    ),
                     "status": "awaiting_stage_assignment",
                     "stage": first_stage,
                     "stage_status": "awaiting_assignment",
@@ -725,6 +826,7 @@ def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any
     geogebra_unit_records: list[dict[str, Any]] = []
     interaction_unit_records: list[dict[str, Any]] = []
     mcq_unit_records: list[dict[str, Any]] = []
+    lesson_time_plans: list[dict[str, Any]] = []
     policy = read_yaml(task / "EXECUTION-POLICY.yaml") or {}
     geogebra_policy = (
         ((policy.get("online_resources") or {}).get("geogebra") or {})
@@ -752,6 +854,7 @@ def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any
             "INTERACTION-MANIFEST.yaml",
             "MCQ-AUDIT.yaml",
             "GEOGEBRA-RESOURCES.yaml",
+            "LESSON-TIME-PLAN.yaml",
             "SELF-CHECK.md",
         ):
             path = source / required
@@ -763,6 +866,21 @@ def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any
         unit_manifest_value = read_yaml(source / "UNIT-MANIFEST.yaml")
         if not isinstance(unit_manifest_value, dict):
             raise MPresError(f"UNIT-MANIFEST.yaml must be a mapping: {source}")
+        time_report = validate_lesson_time_plan(
+            source / "LESSON-TIME-PLAN.yaml",
+            task_kind=str(state.get("kind")),
+            expected_meeting_number=unit.get("meeting_number"),
+            nominal_minutes=(int(state.get("minutes") or 0) if state.get("kind") == "course" else None),
+        )
+        if not time_report.get("success"):
+            raise MPresError(
+                f"Lesson time plan for {presentation_id}/{unit_id} is invalid: "
+                + "; ".join(time_report.get("errors", [])[:8])
+            )
+        time_value = read_yaml(source / "LESSON-TIME-PLAN.yaml")
+        if not isinstance(time_value, dict):
+            raise MPresError(f"LESSON-TIME-PLAN.yaml must be a mapping: {source}")
+        lesson_time_plans.append(time_value)
         interaction_report = validate_unit_interactions(
             source / "INTERACTION-MANIFEST.yaml",
             source / "MCQ-AUDIT.yaml",
@@ -821,6 +939,14 @@ def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any
     )
     write_yaml_atomic(author_source / "INTERACTION-MANIFEST.yaml", aggregate_interactions)
     write_yaml_atomic(author_source / "MCQ-AUDIT.yaml", aggregate_mcq)
+    write_yaml_atomic(
+        author_source / "LESSON-TIME-PLANS.yaml",
+        aggregate_lesson_time_plans(
+            lesson_time_plans,
+            presentation_id=presentation_id,
+            task_kind=str(state.get("kind")),
+        ),
+    )
     canonical = "\n\n---\n\n".join(fragment for fragment in fragments if fragment.strip()) + "\n"
     (author_source / "presentation.md").write_text(canonical, encoding="utf-8", newline="\n")
     save_state(root, slug, state)

@@ -11,6 +11,7 @@ from typing import Any
 
 import fitz
 
+from mpres.browser import browser_probe
 from mpres.util import executable, local_marp_binary, run_command, virtualenv_python
 
 
@@ -102,6 +103,7 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         "PyYAML",
         "requests",
         "python-slugify",
+        "playwright",
         "matplotlib",
         "numpy",
         "sympy",
@@ -120,6 +122,7 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
     }
     marp = _marp_check(root)
     probe = _marp_pdf_probe(root, marp) if run_pdf_probe else {"ok": None, "skipped": True}
+    browser = browser_probe()
     node_version_text = str(binaries["node"].get("version") or "")
     node_match = re.search(r"(?:^|v)(\d+)", node_version_text)
     node_ok = bool(node_match and int(node_match.group(1)) >= 18)
@@ -130,11 +133,15 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         "npm": binaries["npm"]["found"],
         "marp": marp.get("found") and marp.get("returncode") == 0,
         "marp_pdf": probe.get("ok") is True if run_pdf_probe else True,
+        "playwright_browser": browser.get("available") is True,
         "pdftotext": binaries["pdftotext"]["found"],
         "tesseract_optional": binaries["tesseract"]["found"],
     }
     blockers = [
-        key for key in ("python>=3.11", "codex", "node>=18", "npm", "marp", "marp_pdf", "pdftotext")
+        key for key in (
+            "python>=3.11", "codex", "node>=18", "npm", "marp", "marp_pdf",
+            "playwright_browser", "pdftotext"
+        )
         if not required[key]
     ]
     warnings: list[str] = []
@@ -146,6 +153,8 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         warnings.append("Optional Python figure support is not installed; this is normal while figures remain disabled.")
     if probe.get("error"):
         warnings.append(str(probe["error"]))
+    if browser.get("error"):
+        warnings.append(str(browser["error"]))
     return {
         "ok": not blockers,
         "blockers": blockers,
@@ -162,4 +171,5 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         "binaries": binaries,
         "marp": {**marp, "version_policy": "unpinned-latest-at-install-time"},
         "pdf_probe": probe,
+        "html_layout_browser": browser,
     }

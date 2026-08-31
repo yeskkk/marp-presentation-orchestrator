@@ -579,6 +579,60 @@ def _manifest_check(
     if invalid_kinds:
         errors.append("Invalid slide kinds: " + ", ".join(invalid_kinds))
 
+    task_kind = str((policy or {}).get("task_kind") or "").strip()
+    content_units = manifest.get("content_units") or []
+    if not isinstance(content_units, list):
+        errors.append("DECK-MANIFEST.yaml content_units must be a list.")
+        content_units = []
+    if task_kind == "course":
+        expected_meeting = 1
+        for unit in content_units:
+            if not isinstance(unit, dict):
+                errors.append("Every course content unit must be a mapping.")
+                continue
+            meeting_number = unit.get("meeting_number")
+            if meeting_number != expected_meeting:
+                errors.append(
+                    f"Course content units must use sequential meeting_number values; expected "
+                    f"{expected_meeting}, got {meeting_number!r}."
+                )
+            if unit.get("organization_basis") != "course_meeting":
+                errors.append("Course content units must use organization_basis: course_meeting.")
+            expected_label = f"第 {expected_meeting} 节课"
+            if unit.get("meeting_label") != expected_label:
+                errors.append(
+                    f"Course meeting {expected_meeting} must use meeting_label: {expected_label}."
+                )
+            expected_meeting += 1
+        row_units = [
+            str(item.get("unit"))
+            for item in rows
+            if isinstance(item, dict) and item.get("unit") not in {None, "front"}
+        ]
+        source_by_id = {slide.slide_id: slide for slide in deck.slides if slide.slide_id}
+        for unit in content_units:
+            if not isinstance(unit, dict):
+                continue
+            unit_id = str(unit.get("id") or "")
+            unit_slide_ids = [
+                str(item.get("id"))
+                for item in rows
+                if isinstance(item, dict) and str(item.get("unit") or "") == unit_id
+            ]
+            if not unit_slide_ids:
+                errors.append(f"Course meeting unit {unit_id!r} has no slides in the manifest.")
+                continue
+            first_slide = source_by_id.get(unit_slide_ids[0])
+            meeting_label = str(unit.get("meeting_label") or "")
+            if first_slide is None or meeting_label not in str(first_slide.title or ""):
+                errors.append(
+                    f"The first slide of course unit {unit_id!r} must visibly identify {meeting_label}."
+                )
+    elif task_kind == "report":
+        for unit in content_units:
+            if isinstance(unit, dict) and unit.get("organization_basis") != "report_section":
+                errors.append("Report content units must use organization_basis: report_section.")
+
     row_by_id = {
         str(item.get("id")): item
         for item in rows
@@ -669,7 +723,6 @@ def _manifest_check(
                 errors.append(
                     f"Exercise response {slide.slide_id} does not reference an exercise_prompt."
                 )
-    task_kind = str((policy or {}).get("task_kind") or "").strip()
     interaction_contract = validate_presentation_interactions(
         source_root,
         [item for item in rows if isinstance(item, dict)],

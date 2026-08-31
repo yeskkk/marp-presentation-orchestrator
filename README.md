@@ -1,8 +1,8 @@
-# Marp Presentation Orchestrator v0.3.0
+# Marp Presentation Orchestrator v0.4.1
 
-这是一个面向 **Codex CLI + Marp** 的课程与报告课件生产框架。它把用户确认、planner 亲自编写 assignment、分阶段并行 authoring、一次五通道全稿审核、作者自行修改以及 PDF-only 发布组织成一个可审计的状态机。
+这是一个面向 **Codex CLI + Marp** 的课程与报告课件生产框架。它把用户确认、planner 亲自编写 assignment、分阶段并行 authoring、一次五通道全稿审核、作者自行修改和 PDF-only 发布组织成一个可审计的状态机。
 
-## 1. 核心原则
+## 1. 正式产物与临时机械检查
 
 正式产物链只有：
 
@@ -14,60 +14,105 @@ canonical Marp Markdown
 PDF
 ```
 
-项目不使用 Quarto、Jupyter presentation、Reveal.js、Beamer 或持久 HTML。Marp CLI 内部可以调用兼容浏览器打印 PDF，但工作目录和交付目录只保留 Markdown、结构化记录和 PDF。
+项目不使用 Quarto、Reveal.js、Beamer 或第二份讲稿源。正式交付只包含 Marp 源、结构化记录和 PDF。
 
-固定规则：
+为了在提交审核之前发现文字溢出，author/release 构建会额外执行一次**临时机械检查**：
 
-1. 每份课件只做 **一次**完整的五通道审核；
-2. 审核后作者必须逐项回应 finding、修改、自查并重建，但 reviewer 不再复核；
-3. finding 不使用 `resolved` 一类状态，release coordinator 不判断“改得够不够好”；
-4. 每个课程 content unit 必须有 **2—3 道**真正具有诊断作用的选择题及紧邻答案页；学术报告免除数量要求；
-5. planner 亲自编写并批准每一个精确 assignment；coordinator 只能提出 assignment request；
-6. worker 默认使用 `gpt-5.6-sol`，推理强度 `high`；极难的研究级内容才按 TASK.md 提高到 `max`；
-7. worker 只能读取 `downloads/text/` 中的抽取文本，禁止打开、解析、转换、OCR、截图或引用原 PDF；
-8. 禁止用截图、PDF 栅格页、contact sheet 或模型视觉审核课件；
-9. Python 生成图形默认关闭，必须由 TASK.md 和逐资产决策同时批准；
-10. GeoGebra 只允许搜索 `geogebra.org` 站内的具体公开 material，并以普通 Markdown 超链接引用，禁止嵌入、截图、预览图、二维码或下载副本；
-11. Marp CLI 版本不固定。bootstrap 安装当时可用版本，doctor 以实际 PDF probe 判断是否可用；
-12. 只有每个任务顶层的 `TASK.md` 使用用户确认哈希，其他文件、产物与压缩包都不生成哈希。
+```text
+presentation.md
+        ↓
+marp --html（临时目录）
+        ↓
+Playwright / Chromium
+        ↓
+逐页比较 scrollWidth/clientWidth、scrollHeight/clientHeight
+        ↓
+写入结构化检查报告并删除临时 HTML
+```
 
-## 2. 角色
+临时 HTML：
+
+- 只存在于系统临时目录；
+- 不进入 source snapshot、review bundle 或 deliverables；
+- 不作为另一种课件版本；
+- 不使用截图和模型视觉；
+- 检查完成后自动删除。
+
+作者的临时 HTML 溢出检查不通过，便不会生成 PDF，也不能提交审核。reviewer 不重新检查机械溢出；layout 通道只审核层级、分组、密度、节奏和教学呈现设计。
+
+## 2. 固定政策
+
+1. 每份 presentation 只做**一次**完整五通道审核。
+2. 审核后作者逐条回应 findings、完成修改、自检和重新构建；reviewer 不再复核，findings 不维护 resolved 生命周期。
+3. 课程的每个课次必须包含 **2—3 道**真正具有诊断作用的选择题及紧邻答案页；学术报告免除数量要求。
+4. planner 亲自编写并批准每个精确 assignment；coordinator 只能提交 assignment request。
+5. planner 的全局默认运行策略是 `gpt-5.6-sol/max`；所有 workers 默认 `gpt-5.6-sol/high`。唯一真源为根目录 `MODEL-POLICY.yaml`。
+6. worker 只能读取 `downloads/text/` 中的抽取文本，禁止打开、解析、转换、OCR、截图或引用原 PDF。
+7. 禁止截图、PDF contact sheet 和模型视觉审核。
+8. Python 生成图形默认关闭；文本、公式、Markdown 表格、CSS 和简单本地资产优先。
+9. GeoGebra 只允许引用经过验证的 `https://www.geogebra.org/m/...` 资源，且只能使用普通 Markdown 超链接；允许同一个资源在不同课次中重复使用，不做去重要求。
+10. Marp CLI 版本不固定，由 bootstrap 安装当时可用版本，doctor 用实际能力 probe 判断可用性。
+11. 只有任务顶层 `TASK.md` 使用用户确认摘要，其它源文件、报告、产物和压缩包不生成哈希。
+
+## 3. 课程组织与时间策略
+
+课程课件必须按连续编号的课次组织：
+
+```text
+第 1 节课
+第 2 节课
+第 3 节课
+...
+```
+
+教材章节只用于资料覆盖和来源映射，不能直接充当课件分节依据。每个 course content unit 就是一节课；报告 content unit 才按逻辑部分组织。
+
+时间规划是建议，不是硬门：
+
+- 名义课堂时长定义自然停止点；
+- 默认可准备约名义时长的 1.5 倍材料；
+- 例如 40 分钟课堂可准备约 60 分钟课件；
+- 前部 core path 应覆盖本节课必须完成的概念链、必要活动和诊断题；
+- 后部主要安排可选的讲解例题；
+- 到点可以直接下课，不要求讲完整份课件。
+
+每个课次填写 `LESSON-TIME-PLAN.yaml`，明确 nominal time、自然停止页和 optional example bank。程序只检查结构是否清楚，不因时长估算偏差阻止发布。
+
+## 4. 角色
 
 ```text
 planner
   ├── author-coordinator × presentation
-  │     └── lesson-author × content unit
+  │     └── lesson-author × numbered meeting / report unit
   ├── review-coordinator × presentation
   │     └── specialist-reviewer × 5 channels
   └── release-coordinator × presentation
 ```
 
-- **planner**：采访用户、写 TASK.md、亲自写每份 assignment、批准 assignment contract、处理政策变更和 presentation 级监督；不写逐页内容。
-- **author-coordinator**：建立整份 deck 的教学地图、术语、语义对象、例题和资产决策；监督分阶段 lesson authors；整合 canonical `presentation.md`；审核后自行完成修改流程。
-- **lesson-author**：只处理一个课次或报告内容单元。
-- **specialist-reviewer**：只审核一个通道，只看冻结的完整候选稿，不看其他通道 finding，也不看未来的作者回应。
-- **review-coordinator**：并行启动五个 reviewer，验证报告齐全并汇总 finding；不改作者源。
-- **release-coordinator**：只验证作者修改流程和机械构建条件是否齐全，生成最终 PDF 并发布；不做内容判断。
+- **planner**：采访用户、写 TASK.md、亲自写 assignment、处理政策变更和高层监督；默认 Sol/max。
+- **author-coordinator**：建立整份 deck 的教学地图、术语、语义对象、例题、时间计划和资产决策；监督 lesson authors；整合 canonical `presentation.md`；执行作者机械门并在审核后自行修改。
+- **lesson-author**：完成一个编号课次或报告内容单元。
+- **specialist-reviewer**：只审核一个通道，不看其它通道 finding，也不检查临时 HTML 或机械 overflow report。
+- **review-coordinator**：并行启动五个 reviewer、验证报告齐全并汇总 findings。
+- **release-coordinator**：验证作者流程与机械构建条件齐全，重新执行发布机械门并交付；不判断 finding 是否“解决得足够好”。
 
-不再使用 `worker1`、`worker2` 等编号角色名称。
+## 5. 首次问询
 
-## 3. 首次问询
-
-没有现有任务时，planner 一次性询问：
+没有活动任务时，planner 一次性询问：
 
 1. 课程或报告题目；
 2. 目标听众、先修知识、薄弱点和预期收获；
-3. 总体逻辑大纲；
+3. 总体大纲；
 4. 演讲策略；
 5. 参考资料；
-6. 交付模式：`pilot`、`each` 或 `all`；
-7. 是否明确允许某些 Python-generated assets，默认否。
+6. `pilot`、`each` 或 `all` 交付模式；
+7. 是否允许少数 Python-generated assets，默认否。
 
-课程还需询问课次与每次名义时长。时长只校准材料总量，不机械决定内容边界。
+课程还询问课次和每次名义时长，并在 TASK.md 中按“第 N 节课”建立 units。
 
-在生成 TASK.md 前必须提醒用户：一次五通道审核、审核后不复核、课程每节 2—3 道选择题、禁止截图与原 PDF、worker 默认 sol/high、PDF-only、Python 图形默认禁用。
+在展示 TASK.md 前，必须提醒用户：一次五通道审核、审核后不复核、课程每课 2—3 道 MCQ、禁止截图与原 PDF、planner Sol/max、workers Sol/high、临时 HTML 只用于 author/release 机械门、PDF-only 交付、Python 图形默认关闭。
 
-## 4. TASK.md 确认门
+## 6. TASK.md 确认门
 
 ```bash
 mpres task init ...
@@ -78,15 +123,9 @@ mpres task confirm <slug>
 mpres task gate <slug>
 ```
 
-`TASK.md` 是唯一使用哈希的文件。生产初始化后 TASK.md 冻结。误改可执行：
+`TASK.md` 是唯一使用确认摘要的文件。生产初始化后冻结。重大政策变化必须修改并重新确认 TASK.md；sidecar 不能覆盖用户确认的计划。
 
-```bash
-mpres task restore-confirmed <slug>
-```
-
-改变审核数量、角色、输出格式、参考资料访问、默认模型、课程 MCQ 要求、听众或范围等任务承诺时，必须建立 policy change request，并修改、重新展示和重新确认 TASK.md。sidecar 记录永远不能覆盖 TASK.md。
-
-## 5. Planner-owned assignment contracts
+## 7. Planner-owned assignment contracts
 
 每个 assignment 目录包含：
 
@@ -97,21 +136,11 @@ ASSIGNMENT-DECISION.yaml
 TASK-....md
 ```
 
-coordinator 只能说明为什么需要该角色。planner 必须亲自完成：
+planner 必须亲自写 exact taskbook、hard constraints、replaceable hypotheses、local decision rights、允许读取的抽取文本、acceptance criteria 和 deferred questions。只有 `mpres assignment approve` 后才能执行。
 
-- exact Markdown taskbook；
-- hard constraints；
-- replaceable hypotheses；
-- local decision rights；
-- 允许读取的抽取文本或网页来源；
-- acceptance criteria；
-- deferred questions。
+## 8. Authoring stages
 
-只有运行 `mpres assignment approve` 后，该 assignment 才能执行。assignment 中出现 `.pdf`、`downloads/restricted-originals/` 或 restricted metadata 路径会被拒绝。
-
-## 6. 分阶段 authoring
-
-课程 content unit 默认六阶段：
+课程单元默认六阶段：
 
 ```text
 01_scope_sources
@@ -122,82 +151,9 @@ coordinator 只能说明为什么需要该角色。planner 必须亲自完成：
 06_marp_integration
 ```
 
-学术报告使用四阶段精简 profile：
+报告使用四阶段精简 profile。课程阶段 04 必须设计 2—3 道 MCQ；阶段 06 完成题目/答案相邻、core/support、option audit、课次边界和时间计划。
 
-```text
-01_scope_sources
-02_audience_domain
-03_narrative_language
-04_marp_integration
-```
-
-每阶段都有 planner-written assignment、耐久产物、提交和 coordinator 接受门。阶段 01 只能引用 `downloads/text/` 或明确说明不使用外部资料。课程阶段 04 必须设计 2—3 道选择题；阶段 06 完成题目页/答案页相邻、core/support 分类和选项审计。
-
-## 7. 选择题契约
-
-课程每个 content unit 必须有 2—3 道 multiple-choice prompt/answer pairs。每题至少记录：
-
-```yaml
-prompt_slide:
-response_slide:
-purpose:
-preceding_comparison:
-requires_fresh_inference: true
-selection_rationale:
-visible_labels: [A, B, C, D]
-option_audit:
-```
-
-题目页必须是 core，答案页必须是紧邻的 support。选项要覆盖典型误区；正确项需说明理由，错误项需说明对应误解。能直接复制上一页结论而无需新推理的题不合格。
-
-## 8. 参考资料
-
-planner 或系统 ingestion 可以处理输入文件，随后把原件放入：
-
-```text
-downloads/restricted-originals/
-```
-
-并把抽取文本放入：
-
-```text
-downloads/text/
-```
-
-worker assignment、context bundle 和 reviewer 输入只能引用抽取文本。抽取文本不足时应记录 source gap、改用其他已批准文本或网页、缩小/删除相应 claim，或升级为范围问题；不得返回原 PDF。
-
-## 9. GeoGebra
-
-lesson author 仅在动态探索确有教学价值时做小规模搜索：
-
-```text
-site:geogebra.org/m ...
-```
-
-每个 unit 默认最多三次查询、最多选择三个资源。进入课件的资源必须：
-
-- URL 为 `https://www.geogebra.org/m/<resource-id>`；
-- `verification_status: verified`；
-- 记录 title、author、activity 和验证时间；
-- 用描述性 Markdown 文本链接；
-- 即使学生不打开链接，PDF 仍完整讲清必需内容。
-
-## 10. Python assets
-
-默认顺序：
-
-```text
-普通文字/公式
-→ Markdown 表格
-→ 主题 CSS 布局
-→ 简单手写 SVG
-→ 已批准的现成资源
-→ 最后才考虑 Python 图形
-```
-
-Python 图形必须逐项批准，并检查字体物理尺寸、箭头/标签重叠、legend 遮挡、纵横比、文字总量和教学必要性。普通表格不得用 Matplotlib 重新画一遍。
-
-## 11. 一次审核与直接发布
+## 9. 一次审核与直接发布
 
 状态机：
 
@@ -210,15 +166,15 @@ authoring
 → finalized
 ```
 
-唯一审核轮名为 `full`，包括：
+唯一审核轮名为 `full`，包含：
 
 - language；
 - domain_accuracy；
-- layout；
+- layout（教学呈现设计，不检查机械 overflow）；
 - pedagogy；
 - audience。
 
-五个 reviewer 独立查看同一个冻结源和 PDF。每条 finding 有稳定 ID、位置、问题、学习者影响、验收标准和验证方法，但没有 `resolved` 状态。
+审核请求只包含冻结源和 PDF，不包含临时 HTML、HTML layout report 或其它机械版式证据。机械门已经由 author 在提交前完成。
 
 汇总后作者必须：
 
@@ -226,91 +182,78 @@ authoring
 2. 修改课件；
 3. 完成 `AUTHOR-MODIFICATION-CHECKLIST.yaml`；
 4. 更新 `AUTHOR-REVISION.md` 和 SELF-CHECK；
-5. 重新运行 source lint、asset validation、PDF build 和 PDF inspection。
+5. 重新运行 source lint、asset validation、临时 HTML layout inspection、PDF build 和 PDF inspection。
 
-完成后直接形成 `release_ready` 冻结快照。reviewer 不再检查修改结果。release coordinator 只做最终机械构建；若发现必须改语义，则退回 author，而不是自行修复。
+完成后直接形成 `release_ready`。reviewer 不检查修改结果。
 
-## 12. 渲染与检查
+## 10. 机械检查
 
-标准命令：
+标准作者构建：
 
 ```bash
 mpres render <slug> --presentation p01 --stage author
-mpres render <slug> --presentation p01 --stage release
 ```
 
-实际 Marp 命令包含：
+单独检查临时 HTML：
+
+```bash
+mpres inspect html-layout <slug> --presentation p01 --stage author
+```
+
+检查器读取 Marp 输出中的：
+
+```css
+section[data-marpit-scope]
+.marpit > section
+```
+
+并使用每页的真实尺寸比较：
 
 ```text
---pdf
---allow-local-files
---html
---theme-set themes/mathist-academic.css
---output <presentation>.pdf
+scrollWidth  vs clientWidth
+scrollHeight vs clientHeight
 ```
 
-这里 `--html` 只允许 Marp Markdown 使用受约束 HTML 语法，不生成 HTML 交付件。任何意外 HTML 文件都会被删除并使构建失败。
+因此不把 1280×720 硬编码成所有主题的唯一页面尺寸。报告记录每页 ID、client/scroll/computed dimensions 和溢出量。正式 PDF 仍另外检查页数、方向、文本层、最小字号、内部制作词和页面结构。
 
-机械检查包括：Marp front matter、分页、slide ID、core/support、manifest、MCQ pairing、TeX 控制词、远程图片、资产、PDF 页数、方向、文本层、字体尺寸和内部制作词。禁止 screenshot API、PDF 页栅格化和模型视觉。
+## 11. 参考资料、GeoGebra 与资产
 
-## 13. 线程、token 与监督
+worker 只获得 `downloads/text/`。抽取文本不足时记录 source gap、改用其它已批准文本或网页、缩小/删除 claim，或者升级范围问题；不得返回原 PDF。
 
-线程 registry 区分：
+GeoGebra 资源必须真实验证，只能以描述性 Markdown 链接出现。同一个 material 可以在不同课次中反复引用，只要各课次登记各自的教学用途；程序不要求跨课次去重。
 
-```text
-active
-idle_reusable
-terminal_not_releasable
-closed
-```
+Python 图形默认关闭。普通表格不得用 Matplotlib 重画；即使批准图形，也要检查最终物理字号、箭头/文字重叠、legend、纵横比和教学必要性。
 
-author 过的 presentation 不能由同一 thread 担任 reviewer。复用或关闭前必须提交 durable handoff。
+## 12. 安装与启动
 
-Token collector 只导入精确计数，不抽取消息内容，不估算缺失值；可按 presentation、角色、unit、channel、thread 和 model 汇总。
-
-planner 在 **二十分钟或一份 presentation 交付事件**中先发生者进行高层监督。author/review coordinator 在本 presentation 内自行监督 subroles。未激活的 presentation 不被误判为停滞。
-
-## 14. 停止模式
-
-- `pilot`：先完整交付第一份 presentation，暂停一次听取用户反馈；继续后按计划生产。
-- `each`：每份交付后暂停。
-- `all`：全部交付后暂停。
-
-## 15. 安装与启动
-
-要求：Python 3.11+、Node.js 18+、npm、Codex CLI、`pdftotext`；Tesseract 只用于系统 ingestion 的最后手段。
-
-Linux/macOS：
+需要 Python 3.11+、Node.js 18+、npm、Codex CLI、`pdftotext`；Tesseract 只供系统 ingestion 的最后手段。
 
 ```bash
 ./start.sh
 ```
 
-Windows：
-
-```powershell
-.\start.ps1
-```
-
-更安全的启动器：
+或更安全的：
 
 ```bash
 ./start-safe.sh
 ```
 
-```powershell
-.\start-safe.ps1
-```
+bootstrap 会：
 
-Bootstrap 建立 `.venv`、安装 Python 项目，并执行：
+1. 建立 `.venv`；
+2. 安装 Python 包；
+3. 安装未固定版本的 Marp CLI；
+4. 安装 Playwright Chromium（已有 `MPRES_CHROMIUM_EXECUTABLE` 时可跳过）；
+5. 运行 doctor。
 
 ```bash
-npm install --no-audit --no-fund --no-package-lock
+python scripts/bootstrap.py
+.venv/bin/mpres doctor --strict
 ```
 
-Marp 版本不固定，也不保留 `package-lock.json`。`mpres doctor --strict` 会验证实际安装的 CLI 是否能生成可解析的单页 PDF。
+Doctor 同时验证 Marp PDF probe 和 Chromium 临时 HTML layout probe。
 
-## 16. 常用命令
+## 13. 常用命令
 
 ```text
 mpres doctor
@@ -324,7 +267,8 @@ mpres source lint
 mpres assets ...
 mpres geogebra validate
 mpres render ...
-mpres inspect pdf
+mpres inspect html-layout ...
+mpres inspect pdf ...
 mpres review ...
 mpres thread ...
 mpres token ...
@@ -332,25 +276,8 @@ mpres supervise ...
 mpres audit ...
 ```
 
-完整参数以 `mpres <command> --help` 为准。
+## 14. 安全与限制
 
-## 17. 从旧版本迁移
+危险启动器绕过 Codex 审批和沙箱，只能用于隔离 VM、容器或专用低权限账户。仓库中的角色目录、只读副本和状态机不是操作系统级安全边界。
 
-本版把审核、assignment、authoring stage、参考资料权限和默认模型政策都改成了新的状态语义。旧任务中若仍含：
-
-```text
-initial / incremental / final / terminal review 状态
-review_status / resolved 字段
-固定 Marp CLI 版本或 package-lock.json
-medium 默认推理强度
-worker 可见的原 PDF 路径
-coordinator 自动编写的 assignment
-```
-
-不要直接覆盖源码后继续旧状态。保留旧目录作审计档案，在 v0.3.0 中新建任务；可以人工迁移已经确认的教学大纲、抽取文本、语义对象、例题地图和 Marp 内容，但不要迁移旧 state、review request、findings lifecycle、approval 或 release 记录。
-
-## 18. 安全边界与限制
-
-危险启动器会绕过 Codex 审批和沙箱，只应在隔离 VM、容器或专用低权限账户中使用。仓库中的角色目录、只读副本和状态机是工作流约束，不是操作系统安全边界。
-
-结构化 PDF 检查不能代替领域判断和教学判断；唯一一次 reviewer 审核承担全部独立内容审查。作者修改后不复核是用户选择的成本/质量取舍，release record 会明确保存这一事实。
+结构化 HTML/PDF 检查只能发现机械问题，不能证明语言、数学和教学质量。唯一一次 reviewer 审核承担独立内容审查；作者修订后不复核是明确的质量/成本取舍。

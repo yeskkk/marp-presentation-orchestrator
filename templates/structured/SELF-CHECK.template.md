@@ -24,8 +24,16 @@ Record whether dynamic exploration was relevant, the bounded geogebra.org search
 
 [[ARTIFACT_CHECK]]
 
-No HTML artifact, screenshot, PDF raster image, or model visual inspection was used.
+No persistent HTML artifact, screenshot, PDF raster image, or model visual inspection was used. The disposable Marp HTML existed only for the author mechanical overflow gate and was deleted afterward.
 
 ## Known limitations
 
 [[LIMITATIONS_OR_NONE]]
+
+## Author mechanical layout gate
+
+Confirm that the temporary Marp HTML overflow inspection passed for every slide (`scrollWidth <= clientWidth` and `scrollHeight <= clientHeight`) and that the temporary HTML was deleted. This is an author self-check and release gate, not a reviewer responsibility.
+
+## Course time and meeting structure
+
+For a course, confirm that the unit is labeled by its numbered class meeting, has a clear nominal-time stopping point, and places optional explanatory examples after the core path. It is acceptable and often desirable to prepare about 1.5 times the nominal class duration; the teacher need not finish the extension examples.

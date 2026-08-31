@@ -1,0 +1,8 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+task_kind: "[[TASK_KIND]]"
+policy:
+  enforcement: advisory_not_hard_gate
+  default_prepared_to_nominal_ratio: 1.5
+  extension_examples_are_optional_at_class_end: true
+units: []

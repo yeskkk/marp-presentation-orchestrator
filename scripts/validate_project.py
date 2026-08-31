@@ -39,7 +39,7 @@ def _filled_template_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     text = text.replace(
         "[[CONTENT_UNITS_YAML]]",
-        '  - id: "u01"\n    title: "Example unit"\n    source: "sections/u01/section.md"',
+        '  - id: "u01"\n    title: "Example unit"\n    meeting_number: 1\n    meeting_label: "第 1 节课"\n    organization_basis: "course_meeting"\n    source: "sections/u01/section.md"',
     )
     text = text.replace("[[MCQ_ENABLED]]", "true")
     return PLACEHOLDER_RE.sub("example", text)
@@ -84,7 +84,11 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
         result = subprocess.run(
             [sys.executable, "-m", "pytest", "-q"],
             cwd=root,
-            env={**__import__("os").environ, "PYTHONPATH": str(root / "src")},
+            env={
+                **__import__("os").environ,
+                "PYTHONPATH": str(root / "src"),
+                "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+            },
             capture_output=True,
             text=True,
             check=False,

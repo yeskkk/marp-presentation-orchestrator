@@ -1,5 +1,5 @@
 <!-- slide-id: [[SLIDE_ID]] -->
-<!-- _class: core -->
+<!-- _class: core lesson-divider -->
 
 ## [[SLIDE_TITLE]]
 

@@ -28,7 +28,10 @@ def test_policy_is_one_review_high_unpinned_and_text_only(project_root: Path) ->
     assert report["ok"], report["errors"]
     assert "latest" in (project_root / "package.json").read_text(encoding="utf-8")
     assert not (project_root / "package-lock.json").exists()
-    assert "reasoning_effort_default: high" in (task / "EXECUTION-POLICY.yaml").read_text(encoding="utf-8")
+    policy_text = (task / "EXECUTION-POLICY.yaml").read_text(encoding="utf-8")
+    assert "planner_runtime:" in policy_text and "reasoning_effort: max" in policy_text
+    assert "worker_runtime:" in policy_text and "reasoning_effort: high" in policy_text
+    assert (project_root / "MODEL-POLICY.yaml").is_file()
     assert "workers_may_open_original_pdf: false" in (task / "REFERENCE-ACCESS-POLICY.yaml").read_text(encoding="utf-8")
 
 

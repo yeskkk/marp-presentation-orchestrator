@@ -1,0 +1,20 @@
+schema_version: 1
+task_kind: "[[TASK_KIND]]"
+presentation_id: "[[PRESENTATION_ID]]"
+unit_id: "[[UNIT_ID]]"
+meeting_number: [[MEETING_NUMBER_OR_NULL]]
+meeting_label: "[[MEETING_LABEL]]"
+organization_basis: "[[ORGANIZATION_BASIS]]"
+nominal_class_minutes: [[NOMINAL_MINUTES_OR_NULL]]
+prepared_material_target_minutes: [[PREPARED_TARGET_MINUTES_OR_NULL]]
+core_path_target_minutes: [[CORE_TARGET_MINUTES_OR_NULL]]
+extension_example_target_minutes: [[EXTENSION_TARGET_MINUTES_OR_NULL]]
+policy: advisory_not_hard_gate
+stop_at_class_end: true
+core_path:
+  purpose: "完成本节课必须建立的概念链、必要练习和诊断题。"
+  planned_end_slide_id: "[[CORE_END_SLIDE_ID]]"
+extension_example_bank:
+  purpose: "放在课件后半部分，用讲解例题补足约 1.5 倍课堂时长；到点可直接下课，不要求讲完。"
+  items: []
+variation_rationale: "[[TIME_VARIATION_RATIONALE]]"

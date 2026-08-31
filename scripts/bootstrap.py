@@ -34,6 +34,7 @@ def main() -> int:
     parser.add_argument("--with-figures", action="store_true")
     parser.add_argument("--skip-pip-upgrade", action="store_true")
     parser.add_argument("--skip-npm", action="store_true")
+    parser.add_argument("--skip-browser-install", action="store_true")
     parser.add_argument("--no-doctor", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
@@ -59,11 +60,17 @@ def main() -> int:
     if not args.skip_npm:
         npm_command = "npm.cmd" if os.name == "nt" else "npm"
         run([npm_command, "install", "--no-audit", "--no-fund", "--no-package-lock"], root)
+    browser_override = os.environ.get("MPRES_CHROMIUM_EXECUTABLE", "").strip()
+    browser_install_attempted = not args.skip_browser_install and not browser_override
+    if browser_install_attempted:
+        run([str(python), "-m", "playwright", "install", "chromium"], root)
     marker = {
         "completed_utc": utc_now(),
         "python": str(python),
         "with_figures": args.with_figures,
         "npm_install_skipped": args.skip_npm,
+        "playwright_chromium_install_attempted": browser_install_attempted,
+        "chromium_executable_override": browser_override or None,
     }
     (environment / ".mpres-bootstrap.json").write_text(
         json.dumps(marker, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

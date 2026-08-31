@@ -16,6 +16,7 @@ from mpres.audit import audit_task
 from mpres.checkpoints import checkpoint_status, save_checkpoint
 from mpres.doctor import doctor_report
 from mpres.geogebra import validate_task_geogebra
+from mpres.html_layout import inspect_task_html_layout
 from mpres.logs import append_log
 from mpres.marp_source import lint_task_source
 from mpres.pdf_inspection import inspect_task_pdf
@@ -95,6 +96,12 @@ def _doctor_human(report: dict[str, Any]) -> None:
     probe = report["pdf_probe"]
     probe_label = "PASS" if probe.get("ok") else "FAIL" if probe.get("ok") is False else "SKIPPED"
     print(f"Marp PDF probe: {probe_label}")
+    browser = report.get("html_layout_browser", {})
+    browser_label = "PASS" if browser.get("available") else "FAIL"
+    print(
+        "Temporary HTML layout browser: "
+        f"{browser_label} — {browser.get('executable') or '-'}"
+    )
     if report["warnings"]:
         print("\nWarnings:")
         for warning in report["warnings"]:
@@ -346,6 +353,11 @@ def build_parser() -> argparse.ArgumentParser:
     ipdf.add_argument("slug")
     ipdf.add_argument("--presentation", required=True)
     ipdf.add_argument("--stage", choices=["author", "release"], required=True)
+    ihtml = inspect_sub.add_parser("html-layout")
+    ihtml.add_argument("slug")
+    ihtml.add_argument("--presentation", required=True)
+    ihtml.add_argument("--stage", choices=["author", "release"], required=True)
+    ihtml.add_argument("--timeout", type=int, default=1800)
 
     review = commands.add_parser("review")
     review_sub = review.add_subparsers(dest="review_command", required=True)
@@ -729,9 +741,18 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "inspect":
-            result = inspect_task_pdf(
-                root, args.slug, args.presentation, stage=args.stage
-            )
+            if args.inspect_command == "html-layout":
+                result = inspect_task_html_layout(
+                    root,
+                    args.slug,
+                    args.presentation,
+                    stage=args.stage,
+                    timeout=args.timeout,
+                )
+            else:
+                result = inspect_task_pdf(
+                    root, args.slug, args.presentation, stage=args.stage
+                )
             _json(result)
             return 0 if result.get("success") else 1
 

@@ -12,4 +12,4 @@ Act only after the author has submitted a complete post-review revision and the 
 - Author responses: `[[AUTHOR_RESPONSES_PATH]]`
 - Modification checklist: `[[MODIFICATION_CHECKLIST_PATH]]`
 
-Run only deterministic source lint, asset/GeoGebra validation, Marp PDF build, PDF inspection, packaging, and release records. Do not judge whether a finding was substantively resolved, add findings, edit semantics, open original reference PDFs, generate HTML, use screenshots, or use model vision.
+Run only deterministic source lint, asset/GeoGebra validation, the disposable Marp HTML overflow gate, Marp PDF build, PDF inspection, packaging, and release records. Delete temporary HTML immediately and never retain it in the release. Do not judge whether a finding was substantively resolved, add findings, edit semantics, open original reference PDFs, retain HTML, use screenshots, or use model vision.

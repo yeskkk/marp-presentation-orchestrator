@@ -216,7 +216,9 @@ def audit_task(root: Path, slug: str) -> dict[str, Any]:
             "pdf-inspection.json",
             "source-lint.json",
             "asset-validation.json",
+            "html-layout-inspection.json",
             "source/presentation.md",
+            "source/LESSON-TIME-PLANS.yaml",
             "source/GEOGEBRA-RESOURCES.yaml",
             "source/INTERACTION-MANIFEST.yaml",
             "source/MCQ-AUDIT.yaml",
@@ -227,6 +229,7 @@ def audit_task(root: Path, slug: str) -> dict[str, Any]:
             ("pdf-inspection.json", "PDF inspection"),
             ("source-lint.json", "source lint"),
             ("asset-validation.json", "asset validation"),
+            ("html-layout-inspection.json", "temporary HTML layout inspection"),
         ):
             report_path = deliverable / report_name
             if report_path.is_file() and read_json(report_path).get("success") is not True:

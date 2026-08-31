@@ -1,10 +1,15 @@
 schema_version: 2
 task_kind: "[[TASK_KIND_CODE]]"
-model: gpt-5.6-sol
-reasoning_effort_default: high
+model_policy_source: MODEL-POLICY.yaml
+planner_runtime:
+  model: gpt-5.6-sol
+  reasoning_effort: max
+worker_runtime:
+  model: gpt-5.6-sol
+  reasoning_effort: high
 reasoning_effort_note: >-
-  All worker roles default to high. Raise selected roles to max only when the confirmed task
-  explicitly requires research-level or unusually difficult reasoning.
+  The planner always defaults to max because it owns scope and assignments. Execution and review
+  workers default to high; a reconfirmed task may raise selected worker roles to max.
 planner_supervision:
   interval_seconds: 1200
   wake_on_delivery: true
@@ -22,6 +27,13 @@ review:
   channels: [language, domain_accuracy, layout, pedagogy, audience]
   post_review_verification: none
   author_completed_revision_is_sufficient_for_release: true
+course_time_strategy:
+  enforcement: advisory_not_hard_gate
+  prepared_to_nominal_ratio_default: 1.5
+  core_path_targets_nominal_duration: true
+  extension_examples_after_core_path: true
+  stop_at_class_end_without_finishing_extensions: true
+  organization_basis: numbered_course_meetings
 interaction:
   course_multiple_choice_per_unit:
     minimum: 2
@@ -71,3 +83,5 @@ inspection:
   screenshots: forbidden
   model_vision: forbidden
   persistent_html: forbidden
+  temporary_html_overflow_check: author_and_release_gate
+  reviewer_rechecks_mechanical_overflow: false

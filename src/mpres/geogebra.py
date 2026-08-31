@@ -212,7 +212,7 @@ def validate_unit_geogebra_registry(
         selected = []
     if len(selected) > maximum_selected:
         errors.append(f"GeoGebra unit selects more than {maximum_selected} resources.")
-    selected_by_url: dict[str, dict[str, Any]] = {}
+    selected_by_url: dict[str, list[dict[str, Any]]] = {}
     for item in selected:
         embedded = item.get("embedded")
         if embedded is not False:
@@ -245,9 +245,7 @@ def validate_unit_geogebra_registry(
         normalised, url_errors, url_warnings = _validate_url(str(item.get("url", "")))
         errors.extend(url_errors)
         warnings.extend(url_warnings)
-        if normalised in selected_by_url:
-            errors.append(f"GeoGebra resource is selected more than once: {normalised}")
-        selected_by_url[normalised] = item
+        selected_by_url.setdefault(normalised, []).append(item)
         if str(item.get("link_text", "")).strip().lower() in GENERIC_LABELS:
             warnings.append("GeoGebra link_text should describe the intended learner action.")
     if selected and (relevant is not True or attempted is not True):
@@ -260,7 +258,9 @@ def validate_unit_geogebra_registry(
     links, link_errors, link_warnings = _markdown_links(section_path.read_text(encoding="utf-8"))
     errors.extend(link_errors)
     warnings.extend(link_warnings)
-    source_by_url = {item["url"]: item for item in links}
+    source_by_url: dict[str, list[dict[str, str]]] = {}
+    for link in links:
+        source_by_url.setdefault(link["url"], []).append(link)
     missing_registry = sorted(set(source_by_url) - set(selected_by_url))
     missing_source = sorted(set(selected_by_url) - set(source_by_url))
     if missing_registry:
@@ -268,8 +268,12 @@ def validate_unit_geogebra_registry(
     if missing_source:
         errors.append("Selected GeoGebra resources are not linked in section.md: " + ", ".join(missing_source))
     for url in sorted(set(source_by_url) & set(selected_by_url)):
-        if source_by_url[url]["label"] != str(selected_by_url[url].get("link_text", "")).strip():
-            errors.append(f"GeoGebra link text does not match registry for {url}.")
+        source_labels = {item["label"] for item in source_by_url[url]}
+        registered_labels = {
+            str(item.get("link_text", "")).strip() for item in selected_by_url[url]
+        }
+        if not source_labels <= registered_labels:
+            errors.append(f"GeoGebra link text does not match any registry entry for {url}.")
     return {
         "schema_version": 1,
         "registry": str(registry_path),
@@ -354,7 +358,7 @@ def validate_presentation_geogebra_registry(
     if not isinstance(units, list):
         errors.append("GeoGebra aggregate units must be a list.")
         units = []
-    selected_by_url: dict[str, dict[str, Any]] = {}
+    selected_by_url: dict[str, list[dict[str, Any]]] = {}
     selected_count_by_unit: dict[str, int] = {}
     for unit in units:
         if not isinstance(unit, dict):
@@ -388,13 +392,13 @@ def validate_presentation_geogebra_registry(
                     errors.append(f"GeoGebra resource {normalised} is missing {field}.")
             if resource.get("verified_utc") and not _valid_checked_utc(resource.get("verified_utc")):
                 errors.append(f"GeoGebra resource {normalised} has an invalid verified_utc.")
-            if normalised in selected_by_url:
-                errors.append(f"GeoGebra resource is registered more than once: {normalised}")
-            selected_by_url[normalised] = resource
+            selected_by_url.setdefault(normalised, []).append(resource)
     links, link_errors, link_warnings = _markdown_links(presentation_text)
     errors.extend(link_errors)
     warnings.extend(link_warnings)
-    source_by_url = {item["url"]: item for item in links}
+    source_by_url: dict[str, list[dict[str, str]]] = {}
+    for link in links:
+        source_by_url.setdefault(link["url"], []).append(link)
     unregistered = sorted(set(source_by_url) - set(selected_by_url))
     unlinked = sorted(set(selected_by_url) - set(source_by_url))
     if unregistered:
@@ -402,13 +406,17 @@ def validate_presentation_geogebra_registry(
     if unlinked:
         errors.append("Registered GeoGebra resources are not linked in presentation.md: " + ", ".join(unlinked))
     for url in sorted(set(source_by_url) & set(selected_by_url)):
-        expected = str(selected_by_url[url].get("link_text", "")).strip()
-        if source_by_url[url]["label"] != expected:
-            errors.append(f"GeoGebra link text does not match registry for {url}.")
+        source_labels = {item["label"] for item in source_by_url[url]}
+        registered_labels = {
+            str(item.get("link_text", "")).strip() for item in selected_by_url[url]
+        }
+        if not source_labels <= registered_labels:
+            errors.append(f"GeoGebra link text does not match any registry entry for {url}.")
     return {
         "schema_version": 1,
         "registry": str(registry_path),
-        "registered_links": len(selected_by_url),
+        "registered_link_occurrences": sum(len(items) for items in selected_by_url.values()),
+        "registered_unique_urls": len(selected_by_url),
         "source_links": links,
         "selected_count_by_unit": selected_count_by_unit,
         "errors": errors,

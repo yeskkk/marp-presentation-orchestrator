@@ -69,22 +69,27 @@ def _validate_render(build: Path, stage: str) -> tuple[dict[str, Any], list[Path
     report = read_json(report_path)
     if report.get("pipeline") != RENDER_PIPELINE or report.get("success") is not True:
         raise MPresError("A successful Marp PDF render is required.")
-    required = [
-        report_path,
+    mechanical_reports = [
         build / f"source-lint-{stage}.json",
         build / f"asset-validation-{stage}.json",
+        build / f"html-layout-inspection-{stage}.json",
         build / f"pdf-inspection-{stage}.json",
     ]
-    for path in required[1:]:
+    for path in mechanical_reports:
         if not path.is_file() or read_json(path).get("success") is not True:
-            raise MPresError(f"Successful report is required before workflow advance: {path}")
+            raise MPresError(
+                "Author mechanical self-check must pass before workflow advance: " + str(path)
+            )
     snapshot = build / "source-snapshot"
     if not snapshot.is_dir():
         raise MPresError("Frozen render source snapshot is missing; rerender first.")
     pdf = build / f"{report.get('presentation_id')}.pdf"
     if not pdf.is_file():
         raise MPresError("Rendered PDF is missing.")
-    return report, [*required, pdf]
+    # Mechanical reports are author/release gates. They are deliberately not copied into the
+    # specialist review bundle: reviewers assess content, language, pedagogy, audience fit, and
+    # non-mechanical presentation design rather than rerunning overflow checks.
+    return report, [pdf]
 
 
 def _scaffold_specialist_assignments(
@@ -560,6 +565,7 @@ def complete_author_revision(
         "revised_source",
         "reran_source_lint",
         "reran_asset_validation",
+        "reran_html_layout_inspection",
         "rebuilt_pdf",
         "reran_pdf_inspection",
         "completed_self_check",
@@ -718,6 +724,10 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
     shutil.copy2(ready / "build" / "render-report-release.json", deliverable / "render-report.json")
     shutil.copy2(ready / "build" / "source-lint-release.json", deliverable / "source-lint.json")
     shutil.copy2(ready / "build" / "asset-validation-release.json", deliverable / "asset-validation.json")
+    shutil.copy2(
+        ready / "build" / "html-layout-inspection-release.json",
+        deliverable / "html-layout-inspection.json",
+    )
     shutil.copy2(ready / "build" / "pdf-inspection-release.json", deliverable / "pdf-inspection.json")
     sequence = int(state.get("last_delivery_sequence", 0)) + 1
     release = {

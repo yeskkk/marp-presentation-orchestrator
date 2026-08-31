@@ -18,3 +18,7 @@ description: Author mathematically precise Marp Markdown with restrained titles,
 - Prompt and answer occupy adjacent slides and are linked reciprocally in the manifest.
 - Use only local images with teaching purpose and source record. GeoGebra resources are optional ordinary hyperlinks to verified `geogebra.org/m/...` materials.
 - Output is PDF only. No persistent HTML, screenshots, contact sheets, or model vision.
+
+## Course meeting boundaries and optional example tail
+
+For a course, each unit begins with a visible numbered meeting divider such as “第 3 节课”. Do not use textbook chapter headings as the primary deck partition. The core path should reach a natural stopping point near the nominal class duration. Additional material should mainly be worked examples placed after that point; it is acceptable and expected that they may remain unpresented when class ends.

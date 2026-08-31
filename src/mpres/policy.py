@@ -46,8 +46,26 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
         errors.append("Post-review verification must be none.")
     if review_policy.get("author_completed_revision_is_sufficient_for_release") is not True:
         errors.append("Completed author revision must be sufficient for release.")
-    if execution.get("reasoning_effort_default") != "high":
-        errors.append("Default worker reasoning effort must be high.")
+    model_policy_path = root / "MODEL-POLICY.yaml"
+    try:
+        model_policy = read_yaml(model_policy_path)
+    except Exception:
+        model_policy = None
+    if not isinstance(model_policy, dict):
+        errors.append("MODEL-POLICY.yaml is missing or invalid.")
+        model_policy = {}
+    planner_policy = model_policy.get("planner", {}) if isinstance(model_policy, dict) else {}
+    worker_policy = model_policy.get("workers", {}) if isinstance(model_policy, dict) else {}
+    if planner_policy != {"model": "gpt-5.6-sol", "reasoning_effort": "max"}:
+        errors.append("Global planner model policy must be gpt-5.6-sol/max.")
+    if worker_policy != {"model": "gpt-5.6-sol", "reasoning_effort": "high"}:
+        errors.append("Global worker model policy must be gpt-5.6-sol/high.")
+    if execution.get("model_policy_source") != "MODEL-POLICY.yaml":
+        errors.append("EXECUTION-POLICY.yaml must reference MODEL-POLICY.yaml.")
+    if execution.get("planner_runtime") != planner_policy:
+        errors.append("Task planner_runtime must match the global planner model policy.")
+    if execution.get("worker_runtime") != worker_policy:
+        errors.append("Task worker_runtime must match the global worker model policy.")
     if (execution.get("marp") or {}).get("version_policy") != "unpinned_latest_at_install_time":
         errors.append("Marp version policy must remain unpinned.")
     if (execution.get("authoring") or {}).get("planner_writes_every_assignment") is not True:
@@ -93,16 +111,39 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     marp_spec = ((package.get("devDependencies") or {}).get("@marp-team/marp-cli")) if isinstance(package, dict) else None
     if marp_spec not in {"latest", "*"}:
         errors.append("package.json must leave @marp-team/marp-cli unpinned (use latest or *).")
-    config_paths = [root / ".codex" / "config.toml", *sorted((root / ".codex" / "agents").glob("*.toml"))]
-    for config_path in config_paths:
+    root_config_path = root / ".codex" / "config.toml"
+    try:
+        with root_config_path.open("rb") as handle:
+            root_config = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        errors.append(f"Codex config is missing or invalid: {root_config_path}")
+        root_config = {}
+    if root_config.get("model") != "gpt-5.6-sol" or root_config.get("model_reasoning_effort") != "max":
+        errors.append("Planner Codex config must use gpt-5.6-sol/max.")
+    agents_config = root_config.get("agents", {}) if isinstance(root_config, dict) else {}
+    if agents_config.get("default_subagent_model") != "gpt-5.6-sol" or agents_config.get("default_subagent_reasoning_effort") != "high":
+        errors.append("Default subagent Codex config must use gpt-5.6-sol/high.")
+    for config_path in sorted((root / ".codex" / "agents").glob("*.toml")):
         try:
             with config_path.open("rb") as handle:
                 config = tomllib.load(handle)
         except (OSError, tomllib.TOMLDecodeError):
-            errors.append(f"Codex config is missing or invalid: {config_path}")
+            errors.append(f"Codex agent config is missing or invalid: {config_path}")
             continue
         if config.get("model") != "gpt-5.6-sol" or config.get("model_reasoning_effort") != "high":
-            errors.append(f"Codex config must use gpt-5.6-sol/high: {config_path}")
+            errors.append(f"Worker Codex config must use gpt-5.6-sol/high: {config_path}")
+    time_strategy = execution.get("course_time_strategy", {}) if isinstance(execution, dict) else {}
+    if time_strategy.get("enforcement") != "advisory_not_hard_gate":
+        errors.append("Course time strategy must remain advisory, not a hard duration gate.")
+    if float(time_strategy.get("prepared_to_nominal_ratio_default", 0) or 0) != 1.5:
+        errors.append("Default prepared/nominal course-time ratio must be 1.5.")
+    if time_strategy.get("organization_basis") != "numbered_course_meetings":
+        errors.append("Course content must be organized by numbered meetings.")
+    inspection = execution.get("inspection", {}) if isinstance(execution, dict) else {}
+    if inspection.get("temporary_html_overflow_check") != "author_and_release_gate":
+        errors.append("Temporary Marp HTML overflow inspection must be an author/release gate.")
+    if inspection.get("reviewer_rechecks_mechanical_overflow") is not False:
+        errors.append("Reviewers must not recheck mechanical HTML overflow.")
     return {
         "task_slug": slug,
         "gate_ok": gate_ok,

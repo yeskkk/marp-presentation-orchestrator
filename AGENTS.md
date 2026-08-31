@@ -18,17 +18,17 @@ Ask one compact questionnaire. Only the title/topic is mandatory; fill blanks yo
 6. Delivery mode: `pilot`, `each`, or `all`.
 7. Whether Python-generated figures are explicitly enabled; default is disabled.
 
-For a course, ask meeting count and nominal minutes. Before writing TASK.md, explicitly remind the user:
+For a course, ask meeting count and nominal minutes. Explain that course units are organized by numbered meetings rather than textbook chapter boundaries. The default preparation strategy is deliberately generous: roughly 1.5 times the nominal class duration, with the optional tail mainly consisting of worked examples. A 40-minute class may therefore have about 60 minutes of slides, and the teacher may stop at class end without finishing them. Before writing TASK.md, explicitly remind the user:
 
 - Each deck has **one** mandatory full-deck review in five independent channels.
 - After that review, the author responds to every finding, revises, self-checks and proceeds directly to mechanical release. Reviewers do not recheck the revision and findings are not tracked as resolved.
 - Course content units require **2–3 diagnostic multiple-choice questions** each; academic reports are exempt.
 - Screenshots, PDF raster/contact sheets and model visual inspection are forbidden.
 - Only Marp Markdown and PDF are produced; no persistent HTML artifact is generated or reviewed.
-- Every worker defaults to `gpt-5.6-sol` with reasoning effort `high`.
+- The planner defaults to `gpt-5.6-sol/max`; all workers default to `gpt-5.6-sol/high`. `MODEL-POLICY.yaml` is the single global source of truth.
 - Workers may read only extracted reference text. Original PDFs are forbidden: do not open, parse, render, convert, OCR or screenshot them.
 - Python figures are disabled unless TASK.md and the exact asset decision approve them.
-- GeoGebra search is optional, bounded and restricted to `geogebra.org`; selected materials are ordinary hyperlinks only.
+- GeoGebra search is optional, bounded and restricted to `geogebra.org`; selected materials are ordinary hyperlinks only. Reusing the same verified resource in multiple lessons is allowed.
 
 ## 3. TASK.md confirmation and policy amendments
 
@@ -40,7 +40,7 @@ A material workflow change—review count, roles, output format, reference acces
 
 ## 4. Production graph and planner-owned assignments
 
-After confirmation initialize presentation and content-unit IDs. For courses, one unit maps to one meeting. For reports, use one logical section per unit.
+After confirmation initialize presentation and content-unit IDs. For courses, one unit maps to one sequentially numbered meeting and the deck must visibly preserve those meeting boundaries; textbook chapters are coverage references, not deck sections. For reports, use one logical section per unit.
 
 Roles:
 
@@ -75,7 +75,7 @@ For course units, stage 4 must design 2–3 diagnostic MCQs at different concept
 
 The canonical source is `presentation.md`. Marp CLI version is not pinned; bootstrap installs the current available package and doctor accepts any working version that passes the PDF probe.
 
-Before review and release require source lint, asset/GeoGebra validation, Marp PDF build, PDF page count/geometry/text-layer checks and no persistent HTML. Inspection is source/PDF structure only. Never take screenshots, rasterize pages, create contact sheets or use model vision.
+Before review and release require source lint, asset/GeoGebra validation, a temporary Marp HTML overflow inspection, Marp PDF build, PDF page count/geometry/text-layer checks, and no persistent HTML. The author/release pipeline generates disposable HTML, uses Playwright to compare each Marpit slide's scroll dimensions with its client dimensions, records the report, and deletes the HTML. This is an author self-check and release gate. Reviewers do not rerun or adjudicate mechanical overflow. Never take screenshots, rasterize pages, create contact sheets or use model vision.
 
 ## 8. Sole review and direct release
 
@@ -90,7 +90,7 @@ authoring
 → finalized
 ```
 
-Five channels: language, domain accuracy, layout/PDF behavior, pedagogy and audience fit.
+Five channels: language, domain accuracy, presentation design, pedagogy and audience fit. The presentation-design channel may discuss hierarchy, pacing, semantic grouping and source-level readability, but mechanical overflow/clipping is already an author gate and is not a reviewer task.
 
 After aggregation, the author must respond to every finding and complete the staged revision checklist, rebuild and self-check. The revised deck is not sent back to reviewers. Findings remain historical review statements; no role assigns them a resolved status. Release coordinator checks only response coverage and deterministic gates, not whether a finding was fixed well enough.
 

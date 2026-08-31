@@ -24,4 +24,4 @@ Review the complete frozen deck in the assigned channel. Do not read another cha
 
 Each finding needs stable ID, location, issue, learner impact, acceptance criteria, and verification method. It does not need a resolution status. Zero findings still require a scope/evidence statement.
 
-Use only frozen Marp source, PDF, lint/build/PDF reports, extracted reference text, and permitted web text. Do not open original reference PDFs, edit source, take screenshots, rasterize pages, or use model vision.
+Use only the frozen Marp source, rendered PDF, confirmed task, exact assignment, extracted reference text, and permitted web text. Mechanical overflow reports are not part of reviewer evidence and must not be recreated. Do not open original reference PDFs, edit source, take screenshots, rasterize pages, or use model vision.

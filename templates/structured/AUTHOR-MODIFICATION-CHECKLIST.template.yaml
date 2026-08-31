@@ -8,6 +8,7 @@ steps:
   revised_source: false
   reran_source_lint: false
   reran_asset_validation: false
+  reran_html_layout_inspection: false
   rebuilt_pdf: false
   reran_pdf_inspection: false
   completed_self_check: false

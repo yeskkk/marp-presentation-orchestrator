@@ -5,7 +5,7 @@
 > **Course meetings:** [[SESSION_COUNT_OR_NA]]  
 > **Nominal minutes per meeting:** [[MINUTES_OR_NA]]  
 > **Delivery mode:** `[[STOP_MODE]]`  
-> **Default worker policy:** `gpt-5.6-sol`, reasoning effort `high`  
+> **Default runtime policy:** planner `gpt-5.6-sol/max`; workers `gpt-5.6-sol/high`  
 > **Plan status:** awaiting explicit user confirmation of this exact `TASK.md`
 
 ## 1. 任务名称、简介与范围
@@ -30,9 +30,9 @@
 2. 作者逐条回应 findings、完成修改、自检和重新构建后，直接进入机械发布；修订稿不返回 reviewer，findings 不维护 resolved 状态。
 3. **课程的每个 content unit 必须包含 2—3 道诊断性选择题。** 学术报告/普通报告不设这一配额。
 4. 审核禁止截图、PDF 栅格化、联系表和模型视觉；只使用 Marp 源、结构化记录、构建日志和 PDF 页面几何/文本层。
-5. 项目只交付 Marp 源和 PDF，不生成、保存或审核 HTML。
+5. 项目只交付 Marp 源和 PDF。author/release 可生成临时 Marp HTML 做机械溢出自检，但检查后必须删除，且 reviewer 不检查该 HTML。
 6. 除本文件确认门外，不生成或检查哈希。
-7. 所有 worker 默认 `gpt-5.6-sol/high`；极难研究报告可由用户明确提高到 `max`。
+7. planner 默认 `gpt-5.6-sol/max`；所有 worker 默认 `gpt-5.6-sol/high`。极难研究报告可由用户明确把特定 worker 提高到 `max`。
 8. worker 只能读取 `downloads/text/` 中的抽取文本。任何原 PDF 即使物理存在也禁止打开、解析、渲染、转换、OCR、截图或交给视觉模型。
 9. Python 作图默认关闭；GeoGebra 仅可做有界站内搜索并以普通超链接引用。
 10. planner 亲自编写每个逻辑 worker 和每个 authoring stage 的精确 assignment；coordinator 只能提交 assignment request，不能代写。
@@ -57,17 +57,19 @@
 
 先前出现过只能视为“见过”，不能直接视为掌握。assignment 必须写明本单元需要重新激活的最小知识。
 
-## 4. 总体逻辑大纲
+## 4. 课程课次/报告结构
 
 [[OVERALL_OUTLINE]]
 
-时长只用于校准材料总量；content unit 按逻辑关系划分，不按分钟机械切块。
+课程必须按“第几节课”组织 content units；教材章节只作为参考来源和覆盖映射，不作为课件分节依据。报告仍可按逻辑部分组织。
+
+课程时长采用宽松规划：名义时长定义自然下课点，默认可以准备约 1.5 倍材料。例如 40 分钟课堂可准备约 60 分钟课件；后约 20 分钟主要安排讲解例题。到点即可下课，不要求讲完。
 
 ## 5. presentation 与 content-unit 图
 
 [[PRESENTATION_PLAN]]
 
-课程中一个 content unit 对应一节课；报告按逻辑章节拆分。[[AUTHORING_STAGE_DESCRIPTION]] lesson authors 允许有界并行，author coordinator 统一术语、对象、例题、互动与最终 `presentation.md`。
+课程中一个 content unit 对应一个按顺序编号的课次；不要按教材逻辑章节重新分节。报告按逻辑部分拆分。[[AUTHORING_STAGE_DESCRIPTION]] lesson authors 允许有界并行，author coordinator 统一术语、对象、例题、互动与最终 `presentation.md`。
 
 ## 6. 演讲策略
 
@@ -132,7 +134,7 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 
 [[ACCEPTANCE_CRITERIA]]
 
-至少包括：覆盖、领域正确性、自然语言、听众契合、课程 unit 每个 2—3 道合格 MCQ、题答相邻分页、结构化地图一致性、Marp lint、PDF 页数/几何/文本层、本地资产、GeoGebra 规则、text-only 来源、一轮五通道报告、作者逐项回应、自修订记录和直接发布记录。
+至少包括：覆盖、领域正确性、自然语言、听众契合、课程 unit 每个 2—3 道合格 MCQ、题答相邻分页、按课次分节、宽松时间计划和自然停止点、结构化地图一致性、作者临时 HTML 溢出自检、Marp lint、PDF 页数/几何/文本层、本地资产、GeoGebra 规则、text-only 来源、一轮五通道报告、作者逐项回应、自修订记录和直接发布记录。
 
 ## 14. 规划者确认清单
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from mpres.assets import validate_assets
+from mpres.html_layout import inspect_marp_html_layout
 from mpres.logs import append_log
 from mpres.marp_source import lint_deck
 from mpres.pdf_inspection import inspect_pdf_file
@@ -87,6 +88,7 @@ def _required_source_files(source: Path, *, presentation_status: str) -> list[Pa
         source / "SEMANTIC-OBJECTS.yaml",
         source / "ASSET-DECISIONS.yaml",
         source / "GEOGEBRA-RESOURCES.yaml",
+        source / "LESSON-TIME-PLANS.yaml",
         source / "INTERACTION-MANIFEST.yaml",
         source / "MCQ-AUDIT.yaml",
         source / "SELF-CHECK.md",
@@ -184,6 +186,67 @@ def render_presentation(
     logs.mkdir(parents=True, exist_ok=True)
     snapshot = build / "source-snapshot"
     copy_source_tree(source, snapshot, read_only=True)
+    try:
+        html_layout_report = inspect_marp_html_layout(
+            root,
+            snapshot,
+            policy=policy,
+            timeout=timeout,
+        )
+    except MPresError as exc:
+        html_layout_report = {
+            "schema_version": 2,
+            "errors": [str(exc)],
+            "warnings": [],
+            "success": False,
+            "temporary_html_retained": False,
+            "inspection_policy": "author mechanical self-check; no screenshots or model vision",
+        }
+    html_layout_path = build / f"html-layout-inspection-{stage}.json"
+    write_json_atomic(html_layout_path, html_layout_report)
+    write_json_atomic(build / f"source-lint-{stage}.json", source_lint)
+    write_json_atomic(build / f"asset-validation-{stage}.json", asset_report)
+    if not html_layout_report.get("success"):
+        report = {
+            "schema_version": 2,
+            "render_transaction_id": str(uuid.uuid4()),
+            "pipeline": RENDER_PIPELINE,
+            "task_slug": slug,
+            "presentation_id": presentation_id,
+            "stage": stage,
+            "started_and_finished_utc": utc_now(),
+            "source": relative_display(source, root),
+            "source_snapshot": relative_display(snapshot, root),
+            "source_inventory": directory_inventory(snapshot),
+            "source_lint": relative_display(build / f"source-lint-{stage}.json", root),
+            "asset_validation": relative_display(build / f"asset-validation-{stage}.json", root),
+            "html_layout_inspection": relative_display(html_layout_path, root),
+            "pdf": None,
+            "html_artifacts_generated": [],
+            "errors": list(html_layout_report.get("errors", [])),
+            "warnings": [
+                *source_lint.get("warnings", []),
+                *asset_report.get("warnings", []),
+                *html_layout_report.get("warnings", []),
+            ],
+            "success": False,
+            "integrity_policy": "frozen snapshot and structured records; no hashes except TASK.md confirmation",
+        }
+        report_path = build / f"render-report-{stage}.json"
+        write_json_atomic(report_path, report)
+        append_log(
+            root,
+            slug,
+            actor=role,
+            kind="error",
+            presentation_id=presentation_id,
+            message=(
+                "Author mechanical HTML layout self-check failed; the deck cannot proceed "
+                f"to PDF or review. See {relative_display(html_layout_path, root)}."
+            ),
+            data={"report": relative_display(report_path, root), "success": False},
+        )
+        raise MPresError(f"Temporary Marp HTML layout inspection failed. See {html_layout_path}")
     final_pdf = build / f"{presentation_id}.pdf"
     if final_pdf.exists():
         final_pdf.unlink()
@@ -214,12 +277,15 @@ def render_presentation(
         "errors": ["Marp CLI did not produce the expected PDF."],
         "warnings": [],
     }
-    write_json_atomic(build / f"source-lint-{stage}.json", source_lint)
-    write_json_atomic(build / f"asset-validation-{stage}.json", asset_report)
     write_json_atomic(build / f"pdf-inspection-{stage}.json", pdf_report)
-    success = process.returncode == 0 and pdf_report.get("success") is True and not unexpected_html
+    success = (
+        process.returncode == 0
+        and html_layout_report.get("success") is True
+        and pdf_report.get("success") is True
+        and not unexpected_html
+    )
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "render_transaction_id": str(uuid.uuid4()),
         "pipeline": RENDER_PIPELINE,
         "task_slug": slug,
@@ -237,6 +303,7 @@ def render_presentation(
         "pdf_size_bytes": final_pdf.stat().st_size if final_pdf.is_file() else None,
         "source_lint": relative_display(build / f"source-lint-{stage}.json", root),
         "asset_validation": relative_display(build / f"asset-validation-{stage}.json", root),
+        "html_layout_inspection": relative_display(html_layout_path, root),
         "pdf_inspection": relative_display(build / f"pdf-inspection-{stage}.json", root),
         "html_artifacts_generated": [],
         "errors": [
@@ -244,7 +311,12 @@ def render_presentation(
             *pdf_report.get("errors", []),
             *(["An unexpected HTML artifact was generated and removed."] if unexpected_html else []),
         ],
-        "warnings": [*source_lint.get("warnings", []), *asset_report.get("warnings", []), *pdf_report.get("warnings", [])],
+        "warnings": [
+            *source_lint.get("warnings", []),
+            *asset_report.get("warnings", []),
+            *html_layout_report.get("warnings", []),
+            *pdf_report.get("warnings", []),
+        ],
         "success": success,
         "integrity_policy": "frozen snapshot and structured records; no hashes except TASK.md confirmation",
     }
@@ -257,7 +329,8 @@ def render_presentation(
         kind="render" if success else "error",
         presentation_id=presentation_id,
         message=(
-            "Rendered Marp Markdown directly to PDF and passed structural inspection."
+            "Passed the author mechanical HTML overflow self-check, rendered Marp Markdown "
+            "to PDF, and passed PDF structural inspection."
             if success
             else f"Marp PDF render or inspection failed; see {relative_display(report_path, root)}."
         ),

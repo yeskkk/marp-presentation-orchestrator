@@ -1,0 +1,10 @@
+schema_version: 1
+planner:
+  model: gpt-5.6-sol
+  reasoning_effort: max
+workers:
+  model: gpt-5.6-sol
+  reasoning_effort: high
+notes:
+  - The planner uses max because it owns scope, assignment semantics, policy changes, and cross-role decisions.
+  - All execution and review workers use high unless an explicitly reconfirmed task policy raises a role to max.

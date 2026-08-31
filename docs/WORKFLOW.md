@@ -1,86 +1,69 @@
-# Workflow and state machine
+# Workflow and state machine — v0.4.1
 
 ## 1. Confirmed task
 
 ```text
-task_draft
-→ awaiting_user_confirmation
-→ confirmed
-→ working
+task_draft → awaiting_user_confirmation → confirmed → working
 ```
 
-Only `TASK.md` uses a confirmation hash. Production initialization freezes the plan. Material policy changes require editing and reconfirming TASK.md; sidecar amendment records are audit history only.
+Only `TASK.md` uses a confirmation digest. Material changes require editing and reconfirming it.
 
-## 2. Planner-owned assignments
+## 2. Global runtime policy
 
-Every runnable role or authoring stage has four files:
+`MODEL-POLICY.yaml` is the single repository source of truth:
 
-```text
-ASSIGNMENT-REQUEST.yaml
-ASSIGNMENT-BRIEF.yaml
-ASSIGNMENT-DECISION.yaml
-TASK-....md / STAGE-ASSIGNMENT.md
+```yaml
+planner: {model: gpt-5.6-sol, reasoning_effort: max}
+workers: {model: gpt-5.6-sol, reasoning_effort: high}
 ```
 
-A coordinator may create the request. The main planner personally writes the structured brief and exact taskbook, then approves it. The CLI rejects placeholders, short generic taskbooks, restricted reference paths and unapproved decisions.
+Task policy and Codex configuration must agree with it.
 
-## 3. Parallel staged authoring
+## 3. Planner-owned assignments and parallel authoring
 
-Course units use six stages; report units use four compact stages. Each stage moves through:
+Every runnable role or stage has request, brief, decision and taskbook files. The planner writes and approves the exact assignment. Course content units are sequential numbered meetings; report units are logical sections. Lesson authors may run in bounded parallel batches.
 
-```text
-awaiting_assignment
-→ active
-→ submitted
-→ accepted
-```
+## 4. Course meeting and time contract
 
-The next stage cannot activate until the planner has written and approved its assignment. An accepted stage may be reopened with a recorded reason. One lesson-author owns one unit; author coordinator supervises multiple units in bounded parallel batches and later assembles them into `presentation.md`.
+A course unit is `第 N 节课`, not a textbook chapter. Each unit has `LESSON-TIME-PLAN.yaml`:
 
-## 4. Course interaction contract
+- nominal class duration;
+- prepared material target, normally about 1.5× nominal;
+- natural end of the core path;
+- optional explanatory worked-example bank;
+- explicit permission to stop when class ends.
 
-Each course unit requires two or three diagnostic MCQ prompt/answer pairs. Prompt and response slides are adjacent, reciprocal in manifests, and marked core/support. `INTERACTION-MANIFEST.yaml`, `MCQ-AUDIT.yaml`, `UNIT-MANIFEST.yaml`, `DECK-MANIFEST.yaml` and final source must agree. Academic reports are exempt from the quota.
+The ratio is advisory. It is not a hard completion or publication gate.
 
-## 5. Source and reference boundary
+## 5. Author mechanical gate
 
-System ingestion stores originals and restricted metadata outside worker-readable context and removes read permissions. Workers use only `downloads/text/`. Stage 01, assignments, review bundles and manifests are scanned for `.pdf` and restricted paths. Source gaps are recorded rather than solved by reopening the original.
-
-## 6. Marp build
+Before a review request, and again before release:
 
 ```text
 canonical presentation.md
-→ source lint
-→ asset + GeoGebra validation
+→ source/asset/GeoGebra lint
 → frozen source snapshot
-→ Marp CLI PDF build
+→ disposable Marp HTML
+→ Playwright scroll/client dimension inspection
+→ delete HTML
+→ Marp PDF
 → PDF structural inspection
 ```
 
-No persistent HTML artifact is allowed. The Marp version is deliberately unpinned; doctor accepts any installed version that passes the probe.
+Any HTML overflow blocks PDF generation and review submission. Temporary HTML and its report are author/release evidence only; reviewers do not receive or rerun them. No screenshot or model vision is used.
 
-## 7. One full review
+## 6. One full review
 
 ```text
-authoring
-→ review_requested
-→ reviewing
-→ author_revision
-→ release_ready
-→ finalized
+authoring → review_requested → reviewing → author_revision → release_ready → finalized
 ```
 
-The `full` review has five isolated channels. Each channel submits a report and structured findings. Aggregation hands the historical registry to the author. No incremental/final/acceptance-verification round exists.
+The full review has language, domain accuracy, layout/design, pedagogy and audience channels. Layout/design reviewers evaluate hierarchy, density, grouping and presentation design, not mechanical overflow. Findings remain historical statements; after author responses and a successful fresh mechanical build, the deck proceeds directly to release without reviewer verification.
 
-The author response must cover every finding exactly. The author then completes the modification checklist and reruns all deterministic checks. This workflow transition does **not** mark findings resolved and does not send revisions back to reviewers.
+## 7. GeoGebra
 
-## 8. Mechanical release
+Only verified `geogebra.org/m/...` materials may be linked, through ordinary Markdown text links. Reusing the same resource in multiple meetings is allowed and is not a deduplication error.
 
-`release_ready` is created from the author's successful post-modification source snapshot and evidence. The release coordinator may fix environment/build failures only. Any required semantic change returns the deck to `author_revision`. A successful release copies PDF, canonical source, review aggregate, findings, author responses, revision note, checklist and deterministic reports into `deliverables/<id>/`.
+## 8. Final delivery
 
-## 9. Thread lifecycle
-
-Thread states are active, idle reusable, terminal-not-releasable or closed. A thread that authored a deck cannot review it. Handoff validation is required before reuse or close. Runtime close requests that do not release capacity are recorded honestly as reusable, not closed.
-
-## 10. Supervision
-
-Planner supervision is event-aware: it acts after 1200 seconds or a delivery sequence change, whichever occurs first. Coordinators use shorter local intervals and distinguish recent logs, durable file progress, silence and checkpoint age. Inactive future presentations are ignored.
+The release coordinator repeats the mechanical gate and copies PDF, canonical source, review aggregate, findings, author responses, checklist and reports into `deliverables/<id>/`. Persistent HTML is forbidden.

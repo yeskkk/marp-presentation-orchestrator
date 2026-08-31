@@ -1,34 +1,25 @@
-# Design notes
+# Design notes — v0.4.1
 
 ## Deliberate choices
 
-- Marp PDF-only instead of Quarto/Reveal HTML inspection.
-- Unpinned Marp CLI; capability is established by a real probe.
+- Marp source and PDF are the only durable presentation artifacts.
+- Disposable Marp HTML is allowed only for author/release mechanical overflow inspection.
+- Mechanical overflow is an author self-check and submission gate, not a reviewer responsibility.
+- Planner defaults to Sol/max; workers default to Sol/high, from one global policy file.
+- Course decks are organized by numbered meetings, not textbook chapters.
+- A course normally prepares about 1.5× nominal time; optional explanatory examples come after the natural stopping point and need not be presented.
 - One complete five-channel review, followed by author-owned revision with no independent recheck.
-- Findings remain historical statements rather than lifecycle objects with resolved states.
-- Planner authors every exact assignment; coordinators only request roles and supervise execution.
-- Course units require 2–3 diagnostic MCQs; reports are exempt.
+- Findings remain historical statements rather than resolved lifecycle objects.
+- Planner personally writes every exact assignment.
 - Original PDFs are inaccessible to workers after system extraction.
-- No screenshot/model-vision review.
-- Python figures are exception-only; native text, formula, table and CSS are preferred.
-- GeoGebra is optional hyperlink enrichment restricted to verified `geogebra.org/m/...` materials.
+- Screenshots and model-vision review are forbidden.
+- Python figures are exception-only.
+- Verified GeoGebra materials may be reused across meetings; there is no deduplication policy.
 
-## Why staged authoring exists
+## Why temporary HTML is not a second output
 
-The six-stage course profile prevents one worker from simultaneously optimizing scope, domain correctness, learner needs, diagnostic activity, student language and Marp layout. Each accepted artifact becomes the durable input to the next stage. Reports use a compact profile because a short academic narrative does not always justify six separate gates.
+Marp's HTML output exposes each slide as a real DOM section. That permits deterministic scroll/client dimension checks which PDF text extraction cannot reliably provide. The HTML is generated in a temporary directory, is never given to reviewers, is deleted immediately, and never enters deliverables. It is analogous to a compiler's temporary intermediate representation, not a parallel teaching artifact.
 
-## Assignment ownership
+## Time planning philosophy
 
-A coordinator knows when work is needed but the planner owns task meaning. The request/brief/decision contract preserves that distinction while avoiding accidental coordinator-authored assignments. Fixed boilerplate lives in skills and templates; the planner writes the exact scope, constraints and acceptance criteria.
-
-## Quality/cost trade-off
-
-The user selected no reviewer verification after author revision. This reduces repeated review cost but means the sole frozen-deck review is the only independent content check. The release record explicitly states that findings were answered but not independently resolved. Mechanical release cannot compensate for a weak author revision.
-
-## Future improvements
-
-- Deterministic cross-check of stage artifacts against final deck claims.
-- Better PDF text-box overlap diagnostics without rasterization.
-- More robust import adapters for Codex token exports.
-- An App Server scheduler that persists actual thread IDs and close outcomes.
-- Optional task profiles for non-mathematical courses while preserving the same assignment/review boundaries.
+The nominal class duration marks the point where essential teaching should be complete. Preparing additional examples gives the instructor flexibility to respond to audience speed. The framework checks that the stopping point and extension bank are explicit; it does not reject a deck merely because the prepared-time estimate differs from 1.5×.
