@@ -1,0 +1,11 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+round: full
+frozen_utc: "[[FROZEN_UTC]]"
+scope: full_deck
+all_five_reviewers_read_entire_deck: true
+channels: [language, domain_accuracy, layout, pedagogy, audience]
+source: "[[FROZEN_SOURCE]]"
+pdf: "[[FROZEN_PDF]]"
+channel_isolation: true
+reviewer_rechecks_post_revision: false

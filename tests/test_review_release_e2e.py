@@ -17,7 +17,15 @@ from mpres.review import (
 from mpres.state import REVIEW_CHANNELS, load_state
 from mpres.util import utc_now
 
-from .conftest import install_fake_marp, planner_write_and_approve, prepare_author_source, initialize_one_deck
+from .conftest import (
+    approve_release_coordinator,
+    approve_review_coordinator,
+    approve_revision_author,
+    initialize_one_deck,
+    install_fake_marp,
+    planner_write_and_approve,
+    prepare_author_source,
+)
 
 
 def finding(channel: str, number: int) -> dict[str, object]:
@@ -35,10 +43,11 @@ def finding(channel: str, number: int) -> dict[str, object]:
 
 def test_single_review_author_owned_revision_and_direct_release(project_root: Path) -> None:
     slug, task = initialize_one_deck(project_root)
-    install_fake_marp(project_root, version="77.4.2")
+    install_fake_marp(project_root, version="4.5.0")
     source = prepare_author_source(project_root, slug, task)
     assert render_presentation(project_root, slug, "p01", stage="author", timeout=60)["success"]
     assert request_review(project_root, slug, "p01")["round"] == "full"
+    approve_review_coordinator(project_root, slug, task)
 
     for i, channel in enumerate(REVIEW_CHANNELS, start=1):
         channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel
@@ -86,11 +95,22 @@ def test_single_review_author_owned_revision_and_direct_release(project_root: Pa
     )
     assert decision["post_revision_review"] == "none"
     assert (task / "reviews" / "p01" / "REVISION-ROUTING.yaml").is_file()
-    unit_queue = task / "workers" / "lesson-authors" / "p01" / "u01" / "REVISION-FINDINGS.yaml"
-    assert unit_queue.is_file()
-    assert len(yaml.safe_load(unit_queue.read_text(encoding="utf-8"))["finding_ids"]) == 5
+    revision_queue = (
+        task
+        / "workers"
+        / "deck-revision-author"
+        / "drafts"
+        / "p01"
+        / "source"
+        / "REVISION-FINDINGS.yaml"
+    )
+    assert revision_queue.is_file()
+    queue_value = yaml.safe_load(revision_queue.read_text(encoding="utf-8"))
+    assert len(queue_value["finding_ids"]) == 5
+    assert queue_value["original_lesson_authors_reopened"] is False
     assert load_state(project_root, slug)["presentations"][0]["status"] == "author_revision"
 
+    source = approve_revision_author(project_root, slug, task)
     responses_path = source / "AUTHOR-RESPONSES.yaml"
     responses = yaml.safe_load(responses_path.read_text(encoding="utf-8"))
     for row in responses["responses"]:
@@ -137,6 +157,7 @@ def test_single_review_author_owned_revision_and_direct_release(project_root: Pa
     assert ready["finding_resolution_checked"] is False
     assert ready["post_revision_reviewer_verification"] is False
 
+    approve_release_coordinator(project_root, slug, task)
     assert render_presentation(project_root, slug, "p01", stage="release", timeout=60)["success"]
     release = finalize_release(project_root, slug, "p01")
     assert (project_root / release["pdf"]).is_file()
@@ -154,7 +175,7 @@ def test_finding_resolution_fields_are_rejected(project_root: Path) -> None:
     from mpres.util import MPresError
 
     slug, task = initialize_one_deck(project_root)
-    install_fake_marp(project_root, version="88.0.0")
+    install_fake_marp(project_root, version="4.5.0")
     prepare_author_source(project_root, slug, task)
     assert render_presentation(project_root, slug, "p01", stage="author", timeout=60)[
         "success"
@@ -206,10 +227,11 @@ def test_review_resubmission_is_narrow_and_aggregation_is_atomic(project_root: P
     from mpres.util import MPresError, read_yaml, write_yaml_atomic
 
     slug, task = initialize_one_deck(project_root, slug="atomic-review-task")
-    install_fake_marp(project_root, version="91.0.0")
+    install_fake_marp(project_root, version="4.5.0")
     prepare_author_source(project_root, slug, task)
     render_presentation(project_root, slug, "p01", stage="author", timeout=60)
     request_review(project_root, slug, "p01")
+    approve_review_coordinator(project_root, slug, task)
 
     def submit(channel: str, row: dict[str, object]) -> dict[str, object]:
         channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel

@@ -1,12 +1,14 @@
 ---
 name: presentation-artifact-inspection
-description: Deterministically inspect Marp source, disposable Marp HTML layout, and PDF without screenshots, page rasterization, or model vision.
+description: Enforce the pinned Marp toolchain, run fast incremental gates during authoring, and inspect disposable HTML and PDF without screenshots or model vision.
 ---
 
 # Artifact inspection
 
-The author and release coordinator generate temporary Marp HTML, inspect every `section[data-marpit-scope]` or `.marpit > section`, compare `scrollWidth/scrollHeight` with `clientWidth/clientHeight`, record overflow, and delete the HTML. A successful report is required before review or release. This is not delegated to reviewers.
+Before production, verify `TOOLCHAIN-LOCK.yaml`, exact Marp version `4.5.0`, and the three-slide smoke fixture covering DOM discovery, math, PDF generation, page count, and both `global_meeting_number` and `deck_local_ordinal`.
 
-Also check frontmatter, slide boundaries, IDs, core/support roles, prompt/answer adjacency, TeX source, course MCQ quotas, MCQ option audits, local assets, GeoGebra hyperlink policy, PDF page count/geometry/text spans, internal production vocabulary, and text clipping.
+During authoring, run incremental source and structured-record checks on changed units and reuse valid cached results for unchanged content. Run full checks at freeze and release.
 
-For course tasks, each content unit must contain 2 or 3 valid multiple-choice prompt slides. Reports have no quota. Mechanical checks do not judge whether an author's post-review revision satisfies a finding.
+Disposable HTML inspection must discover supported Marp slide DOM quickly, wait for explicit slide/font/math/image readiness rather than unbounded `networkidle`, compare scroll and client dimensions, record overflow, and delete HTML immediately. A zero-slide result fails fast. PDF timeouts scale with slide count.
+
+Also validate frontmatter, slide IDs and roles, global versus deck-local meeting numbering, TeX source and renderer output, interaction pairing and MCQ audits, local assets, GeoGebra links, course continuity, density, PDF geometry, text spans, and internal production-language leakage. Screenshots, raster contact sheets, OCR of generated slides, and model vision are forbidden.

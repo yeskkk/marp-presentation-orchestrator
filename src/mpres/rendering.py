@@ -18,6 +18,7 @@ from mpres.pdf_inspection import inspect_pdf_file
 from mpres.production import check_assignment
 from mpres.state import get_presentation, load_state
 from mpres.tasks import require_gate
+from mpres.toolchain import require_pinned_marp
 from mpres.util import (
     MPresError,
     copy_source_tree,
@@ -42,7 +43,10 @@ def source_and_build_paths(
 ) -> tuple[Path, Path]:
     task = task_path(root, slug)
     if stage == "author":
-        base = task / "workers" / "author-coordinator" / "drafts" / presentation_id
+        state = load_state(root, slug)
+        presentation = get_presentation(state, presentation_id)
+        role = "deck-revision-author" if presentation.get("status") == "author_revision" else "author-coordinator"
+        base = task / "workers" / role / "drafts" / presentation_id
     elif stage == "release":
         base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
     elif stage == "maintenance":
@@ -108,8 +112,10 @@ def _required_source_files(
         source / "ASSET-DECISIONS.yaml",
         source / "GEOGEBRA-RESOURCES.yaml",
         source / "LESSON-TIME-PLANS.yaml",
+        source / "INTERACTION-RECORD.yaml",
         source / "INTERACTION-MANIFEST.yaml",
         source / "MCQ-AUDIT.yaml",
+        source / "AUTHOR-CONTEXT-PACKET.yaml",
         source / "SELF-CHECK.md",
     ]
     if presentation_status in {"author_revision", "release_ready"} and stage != "maintenance":
@@ -175,16 +181,17 @@ def render_presentation(
     *,
     stage: str,
     source_override: Path | None = None,
-    timeout: int = 1800,
+    timeout: int = 0,
 ) -> dict[str, Any]:
     require_gate(root, slug)
+    require_pinned_marp(root)
     state = load_state(root, slug)
     presentation = get_presentation(state, presentation_id)
     if stage == "author":
         allowed = {"authoring", "author_revision"}
         if presentation.get("status") not in allowed:
             raise MPresError(f"Author rendering is not allowed in status {presentation.get('status')!r}.")
-        role = "author-coordinator"
+        role = "deck-revision-author" if presentation.get("status") == "author_revision" else "author-coordinator"
     elif stage == "release":
         if presentation.get("status") != "release_ready":
             raise MPresError("Release rendering requires release_ready status.")
@@ -223,6 +230,8 @@ def render_presentation(
         raise MPresError("EXECUTION-POLICY.yaml must be a mapping.")
 
     source_lint = lint_deck(source, policy=policy)
+    slide_count_for_timeout = max(1, int(source_lint.get("slide_count", 1) or 1))
+    effective_timeout = timeout if timeout and timeout > 0 else max(120, min(1800, 60 + slide_count_for_timeout * 4))
     asset_report = validate_assets(
         root,
         slug,
@@ -259,7 +268,7 @@ def render_presentation(
             root,
             snapshot,
             policy=policy,
-            timeout=timeout,
+            timeout=effective_timeout,
         )
     except MPresError as exc:
         html_layout_report = {
@@ -333,7 +342,7 @@ def render_presentation(
     copy_source_tree(snapshot, work)
     command = _marp_command(root, work, final_pdf, policy)
     environment = os.environ.copy()
-    process = run_command(command, cwd=work, env=environment, timeout=timeout)
+    process = run_command(command, cwd=work, env=environment, timeout=effective_timeout)
     stdout_log = logs / "marp-stdout.log"
     stderr_log = logs / "marp-stderr.log"
     stdout_log.write_text(process.stdout, encoding="utf-8", newline="\n")
@@ -373,6 +382,7 @@ def render_presentation(
         "source_snapshot": relative_display(snapshot, root),
         "source_inventory": directory_inventory(snapshot),
         "command": command,
+        "effective_timeout_seconds": effective_timeout,
         "returncode": process.returncode,
         "stdout_log": relative_display(stdout_log, root),
         "stderr_log": relative_display(stderr_log, root),

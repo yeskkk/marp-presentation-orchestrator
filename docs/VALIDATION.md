@@ -1,87 +1,123 @@
-# Validation record — v0.5.0
+# Validation record — v0.6.0
 
-Validation date: 2026-08-31 UTC.
+Validation date: 2026-09-01 UTC.
 
 ## Policy represented by this release
 
-This release keeps the confirmed v0.4.1 policies and adds the remaining lightweight improvements requested for v0.5.0:
+This release implements the production-control changes adopted after the
+`linear-algebra-for-economics-intuitive-marp-v3` run:
 
-- one persistent Python logging daemon serializes every role's requests into one task-level `logs/project.jsonl`; callers do not manage or observe concurrency locks;
-- there is no crash-recovery subsystem, orchestration attempt journal, workflow-engine freeze, or token-attempt accounting extension;
-- `MODEL-POLICY.yaml` is the global runtime source of truth: planner `gpt-5.6-sol/max`, workers `gpt-5.6-sol/high`;
-- one planner-approved lesson assignment and one lesson-author thread run all internal authoring stages in sequence; stage artifacts and checkpoints remain durable, but stages do not create new assignments or workers;
-- deterministic launch plans validate assignments, runtime policy, thread capacity and reusable handles without creating an orchestration journal;
-- one full-deck five-channel review remains authoritative; author revision is not re-reviewed before release;
-- reviewer handoffs are validated as one atomic batch before the shared finding registry changes; pre-aggregation resubmission may correct only location, evidence path and reviewer note;
-- findings are routed mechanically to lesson authors or the author coordinator from structured slide/source/unit locations;
-- course-level terminology, semantic objects, cross-deck handoffs and presentation continuity are validated;
-- mathematical typesetting inspection has only source and disposable-HTML renderer layers; no `MATH-PDF-EVIDENCE` artifact exists;
-- slide-density review records one principal teaching move, substantial blocks and any split rationale;
-- already delivered presentations may enter numbered targeted-patch or full-corrective-review maintenance cycles without silently overwriting the prior release;
-- author-side disposable Marp HTML overflow inspection remains a blocking submission gate; reviewers do not repeat mechanical layout inspection;
-- final durable output remains Marp PDF only; screenshots, page raster review, model vision and worker access to original reference PDFs remain forbidden;
-- Marp CLI remains unpinned and `package-lock.json` remains forbidden;
-- only the task's top-level `TASK.md` may use a user-confirmation digest.
+- `legacy_migration` bypasses the greenfield six-stage graph and uses exactly
+  `m01_baseline_audit`, `m02_delta_design_patch`, and
+  `m03_integration_semantic_check`;
+- every lesson still has one fixed lesson author for all of its authoring
+  stages;
+- the planner approves one semantic `BATCH-ASSIGNMENT-PLAN.yaml`, after which
+  the control plane mechanically expands unit assignments without inventing
+  new scope or acceptance criteria;
+- only writing or revising top-level `TASK.md` is exclusive to the main agent;
+  every other planner operation may be delegated to a planner worker;
+- unit workspaces, five specialist reviewers, the deck revision author, and
+  the release coordinator are created only when their critical-path state is
+  reached;
+- lesson authors may close after durable handoff; one deck revision author
+  receives the compiled context packet and owns every post-review edit;
+- all five independent reviewers read the complete frozen deck, and their
+  handoffs are atomically aggregated;
+- a confirmed workflow-engine technical defect cannot be hot-patched inside
+  the task: it creates `ENGINE-INCIDENT.yaml` and a task policy amendment,
+  after which the main agent revises `TASK.md` for user reconfirmation;
+- Marp CLI is exactly pinned to `4.5.0`, and a three-slide toolchain smoke test
+  is a production precondition;
+- the critical-path scheduler prioritizes the current review/revision/release,
+  then the current presentation, then the next ready presentation; speculative
+  future model workers are forbidden;
+- canonical delta, context, interaction, review, incident, milestone, and
+  performance records replace independently editable duplicate evidence;
+- one project-level logging daemon remains the only writer of
+  `logs/project.jsonl`; routine transitions are control-plane events rather
+  than model supervision calls;
+- screenshots, model vision, worker access to original reference PDFs,
+  persistent HTML, reviewer recheck after revision, and hashes outside the
+  confirmed top-level `TASK.md` remain forbidden.
 
 ## Automated regression
 
-The complete regression suite was run with third-party pytest plugin autoload disabled:
+The complete regression suite is run with third-party pytest plugin autoload
+disabled:
 
 ```bash
-export TERM=xterm
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 export PYTHONPATH=src
-python -m pytest -vv
+python -m pytest -q
 ```
 
-Result:
+Final result:
 
 ```text
-33 passed in 47.57s
+42 passed
 ```
 
 The tests cover, among other things:
 
-1. the persistent project-level logger daemon under 120 concurrent clients, unique daemon sequencing, and absence of per-role log files;
-2. global planner/worker model policy and reserved thread capacity;
-3. one planner-approved lesson assignment and one same-thread stage sequence, with no stage-specific assignment files;
-4. current launch plans without attempt-journal directories;
-5. one isolated full review in five channels, narrow reviewer resubmission and atomic aggregation;
-6. finding routing and the no-recheck author-owned revision/release policy;
-7. course-level terminology, semantic-object and cross-deck continuity checks;
-8. one-principal-teaching-move density auditing;
-9. source and disposable-HTML mathematics checks, and the explicit absence of PDF math evidence;
-10. targeted and full corrective-maintenance releases that preserve the base release;
-11. author-side disposable-HTML overflow blocking and exclusion of mechanical reports from reviewer context;
-12. course meeting organization, advisory lesson-time plans, mandatory course MCQs and academic-report exemption;
-13. verified GeoGebra hyperlinks, allowed reuse and forbidden embedding;
-14. extracted-text-only reference access, thread independence and exact token accounting without estimates;
-15. unpinned Marp command construction, PDF-only durable output and doctor probe behavior; and
-16. top-level-TASK-only digest policy, assignment contracts, policy reconfirmation and task audit.
+1. production-profile selection, the exact migration stage graph, and fixed
+   lesson-author ownership;
+2. planner-approved batch expansion and the main-agent-only `TASK.md` rule;
+3. lazy unit workspace creation, critical-path activation, and just-in-time
+   reviewer, revision-author, and release-coordinator creation;
+4. author-context compilation, deterministic finding routing, one deck-level
+   revision owner, and no reviewer recheck;
+5. five isolated full-deck review channels and atomic aggregation;
+6. workflow-engine incident records, task blocking, policy amendment, and
+   reconfirmation requirements without an in-task hotfix path;
+7. exact Marp version enforcement, the three-slide smoke-test contract, Marp
+   4.5 SVG slide discovery, explicit DOM readiness, and size-aware rendering
+   timeouts;
+8. global course meeting numbers distinct from deck-local ordinals;
+9. canonical interaction records and generated compatibility views;
+10. source, density, course-consistency, mathematical-typesetting, HTML
+    overflow, PDF structure, and text-layer inspection;
+11. project logging, thread lifecycle, checkpoints, supervision, and exact
+    milestone token accounting;
+12. targeted and full corrective maintenance without overwriting prior
+    releases; and
+13. task confirmation, assignment contracts, reference safety, asset policy,
+    GeoGebra links, and terminology continuity.
 
 ## Static and project validation
 
-The following checks passed in the working tree:
+The release validator runs:
 
 ```bash
-python scripts/validate_project.py --skip-tests
+PYTHONPATH=src python scripts/validate_project.py --skip-tests
 PYTHONWARNINGS=error python -m compileall -q src scripts tests
 bash -n start.sh start-safe.sh
 PYTHONPATH=src python -m mpres --help
-PYTHONPATH=src python -m mpres log-daemon --help
-PYTHONPATH=src python -m mpres maintenance --help
+PYTHONPATH=src python -m mpres assignment --help
+PYTHONPATH=src python -m mpres production --help
+PYTHONPATH=src python -m mpres review --help
+PYTHONPATH=src python -m mpres toolchain --help
+PYTHONPATH=src python -m mpres engine --help
 ```
 
-`validate_project.py` additionally:
+`validate_project.py` also:
 
-- checks project version `0.5.0` in Python and Node metadata;
-- parses all TOML, JSON, JSON Schema and YAML files, with duplicate-YAML-key detection;
-- checks planner `Sol/max` and worker `Sol/high` in the global policy and Codex role files;
-- verifies required v0.5.0 modules, skills and structured templates;
-- rejects `package-lock.json`, stage-specific assignment templates, `MATH-PDF-EVIDENCE`, crash-recovery/workflow-freeze modules and numbered worker roles;
-- checks that production logging routes through the daemon-backed single project log;
-- checks CLI availability for logging, stages, review and maintenance;
-- compiles project, scripts and tests and validates POSIX launcher syntax.
+- checks project version `0.6.0` in Python and Node metadata;
+- parses all TOML, JSON, JSON Schema, and YAML files, rejecting duplicate YAML
+  keys;
+- checks main/delegated planner and worker model policies in global and role
+  configuration;
+- verifies the required v0.6.0 control-plane modules, roles, skills, canonical
+  records, migration stages, and assignment templates;
+- rejects obsolete duplicate legacy/interaction templates, old-version tests,
+  stage-specific assignment templates, numbered worker roles,
+  `MATH-PDF-EVIDENCE`, recovery/workflow-freeze subsystems, and forbidden npm
+  lock files;
+- verifies migration/profile separation, planner delegation, fixed lesson
+  authors, lazy initialization, full-deck five-reviewer scope, deck-level
+  revision, the no-hotpatch engine policy, and the exact Marp lock;
+- checks the critical-path priority order, daemon-backed single project log,
+  CLI surface, launcher syntax, bytecode compilation, and stale-policy text.
 
 ## External environment observed
 
@@ -92,40 +128,37 @@ Python 3.13.5
 pytest 9.0.2
 Node.js 22.16.0
 npm 10.9.2
-Playwright 1.57.0
+Playwright installed
 Chromium 144.0.7559.96
 pdftotext 25.06.0
-Tesseract 5.5.0
 ```
 
-`mpres.browser.browser_probe()` successfully launched `/usr/bin/chromium` and reported it available.
-
-Not present:
-
-```text
-Codex CLI
-local Marp CLI
-Ruff
-```
-
-Therefore this record does **not** claim a real Codex multi-agent run or a real npm-installed Marp CLI → PDF smoke test in this container. Rendering tests use a deterministic Marp-compatible executable that produces real, parseable PDF files and disposable HTML for the production inspection path. On the target machine, production readiness still requires:
+The automated tests use deterministic browser/Marp fixtures where external
+installation independence is required. This record therefore does not claim a
+real npm-installed Marp-to-PDF smoke run in the release container. On every
+target installation, production remains blocked until these commands pass
+against the actual local toolchain:
 
 ```bash
 python scripts/bootstrap.py
 .venv/bin/mpres doctor --strict
+.venv/bin/mpres toolchain smoke
 ```
-
-The doctor command must validate the locally installed, unpinned Marp CLI and the actual Chromium layout/PDF combination.
 
 ## Release-package verification
 
-Before delivery, the source tree is cleaned of runtime and build products, archived, extracted into a new directory, and the following are rerun there:
+The source archive excludes `.git`, virtual environments, `node_modules`, task
+runtime data, `.mpres`, browser/test/lint caches, bytecode, generated HTML/PDF,
+and other build products. The archive is extracted into a fresh directory and
+is checked again with:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 PYTHONPATH=src python -m pytest -q
 PYTHONPATH=src python scripts/validate_project.py --skip-tests
 PYTHONWARNINGS=error python -m compileall -q src scripts tests
 bash -n start.sh start-safe.sh
+PYTHONPATH=src python -m mpres --help
 ```
 
-The archive excludes task runtime data, `.venv`, `node_modules`, `.mpres`, browser caches, pytest/Ruff caches, `__pycache__`, bytecode, generated HTML/PDF, `package-lock.json`, checksum sidecars and source-manifest digests. In accordance with project policy, no archive checksum is generated.
+No archive checksum or source-manifest digest is generated, in accordance with
+the policy that only the task's top-level `TASK.md` receives a confirmation
+digest.

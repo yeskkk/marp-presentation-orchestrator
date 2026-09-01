@@ -3,9 +3,16 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from mpres.production_profiles import (
+    COURSE_FULL_STAGES,
+    MIGRATION_STAGES,
+    REPORT_COMPACT_STAGES,
+    TARGETED_REVISION_STAGES,
+    stage_ids_for_profile,
+)
 from mpres.util import MPresError, read_json, safe_id, task_path, utc_now, write_json_atomic
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 REVIEW_ROUNDS = ("full",)
 REVIEW_CHANNELS = ("language", "domain_accuracy", "layout", "pedagogy", "audience")
 PRESENTATION_STATUSES = {
@@ -16,25 +23,31 @@ PRESENTATION_STATUSES = {
     "release_ready",
     "finalized",
 }
-COURSE_STAGE_IDS = (
-    "01_scope_sources",
-    "02_learner_need",
-    "03_domain_development",
-    "04_entry_diagnostics",
-    "05_learner_language",
-    "06_marp_integration",
-)
-REPORT_STAGE_IDS = (
-    "01_scope_sources",
-    "02_audience_domain",
-    "03_narrative_language",
-    "04_marp_integration",
-)
-# Compatibility name for callers that explicitly refer to the course profile.
+COURSE_STAGE_IDS = COURSE_FULL_STAGES
+REPORT_STAGE_IDS = REPORT_COMPACT_STAGES
+MIGRATION_STAGE_IDS = MIGRATION_STAGES
+REVISION_STAGE_IDS = TARGETED_REVISION_STAGES
 UNIT_STAGE_IDS = COURSE_STAGE_IDS
+UNIT_STATUSES = {
+    "uninitialized",
+    "initialized",
+    "assignment_ready",
+    "queued",
+    "running",
+    "handoff_ready",
+    "integrated",
+}
 
 
-def stage_ids_for_kind(kind: str) -> tuple[str, ...]:
+def stage_ids_for_kind(kind: str, production_mode: str | None = None) -> tuple[str, ...]:
+    """Return the task-configured stage sequence.
+
+    ``production_mode`` is optional for compatibility with pre-profile callers. New code must pass it or
+    use the task's PRODUCTION-PROFILE.yaml.
+    """
+
+    if production_mode:
+        return stage_ids_for_profile(production_mode, kind)
     if kind == "course":
         return COURSE_STAGE_IDS
     if kind == "report":

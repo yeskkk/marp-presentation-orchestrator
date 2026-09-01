@@ -22,12 +22,14 @@ def test_only_task_md_can_be_hashed(project_root: Path) -> None:
     assert gate_status(project_root, slug)[0]
 
 
-def test_policy_is_one_review_high_unpinned_and_text_only(project_root: Path) -> None:
+def test_policy_is_one_review_high_pinned_and_text_only(project_root: Path) -> None:
     slug, task = initialize_one_deck(project_root)
     report = policy_audit(project_root, slug)
     assert report["ok"], report["errors"]
-    assert "latest" in (project_root / "package.json").read_text(encoding="utf-8")
-    assert not (project_root / "package-lock.json").exists()
+    package = (project_root / "package.json").read_text(encoding="utf-8")
+    assert '"@marp-team/marp-cli": "4.5.0"' in package
+    lock = (project_root / "TOOLCHAIN-LOCK.yaml").read_text(encoding="utf-8")
+    assert 'version: "4.5.0"' in lock
     policy_text = (task / "EXECUTION-POLICY.yaml").read_text(encoding="utf-8")
     assert "planner_runtime:" in policy_text and "reasoning_effort: max" in policy_text
     assert "worker_runtime:" in policy_text and "reasoning_effort: high" in policy_text

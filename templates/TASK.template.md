@@ -5,6 +5,8 @@
 > **Course meetings:** [[SESSION_COUNT_OR_NA]]  
 > **Nominal minutes per meeting:** [[MINUTES_OR_NA]]  
 > **Delivery mode:** `[[STOP_MODE]]`  
+> **Production mode:** `[[PRODUCTION_MODE]]`  
+> **Authoring stage profile:** `[[AUTHORING_STAGE_PROFILE]]`  
 > **Default runtime policy:** planner `gpt-5.6-sol/max`; workers `gpt-5.6-sol/high`  
 > **Plan status:** awaiting explicit user confirmation of this exact `TASK.md`
 
@@ -35,7 +37,7 @@
 7. planner 默认 `gpt-5.6-sol/max`；所有 worker 默认 `gpt-5.6-sol/high`。极难研究报告可由用户明确把特定 worker 提高到 `max`。
 8. worker 只能读取 `downloads/text/` 中的抽取文本。任何原 PDF 即使物理存在也禁止打开、解析、渲染、转换、OCR、截图或交给视觉模型。
 9. Python 作图默认关闭；GeoGebra 仅可做有界站内搜索并以普通超链接引用。
-10. planner 亲自编写每个逻辑 worker 的精确 assignment；一个 lesson/content unit 只有一份 lesson-author assignment，同一 thread 在内部依次完成全部 authoring stages。coordinator 只能提交 assignment request，不能代写。
+10. planner 对 assignment 的语义内容负责。planner 可以审批一份结构化 batch plan，由程序机械展开每个 unit 的精确 assignment；这种展开仍视为 planner 编写。**只有撰写或修订顶层 `TASK.md` 必须由主 planner（main agent）亲自完成；其它 planner 工作均可委派给其它 planner。**
 
 ## 3. 目标听众
 
@@ -94,11 +96,11 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 
 ## 9. Authoring stages
 
-每个 content unit 按任务类型对应的阶段执行；planner 为整个 unit 亲自写一份精确 assignment，同一个 lesson-author thread 在该 assignment 下依次完成全部阶段：
+每个 content unit 按所选 production profile 执行。planner 审批 batch plan 后，程序为每个 unit 展开一份精确 assignment；同一个固定 lesson-author thread 在该 assignment 下依次完成全部阶段：
 
 [[AUTHORING_STAGE_LIST]]
 
-每阶段写耐久 artifact 和 checkpoint；`mpres stage submit` 验证后自动激活下一阶段，不重新 spawn、不另写 stage assignment，也不等待 coordinator 验收。阶段之间允许带理由回退。[[MCQ_STAGE_REQUIREMENT]]
+每阶段只写该 profile 所需的 canonical artifact 与里程碑 checkpoint；`mpres stage submit` 验证后自动激活下一阶段，不重新 spawn、不另写 stage assignment，也不等待 coordinator 验收。迁移任务完全跳过绿地六阶段；阶段之间允许带理由回退。[[MCQ_STAGE_REQUIREMENT]]
 
 ## 10. 执行、并发与模型
 
@@ -123,12 +125,16 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 
 ## 12. 角色边界
 
-- planner：规划、确认、亲自写全部精确 assignments、政策审计、二十分钟/交付事件高层监督。
-- author-coordinator：结构化设计、请求 assignment、监督 staged lesson authors、整合、构建、自检和 post-review revision。
-- lesson-author：一个 content unit、一份 planner assignment、一个连续 thread，依次完成全部内部 stages，不改其他单元。
-- specialist-reviewer：唯一一轮中的一个通道，不看其他通道或后续修订。
+- main agent：唯一必须亲自撰写或修订顶层 `TASK.md` 的 planner；其余 planner 职责均可委派。
+- delegated planner：可代行 batch plan、assignment 审批、政策审计、异常判断和高层监督；planner 仍拥有语义责任。
+- author-coordinator：结构化设计、请求 assignment、监督当前关键路径上的 lesson authors、整合、构建、自检并冻结完整 deck；handoff 后可关闭。
+- lesson-author：一个固定 content unit、一份 planner-approved assignment、一个连续 thread，依次完成所选 profile 的全部阶段；写 context packet 后可关闭，不负责 post-review revision。
+- deck-revision-author：在唯一一轮审核后读取冻结稿、五通道 findings 与 `AUTHOR-CONTEXT-PACKET.yaml`，独立完成整份 deck 的回应、修订、自检和交接。
+- specialist-reviewer：唯一一轮中的一个通道；五名 reviewer 都必须完整阅读整份冻结 deck，不看其他通道或后续修订。
 - review-coordinator：验证 planner assignments、监督五通道并聚合，不写 assignment、不改 findings。
-- release-coordinator：只检查作者回应覆盖和机械门，直接发布；不判断 finding 是否修好。
+- release-coordinator：只在 `release_ready` 后启动，检查 deck-revision-author 的回应覆盖和机械门并直接发布；不判断 finding 是否修好，也不预先占用 thread。
+
+纯技术 workflow-engine bug 也不得在任务中热修。必须建立 task policy amendment、修订并重新确认 `TASK.md`；引擎重构作为独立工作处理。
 
 ## 13. 验收标准
 

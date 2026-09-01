@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
+from mpres.state import get_presentation, load_state
 from mpres.util import MPresError, read_yaml, relative_display, task_path, write_json_atomic
 
 ALLOWED_HOSTS = {"geogebra.org", "www.geogebra.org"}
@@ -434,7 +435,14 @@ def validate_task_geogebra(
 ) -> dict[str, Any]:
     task = task_path(root, slug)
     if stage == "author":
-        base = task / "workers" / "author-coordinator" / "drafts" / presentation_id
+        state = load_state(root, slug)
+        presentation = get_presentation(state, presentation_id)
+        role = (
+            "deck-revision-author"
+            if presentation.get("status") == "author_revision"
+            else "author-coordinator"
+        )
+        base = task / "workers" / role / "drafts" / presentation_id
     elif stage == "release":
         base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
     else:

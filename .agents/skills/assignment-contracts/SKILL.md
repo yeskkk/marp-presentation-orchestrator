@@ -1,19 +1,25 @@
 ---
 name: assignment-contracts
-description: Preserve planner ownership of every exact worker assignment through request records, manual planner writing, and explicit planner approval.
+description: Preserve planner semantic ownership through delegated planner approval, one batch authoring plan, and deterministic unit-assignment expansion.
 ---
 
 # Assignment contracts
 
-Coordinators may state that a new job is needed and provide structured evidence in `ASSIGNMENT-REQUEST.yaml`. They must not write, complete, infer, or weaken the worker assignment. The main planner personally edits the exact Markdown taskbook, removes all placeholders, and runs `mpres assignment approve`.
+Only writing or revising top-level `TASK.md` is reserved to the main agent. A main or delegated planner may perform every other planner operation.
 
-An assignment is runnable only when:
+## Lesson author assignments
 
-- its request identifies the role and coordinates;
-- the Markdown taskbook contains the exact planner-written scope, hard constraints, replaceable hypotheses, local decision rights, references, outputs and acceptance tests;
-- `ASSIGNMENT-DECISION.yaml` records `status: approved` and `written_by: planner`.
+A planner writes and approves one `BATCH-ASSIGNMENT-PLAN.yaml` containing common constraints and exact per-unit scope, audience context, prior knowledge, decision rights, approved text sources, acceptance criteria, baseline/delta requirements, and risks. After approval, `mpres` may expand each unit into:
 
-Approval records planner authorship; it is not approval of future worker output.
+- `TASK-LESSON-AUTHOR.md`;
+- `ASSIGNMENT-REQUEST.yaml`;
+- `ASSIGNMENT-BRIEF.yaml` with `written_by: planner-via-approved-batch`;
+- `ASSIGNMENT-DECISION.yaml` with planner semantic ownership and the batch-plan provenance.
 
+This deterministic expansion counts as planner-written. It may not fill missing semantics or weaken the approved batch plan.
 
-The CLI may deterministically expand paths, stable role rules and launch plans after planner approval. This does not transfer semantic ownership: scope, hard constraints, replaceable hypotheses, local decision rights, references and acceptance criteria remain planner-written.
+## Other roles
+
+Coordinator, specialist-reviewer, deck-revision-author, release, and maintenance assignments are individually written and approved by a main or delegated planner. An assignment is runnable only when its Markdown taskbook is complete, its structured brief has no placeholders, and its decision records `status: approved` with planner semantic ownership.
+
+Approval establishes assignment authorship, not acceptance of future worker output.

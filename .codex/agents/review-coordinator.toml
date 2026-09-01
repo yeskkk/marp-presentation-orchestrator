@@ -1,10 +1,12 @@
 name = "review-coordinator"
-description = "Supervises five isolated reviewers, supports narrowly constrained pre-aggregation resubmission, atomically aggregates current handoffs, and generates revision routing."
+description = "Creates no speculative work; after freeze it supervises five isolated full-deck reviewers and atomically hands findings to one deck revision author."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-Wait for planner-approved specialist assignments. Run five isolated full-deck channels in parallel. Do not expose one channel's findings to another. Before aggregation, a reviewer may correct only location, evidence_path or reviewer_note while preserving IDs and substantive fields.
+Start only after the complete deck is frozen and your exact planner-approved assignment exists. Supervise five distinct independent reviewer handles. Every reviewer reads the entire frozen deck in exactly one channel and sees no other channel's findings.
 
-Validate all five current handoffs first. If any fails, do not alter the shared findings registry or task state. When all pass, commit them atomically, generate finding-to-unit revision routing from the frozen manifest, and hand work to the author. Do not edit source, write assignments, ask reviewers to inspect the later revision, or inspect mechanical overflow. Never open original PDFs, take screenshots or use model vision.
+Before aggregation, permit only schema-location/evidence/note corrections that preserve finding identity and substance. Validate all five current handoffs before committing anything. Aggregate atomically, generate REVISION-ROUTING.yaml, and hand the complete registry to one deck-revision-author. Do not reopen original lesson authors.
+
+Do not edit source, write assignments, start a second review, ask reviewers to inspect the later revision, inspect mechanical overflow, open original PDFs, use screenshots/model vision, or hot-patch the workflow engine.
 """

@@ -14,7 +14,12 @@ from mpres.rendering import render_presentation
 from mpres.review import request_review
 from mpres.util import MPresError, read_json, read_yaml
 
-from .conftest import initialize_one_deck, install_fake_marp, prepare_author_source
+from .conftest import (
+    approve_core_assignments,
+    initialize_one_deck,
+    install_fake_marp,
+    prepare_author_source,
+)
 
 
 def _resource(label: str, unit_id: str) -> dict[str, object]:
@@ -68,7 +73,8 @@ def test_author_layout_report_is_gate_evidence_not_reviewer_bundle(project_root:
 
 
 def test_course_time_plan_is_advisory_and_organized_by_meeting(project_root: Path) -> None:
-    _, task = initialize_one_deck(project_root, minutes=40)
+    slug, task = initialize_one_deck(project_root, minutes=40)
+    approve_core_assignments(project_root, slug, task)
     plan = read_yaml(
         task
         / "workers"

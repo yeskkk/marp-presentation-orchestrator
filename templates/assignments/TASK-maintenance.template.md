@@ -2,7 +2,7 @@
 
 ## Planner-owned exact brief
 
-Only the main planner may replace this placeholder. Stop if it remains incomplete.
+This section may be written and approved by a main or delegated planner. Only revising the top-level `TASK.md` is exclusive to the main agent.
 
 [[PLANNER_ASSIGNMENT_BRIEF]]
 
@@ -14,14 +14,17 @@ Only the main planner may replace this placeholder. Stop if it remains incomplet
 
 ## Scope
 
-Read `CORRECTIVE-SCOPE.md`. Preserve all unaffected material. A `targeted_patch` addresses only the planner-approved defect and receives no new specialist review. A `full_corrective_review` receives one isolated five-channel full review, followed by author-owned revision and direct mechanical publication without reviewer recheck.
+Read `CORRECTIVE-SCOPE.md` and preserve all unaffected material.
+
+- `targeted_patch`: address only the approved defect, run the compact targeted-revision profile and mechanical regression checks, then publish a numbered revision without specialist review.
+- `full_corrective_review`: run one isolated five-channel full-deck review; all five reviewers read the whole candidate. One revision author then responds and revises, followed by direct mechanical publication without reviewer recheck.
 
 ## Required outputs
 
 - revised `source/`
 - `MAINTENANCE-CHECKLIST.yaml`
 - `MAINTENANCE-RETROSPECTIVE.md`
-- successful Marp source, asset, mathematics, density, course-consistency, temporary-HTML layout and PDF checks
-- for `full_corrective_review`: complete author responses to every maintenance finding
+- successful source, asset, mathematics, density, course-consistency, temporary-HTML layout, and PDF checks
+- for `full_corrective_review`: complete responses to every maintenance finding
 
-Do not overwrite the historical release. The new revision is published under the deliverable revision tree and becomes current only after `mpres maintenance publish`.
+Do not overwrite the historical release. Publish under `deliverables/<id>/revisions/rNNNN/` and update the current pointer only after the release gate passes. A suspected workflow-engine defect must be recorded as an incident and handled through a TASK policy amendment, not patched inside maintenance.

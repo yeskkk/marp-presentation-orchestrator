@@ -5,6 +5,7 @@ from typing import Any
 import json
 import tomllib
 
+from mpres.production_profiles import load_production_profile
 from mpres.state import REVIEW_CHANNELS, REVIEW_ROUNDS, load_state, save_state
 from mpres.tasks import gate_status, require_gate
 from mpres.util import MPresError, read_yaml, task_path, utc_now, write_yaml_atomic
@@ -18,10 +19,25 @@ MATERIAL_FIELDS = {
     "inspection_policy",
     "assignment_ownership",
     "course_multiple_choice_quota",
+    "production_mode",
+    "stage_profile",
+    "planner_delegation",
+    "workflow_engine_technical_fix",
 }
 
 
+def _expect(condition: bool, message: str, errors: list[str]) -> None:
+    if not condition:
+        errors.append(message)
+
+
 def policy_audit(root: Path, slug: str) -> dict[str, Any]:
+    """Audit task policy against the v0.6.0 execution contract.
+
+    This audit intentionally treats an engine bug as a policy event rather than permission to
+    hot-patch the framework inside a live task.
+    """
+
     gate_ok, gate_message, state = gate_status(root, slug)
     task = task_path(root, slug)
     execution = read_yaml(task / "EXECUTION-POLICY.yaml") or {}
@@ -31,21 +47,33 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     warnings: list[str] = []
     if not gate_ok:
         errors.append(gate_message)
+
+    try:
+        profile = load_production_profile(root, slug)
+    except MPresError as exc:
+        errors.append(str(exc))
+        profile = {}
+    _expect(execution.get("production_mode") == state.get("production_mode"), "Execution production_mode must match task state.", errors)
+    _expect(execution.get("production_mode") == profile.get("mode"), "Execution production_mode must match PRODUCTION-PROFILE.yaml.", errors)
+    _expect(execution.get("stage_profile") == state.get("stage_profile"), "Execution stage_profile must match task state.", errors)
+    _expect(execution.get("stage_profile") == profile.get("stage_profile"), "Execution stage_profile must match PRODUCTION-PROFILE.yaml.", errors)
+
     rounds = review.get("rounds") if isinstance(review, dict) else None
-    if not isinstance(rounds, list) or len(rounds) != 1 or rounds[0].get("name") != "full":
-        errors.append("REVIEW-PROFILE.yaml must define exactly one full-deck round named full.")
+    _expect(isinstance(rounds, list) and len(rounds) == 1 and rounds[0].get("name") == "full", "REVIEW-PROFILE.yaml must define exactly one full-deck round named full.", errors)
     channels = rounds[0].get("channels") if isinstance(rounds, list) and rounds else None
-    if tuple(channels or ()) != REVIEW_CHANNELS:
-        errors.append("Review channels do not match the repository state machine.")
-    if REVIEW_ROUNDS != ("full",):
-        errors.append("Repository state machine is not configured for one review round.")
+    _expect(tuple(channels or ()) == REVIEW_CHANNELS, "Review channels do not match the repository state machine.", errors)
+    _expect(REVIEW_ROUNDS == ("full",), "Repository state machine must use exactly one review round.", errors)
+    if isinstance(rounds, list) and rounds:
+        _expect(rounds[0].get("scope") == "complete_frozen_deck", "The review round must cover the complete frozen deck.", errors)
+
     review_policy = execution.get("review", {}) if isinstance(execution, dict) else {}
-    if int(review_policy.get("mandatory_full_deck_rounds", 0) or 0) != 1:
-        errors.append("EXECUTION-POLICY.yaml must require one full-deck review round.")
-    if review_policy.get("post_review_verification") != "none":
-        errors.append("Post-review verification must be none.")
-    if review_policy.get("author_completed_revision_is_sufficient_for_release") is not True:
-        errors.append("Completed author revision must be sufficient for release.")
+    _expect(int(review_policy.get("mandatory_full_deck_rounds", 0) or 0) == 1, "EXECUTION-POLICY.yaml must require one full-deck review round.", errors)
+    _expect(tuple(review_policy.get("channels") or ()) == REVIEW_CHANNELS, "Execution review channels are inconsistent.", errors)
+    _expect(review_policy.get("each_reviewer_reads_entire_frozen_deck") is True, "Each of the five reviewers must read the entire frozen deck.", errors)
+    _expect(review_policy.get("launch_only_after_freeze") is True, "Review workers may launch only after deck freeze.", errors)
+    _expect(review_policy.get("post_review_verification") == "none", "Post-review reviewer verification must be none.", errors)
+    _expect(review_policy.get("deck_revision_author_completed_revision_is_sufficient_for_release") is True, "Completed deck-revision-author work must be sufficient for release.", errors)
+
     model_policy_path = root / "MODEL-POLICY.yaml"
     try:
         model_policy = read_yaml(model_policy_path)
@@ -56,61 +84,88 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
         model_policy = {}
     planner_policy = model_policy.get("planner", {}) if isinstance(model_policy, dict) else {}
     worker_policy = model_policy.get("workers", {}) if isinstance(model_policy, dict) else {}
-    if planner_policy != {"model": "gpt-5.6-sol", "reasoning_effort": "max"}:
-        errors.append("Global planner model policy must be gpt-5.6-sol/max.")
-    if worker_policy != {"model": "gpt-5.6-sol", "reasoning_effort": "high"}:
-        errors.append("Global worker model policy must be gpt-5.6-sol/high.")
-    if execution.get("model_policy_source") != "MODEL-POLICY.yaml":
-        errors.append("EXECUTION-POLICY.yaml must reference MODEL-POLICY.yaml.")
-    if execution.get("planner_runtime") != planner_policy:
-        errors.append("Task planner_runtime must match the global planner model policy.")
-    if execution.get("worker_runtime") != worker_policy:
-        errors.append("Task worker_runtime must match the global worker model policy.")
-    if (execution.get("marp") or {}).get("version_policy") != "unpinned_latest_at_install_time":
-        errors.append("Marp version policy must remain unpinned.")
-    if (execution.get("authoring") or {}).get("planner_writes_every_assignment") is not True:
-        errors.append("The planner must personally write every exact assignment.")
-    interaction = execution.get("interaction", {}) if isinstance(execution, dict) else {}
-    course = interaction.get("course_multiple_choice_per_unit", {}) if isinstance(interaction, dict) else {}
-    if course.get("minimum") != 2 or course.get("maximum") != 3:
-        errors.append("Course MCQ quota must be 2–3 per content unit.")
-    if not isinstance(access, dict):
-        errors.append("REFERENCE-ACCESS-POLICY.yaml must be a mapping.")
-    else:
-        if access.get("mode") != "extracted_text_only":
-            errors.append("Reference policy mode must be extracted_text_only.")
-        if access.get("workers_may_open_original_pdf") is not False:
-            errors.append("Workers must be forbidden from opening original PDFs.")
-        if access.get("workers_may_receive_original_pdf_path") is not False:
-            errors.append("Worker contexts must not receive original PDF paths.")
-        if access.get("original_pdf_storage") != "restricted-originals":
-            errors.append("Original PDFs must be stored under restricted-originals.")
-    if state.get("kind") == "report" and course.get("minimum") == 2:
-        # This is not a conflict because the report-specific quota is separate.
-        report_quota = interaction.get("academic_report_multiple_choice_per_unit", {})
-        if report_quota.get("minimum") != 0:
-            errors.append("Academic reports must be exempt from the course MCQ quota.")
-    if (task / "REVIEW-WORKFLOW-MIGRATION.md").exists():
-        errors.append(
-            "Legacy review migration file exists. Remove it and update/reconfirm TASK.md; sidecar migration may not override the task plan."
-        )
-    task_text = (task / "TASK.md").read_text(encoding="utf-8", errors="replace")
-    legacy_phrases = ("三轮审核", "incremental review", "final review", "terminal closure")
-    for phrase in legacy_phrases:
-        if phrase.lower() in task_text.lower():
-            errors.append(f"TASK.md contains obsolete multi-round review wording: {phrase}")
-    package_lock = root / "package-lock.json"
-    if package_lock.exists():
-        errors.append("package-lock.json is forbidden because Marp CLI must not be version-pinned.")
-    package_path = root / "package.json"
+    _expect(planner_policy == {"model": "gpt-5.6-sol", "reasoning_effort": "max"}, "Global planner model policy must be gpt-5.6-sol/max.", errors)
+    _expect(worker_policy == {"model": "gpt-5.6-sol", "reasoning_effort": "high"}, "Global worker model policy must be gpt-5.6-sol/high.", errors)
+    _expect(execution.get("model_policy_source") == "MODEL-POLICY.yaml", "EXECUTION-POLICY.yaml must reference MODEL-POLICY.yaml.", errors)
+    _expect(execution.get("planner_runtime") == planner_policy, "Task planner_runtime must match the global planner model policy.", errors)
+    _expect(execution.get("worker_runtime") == worker_policy, "Task worker_runtime must match the global worker model policy.", errors)
+
+    delegation = execution.get("planner_delegation", {}) if isinstance(execution, dict) else {}
+    _expect(delegation.get("main_agent_exclusive") == ["write_or_revise_TASK_md"], "Only writing or revising TASK.md may be exclusive to the main agent.", errors)
+    _expect(delegation.get("all_other_planner_operations_may_be_delegated") is True, "All planner operations other than TASK.md authorship must be delegable.", errors)
+    authoring = execution.get("authoring", {}) if isinstance(execution, dict) else {}
+    _expect(authoring.get("one_fixed_author_per_lesson") is True, "Migration and greenfield courses must keep one fixed author per lesson.", errors)
+    _expect(authoring.get("lazy_unit_initialization") is True, "Lesson workspaces must be initialized lazily.", errors)
+    _expect(authoring.get("planner_owns_assignment_semantics") is True, "Planner must own assignment semantics.", errors)
+    _expect(authoring.get("approved_batch_expansion_counts_as_planner_written") is True, "Program expansion of an approved batch plan must count as planner-written assignment work.", errors)
+    _expect(authoring.get("original_lesson_author_may_close_after_handoff") is True, "Lesson authors must be allowed to close after handoff.", errors)
+    _expect(authoring.get("post_review_revision_role") == "deck-revision-author", "Post-review revision must be owned by deck-revision-author.", errors)
+    _expect(authoring.get("speculative_prefreeze_worker_launch") == "forbidden", "Speculative pre-freeze worker launch must be forbidden.", errors)
+
+    release = execution.get("release", {}) if isinstance(execution, dict) else {}
+    _expect(release.get("launch_only_in_release_ready") is True, "Release coordinator may launch only in release_ready.", errors)
+    _expect(release.get("prospective_hold_threads") == "forbidden", "Prospective release hold threads are forbidden.", errors)
+    critical = execution.get("critical_path", {}) if isinstance(execution, dict) else {}
+    _expect(critical.get("priority_order") == [
+        "finish_current_review_revision_or_release",
+        "finish_current_presentation",
+        "start_next_ready_presentation",
+        "prepare_future_metadata_without_model_workers",
+    ], "Critical-path priority order is missing or inconsistent.", errors)
+
+    marp = execution.get("marp", {}) if isinstance(execution, dict) else {}
+    lock = read_yaml(root / "TOOLCHAIN-LOCK.yaml") or {}
+    locked_version = str(((lock.get("marp") or {}).get("version")) or "")
+    _expect(marp.get("version_policy") == "exact_pinned_version", "Marp CLI must use an exact pinned version.", errors)
+    _expect(str(marp.get("version") or "") == locked_version and bool(locked_version), "Task Marp version must match TOOLCHAIN-LOCK.yaml.", errors)
+    _expect(marp.get("smoke_test_required_before_production") is True, "Toolchain smoke test must pass before production.", errors)
     try:
-        package = json.loads(package_path.read_text(encoding="utf-8"))
+        package = json.loads((root / "package.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         errors.append("package.json is missing or invalid.")
         package = {}
     marp_spec = ((package.get("devDependencies") or {}).get("@marp-team/marp-cli")) if isinstance(package, dict) else None
-    if marp_spec not in {"latest", "*"}:
-        errors.append("package.json must leave @marp-team/marp-cli unpinned (use latest or *).")
+    _expect(str(marp_spec or "") == locked_version, "package.json must pin @marp-team/marp-cli to TOOLCHAIN-LOCK.yaml exactly.", errors)
+
+    engine = execution.get("engine_changes", {}) if isinstance(execution, dict) else {}
+    _expect(engine.get("in_task_hot_patch") == "forbidden", "In-task workflow-engine hot patches must be forbidden.", errors)
+    _expect(engine.get("technical_bug_requires_task_policy_amendment") is True, "A technical engine bug must require a task policy amendment.", errors)
+    _expect(engine.get("workflow_engine_refactoring_is_separate_work") is True, "Workflow-engine refactoring must be treated as separate work.", errors)
+
+    token_policy = execution.get("token_accounting", {}) if isinstance(execution, dict) else {}
+    _expect(token_policy.get("collection_mode") == "workflow_milestones", "Token accounting must run at workflow milestones.", errors)
+    _expect(token_policy.get("periodic_model_polling") == "forbidden", "Periodic model polling for token accounting is forbidden.", errors)
+
+    interaction = execution.get("interaction", {}) if isinstance(execution, dict) else {}
+    course = interaction.get("course_multiple_choice_per_unit", {}) if isinstance(interaction, dict) else {}
+    _expect(course.get("minimum") == 2 and course.get("maximum") == 3, "Course MCQ quota must be 2–3 per content unit.", errors)
+    if state.get("kind") == "report":
+        report_quota = interaction.get("academic_report_multiple_choice_per_unit", {})
+        _expect(report_quota.get("minimum") == 0, "Academic reports must be exempt from the course MCQ quota.", errors)
+
+    if not isinstance(access, dict):
+        errors.append("REFERENCE-ACCESS-POLICY.yaml must be a mapping.")
+    else:
+        _expect(access.get("mode") == "extracted_text_only", "Reference policy mode must be extracted_text_only.", errors)
+        _expect(access.get("workers_may_open_original_pdf") is False, "Workers must be forbidden from opening original PDFs.", errors)
+        _expect(access.get("workers_may_receive_original_pdf_path") is False, "Worker contexts must not receive original PDF paths.", errors)
+        _expect(access.get("original_pdf_storage") == "restricted-originals", "Original PDFs must be stored under restricted-originals.", errors)
+
+    time_strategy = execution.get("course_time_strategy", {}) if isinstance(execution, dict) else {}
+    _expect(time_strategy.get("enforcement") == "advisory_not_hard_gate", "Course time strategy must remain advisory, not a hard duration gate.", errors)
+    _expect(float(time_strategy.get("prepared_to_nominal_ratio_default", 0) or 0) == 1.5, "Default prepared/nominal course-time ratio must be 1.5.", errors)
+    _expect(time_strategy.get("organization_basis") == "numbered_course_meetings", "Course content must be organized by numbered meetings.", errors)
+    inspection = execution.get("inspection", {}) if isinstance(execution, dict) else {}
+    _expect(inspection.get("temporary_html_overflow_check") == "author_and_release_gate", "Temporary Marp HTML overflow inspection must be an author/release gate.", errors)
+    _expect(inspection.get("reviewer_rechecks_mechanical_overflow") is False, "Reviewers must not recheck mechanical HTML overflow.", errors)
+    _expect(inspection.get("screenshots") == "forbidden" and inspection.get("model_vision") == "forbidden", "Screenshots and model vision must remain forbidden.", errors)
+
+    task_text = (task / "TASK.md").read_text(encoding="utf-8", errors="replace")
+    legacy_phrases = ("三轮审核", "incremental review", "terminal closure", "planner 亲自编写每个逻辑 worker")
+    for phrase in legacy_phrases:
+        if phrase.lower() in task_text.lower():
+            errors.append(f"TASK.md contains obsolete workflow wording: {phrase}")
+
     root_config_path = root / ".codex" / "config.toml"
     try:
         with root_config_path.open("rb") as handle:
@@ -118,11 +173,22 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     except (OSError, tomllib.TOMLDecodeError):
         errors.append(f"Codex config is missing or invalid: {root_config_path}")
         root_config = {}
-    if root_config.get("model") != "gpt-5.6-sol" or root_config.get("model_reasoning_effort") != "max":
-        errors.append("Planner Codex config must use gpt-5.6-sol/max.")
+    _expect(root_config.get("model") == "gpt-5.6-sol" and root_config.get("model_reasoning_effort") == "max", "Planner Codex config must use gpt-5.6-sol/max.", errors)
     agents_config = root_config.get("agents", {}) if isinstance(root_config, dict) else {}
-    if agents_config.get("default_subagent_model") != "gpt-5.6-sol" or agents_config.get("default_subagent_reasoning_effort") != "high":
-        errors.append("Default subagent Codex config must use gpt-5.6-sol/high.")
+    _expect(agents_config.get("default_subagent_model") == "gpt-5.6-sol" and agents_config.get("default_subagent_reasoning_effort") == "high", "Default subagent Codex config must use gpt-5.6-sol/high.", errors)
+    required_agent_configs = {
+        "delegated-planner",
+        "author-coordinator",
+        "lesson-author",
+        "deck-revision-author",
+        "review-coordinator",
+        "specialist-reviewer",
+        "release-coordinator",
+    }
+    present_agent_configs = {path.stem for path in (root / ".codex" / "agents").glob("*.toml")}
+    missing_agent_configs = sorted(required_agent_configs - present_agent_configs)
+    if missing_agent_configs:
+        errors.append("Missing Codex agent configs: " + ", ".join(missing_agent_configs))
     for config_path in sorted((root / ".codex" / "agents").glob("*.toml")):
         try:
             with config_path.open("rb") as handle:
@@ -130,28 +196,16 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
         except (OSError, tomllib.TOMLDecodeError):
             errors.append(f"Codex agent config is missing or invalid: {config_path}")
             continue
-        if config.get("model") != "gpt-5.6-sol" or config.get("model_reasoning_effort") != "high":
-            errors.append(f"Worker Codex config must use gpt-5.6-sol/high: {config_path}")
-    time_strategy = execution.get("course_time_strategy", {}) if isinstance(execution, dict) else {}
-    if time_strategy.get("enforcement") != "advisory_not_hard_gate":
-        errors.append("Course time strategy must remain advisory, not a hard duration gate.")
-    if float(time_strategy.get("prepared_to_nominal_ratio_default", 0) or 0) != 1.5:
-        errors.append("Default prepared/nominal course-time ratio must be 1.5.")
-    if time_strategy.get("organization_basis") != "numbered_course_meetings":
-        errors.append("Course content must be organized by numbered meetings.")
-    inspection = execution.get("inspection", {}) if isinstance(execution, dict) else {}
-    if inspection.get("temporary_html_overflow_check") != "author_and_release_gate":
-        errors.append("Temporary Marp HTML overflow inspection must be an author/release gate.")
-    if inspection.get("reviewer_rechecks_mechanical_overflow") is not False:
-        errors.append("Reviewers must not recheck mechanical HTML overflow.")
-    return {
-        "task_slug": slug,
-        "gate_ok": gate_ok,
-        "errors": errors,
-        "warnings": warnings,
-        "ok": not errors,
-    }
+        expected_effort = "max" if config_path.stem == "delegated-planner" else "high"
+        label = "Planner" if expected_effort == "max" else "Worker"
+        _expect(
+            config.get("model") == "gpt-5.6-sol"
+            and config.get("model_reasoning_effort") == expected_effort,
+            f"{label} Codex config must use gpt-5.6-sol/{expected_effort}: {config_path}",
+            errors,
+        )
 
+    return {"task_slug": slug, "gate_ok": gate_ok, "errors": errors, "warnings": warnings, "ok": not errors}
 
 def propose_policy_change(
     root: Path,
@@ -201,10 +255,10 @@ def confirm_policy_change(root: Path, slug: str, *, request_id: str) -> dict[str
     """Confirm a material amendment only after TASK.md was edited and reconfirmed.
 
     The sidecar records sequence and user-confirmation timing; it never overrides TASK.md and
-    creates no extra hash.
+    creates no extra hash. This is the sole command allowed through the pending-amendment pause.
     """
 
-    state = require_gate(root, slug)
+    state = require_gate(root, slug, allow_pending_policy_change=True)
     if state.get("pending_policy_change_request") != request_id:
         raise MPresError("This policy change is not the task's pending amendment.")
     path = task_path(root, slug) / "policy-change-requests" / f"{request_id}.yaml"

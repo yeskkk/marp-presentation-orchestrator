@@ -1,17 +1,11 @@
-# One-round five-channel review protocol
+# One-round five-channel full-deck review protocol
 
-Every presentation receives exactly one independent full-deck review. Five channels run in parallel:
+Every presentation receives exactly one review round named `full`. The five channels are language, domain accuracy, layout/presentation design, pedagogy, and audience fit. Each channel has a distinct reviewer, and **every reviewer reads the entire frozen deck**. Review work is created only after author freeze.
 
-- language;
-- domain accuracy;
-- layout and PDF behaviour;
-- pedagogy;
-- audience fit.
+Reviewers receive the same frozen source and PDF plus their own exact assignment and channel guidance. They do not receive another channel's findings and never see the later revision. Mechanical HTML overflow and PDF-bound checks remain deterministic author/release gates rather than reviewer work.
 
-Each channel reviews the same frozen Marp source, PDF, source-lint report, asset report, and PDF-inspection report, but does not receive another channel's findings. Reviewers do not see author responses because those do not exist until the review is complete.
+A finding records stable ID, exact location, issue, learner impact, acceptance criteria, and verification method. It does not carry a resolved status. Before aggregation, a reviewer may correct only location, evidence path, or reviewer note while preserving substantive fields.
 
-A finding records a stable ID, location, issue, learner impact, acceptance criteria, and verification method. Findings do not carry or require a `resolved` state. After aggregation, the author revises the deck, writes a structured response to every finding, completes the modification checklist, rebuilds and self-checks. The revised deck is not returned to reviewers. Once the deterministic author-revision gate passes, it is automatically approved for mechanical release.
+The review coordinator validates all five current handoffs and commits them atomically. One deck-revision-author then receives the frozen deck, complete registry, review plan, routing, and author context packet. It responds to every finding, revises the whole deck, completes its checklist, and reruns deterministic gates. No reviewer recheck follows. Mechanical release begins only after this handoff creates `release_ready`.
 
-The release coordinator checks only required files, response coverage, successful lint/build/PDF inspection, and release packaging. It does not decide whether the author's substantive change is good enough, and it cannot create a new finding.
-
-Screenshots, PDF page rasterization/contact sheets, and model visual inspection are forbidden.
+Screenshots, page rasterization/contact sheets, model vision, and original-reference-PDF access are forbidden.

@@ -1,0 +1,9 @@
+schema_version: 1
+incident_id: "[[INCIDENT_ID]]"
+symptom: "[[SYMPTOM]]"
+reproduction: []
+blocked_operation: "[[BLOCKED_OPERATION]]"
+in_task_engine_edit_allowed: false
+requires_task_policy_amendment: true
+refactoring_is_separate_work: true
+status: awaiting_policy_amendment

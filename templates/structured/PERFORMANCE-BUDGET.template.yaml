@@ -1,0 +1,18 @@
+schema_version: 1
+critical_path:
+  ready_unit_wait_warning_seconds: 900
+  ready_unit_wait_error_seconds: 1800
+wip_limits:
+  current_authoring_presentations: 1
+  next_authoring_presentations: 1
+  reviewing_presentations: 1
+  prospective_workers: 0
+model_call_policy:
+  control_plane_uses_model: false
+  semantic_plane_roles: [planner, author, reviewer, deck-revision-author]
+artifact_budget:
+  canonical_records_only: true
+  generated_reports_must_name_their_canonical_source: true
+tool_wait:
+  smoke_timeout_seconds: 120
+  zero_slide_match_fail_fast_seconds: 10

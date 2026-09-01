@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 planner:
   model: gpt-5.6-sol
   reasoning_effort: max
@@ -6,5 +6,6 @@ workers:
   model: gpt-5.6-sol
   reasoning_effort: high
 notes:
-  - The planner uses max because it owns scope, assignment semantics, policy changes, and cross-role decisions.
-  - All execution and review workers use high unless an explicitly reconfirmed task policy raises a role to max.
+  - The main agent and delegated planners use max because planner work owns semantic scope, assignment content, policy changes, and cross-role decisions.
+  - Only writing or revising the top-level TASK.md is exclusive to the main agent; all other planner work may be delegated.
+  - Execution, revision, release, and review workers use high unless a reconfirmed task policy raises a selected role to max.

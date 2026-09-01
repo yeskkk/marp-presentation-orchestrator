@@ -11,7 +11,8 @@ def validate_lesson_time_plan(
     *,
     task_kind: str,
     expected_meeting_number: int | None,
-    nominal_minutes: int | None,
+    expected_deck_local_ordinal: int | None = None,
+    nominal_minutes: int | None = None,
 ) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -24,11 +25,16 @@ def validate_lesson_time_plan(
         errors.append("Time plan policy must be advisory_not_hard_gate.")
     if value.get("stop_at_class_end") is not True:
         errors.append("Course time plan must allow stopping at class end without finishing optional examples.")
-    meeting_number = value.get("meeting_number")
+    meeting_number = value.get("global_meeting_number", value.get("meeting_number"))
+    deck_local_ordinal = value.get("deck_local_ordinal")
     if task_kind == "course":
         if meeting_number != expected_meeting_number:
             errors.append(
                 f"Time plan meeting_number must be {expected_meeting_number}, got {meeting_number!r}."
+            )
+        if expected_deck_local_ordinal is not None and deck_local_ordinal != expected_deck_local_ordinal:
+            errors.append(
+                f"Time plan deck_local_ordinal must be {expected_deck_local_ordinal}, got {deck_local_ordinal!r}."
             )
         if value.get("organization_basis") != "course_meeting":
             errors.append("Course units must use organization_basis: course_meeting.")
@@ -76,6 +82,8 @@ def validate_lesson_time_plan(
         "schema_version": 1,
         "path": str(path),
         "meeting_number": meeting_number,
+        "global_meeting_number": meeting_number,
+        "deck_local_ordinal": deck_local_ordinal,
         "errors": errors,
         "warnings": warnings,
         "success": not errors,
@@ -97,7 +105,7 @@ def aggregate_lesson_time_plans(
         seen_units.add(unit_id)
         ordered.append(plan)
     if task_kind == "course":
-        ordered.sort(key=lambda item: int(item.get("meeting_number") or 0))
+        ordered.sort(key=lambda item: int(item.get("deck_local_ordinal") or 0))
     return {
         "schema_version": 1,
         "presentation_id": presentation_id,

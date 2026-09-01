@@ -1,0 +1,15 @@
+schema_version: 1
+node:
+  minimum_major: 18
+marp:
+  package: "@marp-team/marp-cli"
+  version: "4.5.0"
+  install_policy: exact_pinned_version
+browser:
+  engine: chromium
+  readiness_condition: slide_dom_attached_then_fonts_math_images
+inspection:
+  smoke_fixture_slides: 3
+  smoke_max_age_hours: 24
+  require_success_before_production: true
+  forbid_screenshots: true

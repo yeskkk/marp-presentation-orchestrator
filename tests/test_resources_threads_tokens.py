@@ -13,7 +13,7 @@ from mpres.threads import assign_thread, register_thread, release_thread, valida
 from mpres.tokens import import_session, token_report
 from mpres.util import MPresError
 
-from .conftest import initialize_one_deck, write_unit_source
+from .conftest import approve_core_assignments, initialize_one_deck, write_unit_source
 
 
 def test_reference_workers_receive_only_extracted_text(project_root: Path, tmp_path: Path) -> None:
@@ -37,7 +37,8 @@ def test_reference_workers_receive_only_extracted_text(project_root: Path, tmp_p
 
 
 def test_geogebra_requires_verified_material_and_plain_markdown_link(project_root: Path) -> None:
-    _, task = initialize_one_deck(project_root)
+    slug, task = initialize_one_deck(project_root)
+    approve_core_assignments(project_root, slug, task)
     write_unit_source(task)
     unit = task / "workers" / "lesson-authors" / "p01" / "u01" / "source"
     section = unit / "section.md"

@@ -4,11 +4,15 @@
 
 - `source/section.md`
 - `source/UNIT-MANIFEST.yaml`
-- `source/INTERACTION-MANIFEST.yaml`
-- `source/MCQ-AUDIT.yaml`
+- canonical `source/INTERACTION-RECORD.yaml`
+- `source/UNIT-DELTA.yaml`
+- `source/UNIT-CONTEXT-PACKET.yaml`
+- `source/LESSON-TIME-PLAN.yaml`
 - `source/GEOGEBRA-RESOURCES.yaml`
 - `source/SELF-CHECK.md`
 - local approved assets, if any
+
+`INTERACTION-MANIFEST.yaml` and `MCQ-AUDIT.yaml` are generated compatibility views and are never edited independently.
 
 ## Integration, TeX, asset, and source checks
 

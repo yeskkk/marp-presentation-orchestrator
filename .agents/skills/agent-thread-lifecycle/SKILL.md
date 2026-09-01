@@ -1,13 +1,19 @@
 ---
 name: agent-thread-lifecycle
-description: Maintain a bounded role-compatible thread registry, reuse idle handles, preserve reviewer independence, and record validated handoffs and real closure attempts.
+description: Allocate role-compatible handles just in time, preserve reviewer independence, close lesson authors after handoff, and forbid speculative hold threads.
 ---
 
 # Thread lifecycle
 
-Use `mpres thread` commands and `THREAD-REGISTRY.yaml`. Before spawning, inventory all known handles and reuse a compatible `idle_reusable` handle. One handle has at most one active assignment.
+Use `THREAD-REGISTRY.yaml` and deterministic capacity preflight. Reuse a compatible `idle_reusable` handle before spawning, keep one active assignment per handle, and preserve the configured unallocated capacity.
 
-A handle that authored a presentation may not review it. Five review channels require five distinct active handles. After a validated handoff, attempt a genuine runtime close/remove operation. If capacity is not actually released, record `idle_reusable`; a retaining interrupt is not closure.
+Create model workers only when their gate opens:
 
+- lesson author after an approved batch plan is queued for that unit;
+- reviewers only after full-deck freeze;
+- deck revision author only after atomic review aggregation;
+- release coordinator only in `release_ready`.
 
-Before a batch, run the deterministic capacity preflight. Planner threads must match the global planner runtime; all role workers must match the global worker runtime. Preserve at least the configured recovery/independent-review capacity. A retaining interrupt does not release a handle.
+One handle that authored any part of a deck may not review it. The five review channels require five distinct independent handles. A lesson author may close immediately after durable handoff and is not retained for later findings. Post-review revision uses one separate deck revision author and the compiled context packet.
+
+After handoff, attempt a real runtime close/remove. If capacity remains allocated, record `idle_reusable`; an interrupt that retains the handle is not closure. Never create prospective release holds or speculative pre-freeze reviewer threads.

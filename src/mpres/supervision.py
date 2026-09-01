@@ -44,8 +44,10 @@ def _signal(log: dict[str, Any] | None, watched: Path) -> tuple[int | None, bool
 
 
 def _coordinator(status: str) -> str:
-    if status in {"authoring", "author_revision"}:
+    if status == "authoring":
         return "author-coordinator"
+    if status == "author_revision":
+        return "deck-revision-author"
     if status in {"review_requested", "reviewing"}:
         return "review-coordinator"
     if status == "release_ready":
@@ -56,7 +58,9 @@ def _coordinator(status: str) -> str:
 def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> dict[str, Any]:
     task = task_path(root, slug)
     policy = read_yaml(task / "EXECUTION-POLICY.yaml") or {}
-    interval = int((policy.get("planner_supervision") or {}).get("interval_seconds", 1200) or 1200)
+    interval = int(
+        (policy.get("planner_supervision") or {}).get("fallback_interval_seconds", 1200) or 1200
+    )
     status_path = task / "state" / "supervision-planner.json"
     previous = read_json(status_path) if status_path.is_file() else {}
     elapsed = _seconds_since(previous.get("checked_utc"))
@@ -79,7 +83,7 @@ def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> d
             actor = _coordinator(str(presentation.get("status")))
             log = _last_log(log_file(root, slug, actor), pid, actor)
             watched = task / "workers" / actor
-            if actor == "author-coordinator":
+            if actor in {"author-coordinator", "deck-revision-author"}:
                 watched = watched / "drafts" / pid
             elif actor == "review-coordinator":
                 watched = task / "reviews" / pid

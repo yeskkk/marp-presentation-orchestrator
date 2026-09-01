@@ -12,6 +12,7 @@ from typing import Any
 import fitz
 
 from mpres.browser import browser_probe
+from mpres.toolchain import load_toolchain_lock
 from mpres.util import executable, local_marp_binary, run_command, virtualenv_python
 
 
@@ -121,6 +122,18 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         "git": _binary_check("git", ["--version"]),
     }
     marp = _marp_check(root)
+    try:
+        toolchain_lock = load_toolchain_lock(root)
+        expected_marp = str(((toolchain_lock.get("marp") or {}).get("version") or "")).strip()
+    except Exception as exc:
+        toolchain_lock = {}
+        expected_marp = ""
+        marp["lock_error"] = str(exc)
+    actual_match = re.search(r"(\d+\.\d+\.\d+)", str(marp.get("version") or ""))
+    actual_marp = actual_match.group(1) if actual_match else ""
+    marp["expected_version"] = expected_marp
+    marp["actual_version"] = actual_marp
+    marp["version_matches_lock"] = bool(expected_marp and actual_marp == expected_marp)
     probe = _marp_pdf_probe(root, marp) if run_pdf_probe else {"ok": None, "skipped": True}
     browser = browser_probe()
     node_version_text = str(binaries["node"].get("version") or "")
@@ -131,7 +144,7 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         "codex": binaries["codex"]["found"],
         "node>=18": node_ok,
         "npm": binaries["npm"]["found"],
-        "marp": marp.get("found") and marp.get("returncode") == 0,
+        "marp": marp.get("found") and marp.get("returncode") == 0 and marp.get("version_matches_lock") is True,
         "marp_pdf": probe.get("ok") is True if run_pdf_probe else True,
         "playwright_browser": browser.get("available") is True,
         "pdftotext": binaries["pdftotext"]["found"],
@@ -151,6 +164,11 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         warnings.append("Project .venv is absent; run scripts/bootstrap.py.")
     if packages["matplotlib"] is None:
         warnings.append("Optional Python figure support is not installed; this is normal while figures remain disabled.")
+    if marp.get("found") and marp.get("version_matches_lock") is not True:
+        warnings.append(
+            f"Pinned Marp mismatch: expected {expected_marp or 'unknown'}, "
+            f"found {actual_marp or marp.get('version') or 'unknown'}."
+        )
     if probe.get("error"):
         warnings.append(str(probe["error"]))
     if browser.get("error"):
@@ -169,7 +187,7 @@ def doctor_report(root: Path, *, run_pdf_probe: bool = True) -> dict[str, Any]:
         },
         "packages": packages,
         "binaries": binaries,
-        "marp": {**marp, "version_policy": "unpinned-latest-at-install-time"},
+        "marp": {**marp, "version_policy": "exact-pinned-version"},
         "pdf_probe": probe,
         "html_layout_browser": browser,
     }

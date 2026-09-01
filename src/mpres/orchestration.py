@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from mpres.assignments import batch_plan_status
 from mpres.production import check_assignment
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state
 from mpres.stages import stage_status
@@ -32,9 +33,33 @@ def author_launch_plan(root: Path, slug: str, presentation_id: str, *, save: boo
     presentation = get_presentation(state, presentation_id)
     if not presentation.get("active"):
         raise MPresError(f"Presentation {presentation_id} is not active.")
+    batch = batch_plan_status(root, slug)
     units: list[dict[str, Any]] = []
     for unit in presentation.get("content_units", []):
         unit_id = str(unit["id"])
+        unit_status = str(unit.get("status") or "uninitialized")
+        if unit_status in {"uninitialized", "initialized"}:
+            action = (
+                "queue_on_critical_path"
+                if batch.get("approved")
+                else "planner_must_approve_batch_plan"
+            )
+            units.append(
+                {
+                    "unit_id": unit_id,
+                    "title": unit.get("title"),
+                    "assignment": {
+                        "ready": False,
+                        "materialized": False,
+                        "source": batch.get("path"),
+                    },
+                    "sequence_status": "uninitialized",
+                    "current_stage": None,
+                    "thread_handle": None,
+                    "action": action,
+                }
+            )
+            continue
         assignment = check_assignment(root, slug, "lesson-author", presentation_id, unit_id=unit_id)
         stage = stage_status(root, slug, presentation_id, unit_id)
         if stage.get("sequence_status") == "completed":

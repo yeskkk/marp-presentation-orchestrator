@@ -1,0 +1,20 @@
+schema_version: 1
+plan_id: authoring-batch-001
+status: draft
+written_by: planner
+planner_actor: "[[MAIN_OR_DELEGATED_PLANNER]]"
+production_mode: "[[PRODUCTION_MODE]]"
+common:
+  hard_constraints:
+    - "[[COMMON_HARD_CONSTRAINT]]"
+  replaceable_hypotheses:
+    - "[[COMMON_REPLACEABLE_HYPOTHESIS]]"
+  local_decision_rights:
+    - "[[COMMON_LOCAL_DECISION_RIGHT]]"
+  approved_text_sources:
+    - "[[APPROVED_TEXT_SOURCE_OR_NONE]]"
+  acceptance_criteria:
+    - "[[COMMON_ACCEPTANCE_CRITERION]]"
+presentations: {}
+approved_utc: null
+expanded_assignments: []

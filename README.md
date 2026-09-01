@@ -1,22 +1,36 @@
-# Marp Presentation Orchestrator v0.5.0
+# Marp Presentation Orchestrator v0.6.0
 
-这是一个面向 **Codex CLI + Marp** 的课程课件与报告制作框架。它把用户确认、planner 亲写 assignment、按课次并行制作、单次五通道审核、作者自行修订、机械发布、单一并发日志、课程连续性和已发布课件维护组织成可审计的工作流。
+这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.0 的重点不是降低作者或 reviewer 的推理强度，而是把状态机、调度、任务展开、格式验证和机械检查从模型调用中移到 Python 控制平面，并为“从零创作、成熟课件迁移、局部修订”使用不同的生产流程。
 
-正式演示产物始终是：
+正式耐久产物始终是：
 
 ```text
 canonical Marp Markdown
         ↓
-@marp-team/marp-cli
+@marp-team/marp-cli 4.5.0
         ↓
 PDF
 ```
 
-临时 HTML 只用于 author/release 的浏览器机械检查，检查后立即删除，不进入 reviewer bundle、deliverables 或长期存储。
+浏览器 HTML 仅用于 author/release 的机械布局检查，检查后立即删除；它不进入 reviewer bundle 或 deliverables。
 
-## 1. 全局运行政策
+## 1. v0.6.0 的主要变化
 
-根目录的 `MODEL-POLICY.yaml` 是唯一模型真源：
+- 增加四种 production profile，不再让成熟课件迁移重复走绿地六阶段。
+- `legacy_migration` 固定使用三阶段，但仍默认每节课分配一名固定 lesson author。
+- planner 可审批一份 batch plan，由程序展开各 unit assignment；这种 assignment 仍算 planner 编写。
+- 只有顶层 `TASK.md` 必须由主 planner（main agent）亲自撰写或修订，其余 planner 工作均可委派给 delegated planner。
+- unit workspace 延迟创建，调度只维护“当前课件＋至多一个下一课件”的关键路径窗口。
+- reviewer 只在整份 deck 冻结后创建；release coordinator 只在 `release_ready` 后创建。
+- lesson author handoff 后即可关闭；五通道审核后由一个 deck revision author 修订整份课件。
+- 五名 reviewer 仍分别完整阅读整份冻结课件，不采用抽样或只看改动页。
+- Marp CLI 精确锁定为 4.5.0，并在 production 前运行三页 smoke test。
+- 确认是 workflow-engine 技术 bug 后仍禁止任务内热修；必须进入 task policy amendment，并把引擎重构视为独立工作。
+- `UNIT-DELTA.yaml`、`INTERACTION-RECORD.yaml`、context packets 等成为 canonical records，减少重复证据文档。
+
+## 2. 模型与 planner 委派政策
+
+`MODEL-POLICY.yaml` 是唯一运行时真源：
 
 ```yaml
 planner:
@@ -27,352 +41,244 @@ workers:
   reasoning_effort: high
 ```
 
-`.codex/config.toml` 和角色 TOML 必须与之相符。线程注册时还会记录实际 model/effort；不匹配便拒绝接受该线程。线程批次启动前执行 capacity preflight，并保留 task policy 指定的未分配容量。
-
-## 2. 用户确认与固定政策
-
-只有任务顶层：
+主 planner 独占的工作只有：
 
 ```text
-tasks/<slug>/TASK.md
+write_or_revise top-level TASK.md
 ```
 
-使用用户确认摘要。其它 source、reference、finding、PDF、release、日志和压缩包均不生成或检查哈希。
+以下工作均可交给其它 planner：production profile 选择、batch plan、assignment 审批、policy audit、监督、异常诊断和 amendment 准备。planner 的语义责任不会因为委派而消失。
 
-首次问询必须提醒用户：
+### Batch assignment
 
-- 每份 presentation 只进行一轮完整五通道审核；
-- 作者回应 findings、完成修改流程和机械自检后直接发布，reviewer 不复核；
-- findings 不维护 resolved 生命周期；
-- planner 默认 Sol/max，workers 默认 Sol/high；
-- 课程每节课包含 2—3 道诊断性选择题，学术报告除外；
-- worker 只能读取抽取文本，禁止打开原 PDF；
-- 截图、PDF contact sheet、模型视觉审核全部禁止；
-- Python 图形默认关闭；
-- GeoGebra 只允许已验证的普通超链接，可跨课次复用；
-- delivery mode 为 `pilot`、`each` 或 `all`。
-
-改变审核数量、输出格式、原 PDF 权限、选择题配额或 assignment ownership 等任务承诺，必须修改并重新确认 TASK.md。
-
-## 3. 角色和职责
+planner 可写一份：
 
 ```text
-planner
-├── author-coordinator × presentation
-│   └── lesson-author × 课次/报告内容单元
-├── review-coordinator × presentation
-│   └── specialist-reviewer × 五个通道
-└── release-coordinator × presentation
+tasks/<slug>/planning/BATCH-ASSIGNMENT-PLAN.yaml
 ```
 
-- **planner**：采访、TASK 确认、亲自写全部 exact assignments、模型与线程政策、presentation 级监督和暂停门。
-- **author-coordinator**：完成 deck-level maps，监督并行 lesson authors，整合源文件，运行机械门，回应唯一一次审核。
-- **lesson-author**：一个内容单元、一份 planner-approved assignment、同一个 thread、完整 staged authoring。
-- **specialist-reviewer**：只审核一个通道的冻结全稿，不见其他通道 findings，不看作者后续修订。
-- **review-coordinator**：验证五份当前 handoff，原子汇总，生成 finding routing，不改作者源。
-- **release-coordinator**：只做机械构建和发布，不判断 finding 是否修好。
-
-## 4. 一个 lesson assignment、一个 thread、内部多阶段
-
-课程单元在同一个 lesson-author thread 中依次完成：
-
-```text
-01 scope and extracted sources
-02 learner need
-03 domain development
-04 cognitive entry and diagnostics
-05 learner-facing language
-06 Marp integration and self-check
-```
-
-报告使用 task profile 中的精简阶段。阶段是**内部工作步骤**，不是新的 assignment 或 worker：
-
-```bash
-mpres stage start ...
-mpres stage submit ...
-```
-
-`submit` 验证当前耐久 artifact 和 checkpoint 后自动激活下一阶段。不会重新 spawn、不会要求 planner 重写 stage assignment，也不等待 coordinator 单独验收。`complete` 仍作为兼容别名存在，但新任务统一使用 `submit`。
-
-## 5. 按第几节课组织课程
-
-课程 content unit 对应连续编号的课堂：
-
-```text
-第 1 节课
-第 2 节课
-……
-```
-
-教材章节只用于资料映射，不决定 deck 的一级结构。每节课有：
-
-- 名义课堂时长内的 core path；
-- 一个自然停止点；
-- 停止点后的 optional worked-example extension bank。
-
-默认可为 40 分钟课堂准备约 60 分钟材料；后约 20 分钟主要用讲解例题填充。这个比例只产生规划建议，不是发布硬门。到点可以直接下课，不必讲完。
-
-## 6. 课程级术语、对象与连续性
-
-课程任务初始化：
-
-```text
-COURSE-TERMINOLOGY.yaml
-COURSE-SEMANTIC-OBJECTS.yaml
-CROSS-DECK-HANDOFFS.yaml
-```
-
-每份 deck 还维护：
-
-```text
-TERMINOLOGY.yaml
-SEMANTIC-OBJECTS.yaml
-PRESENTATION-CONTINUITY-MAP.yaml
-```
-
-机械检查验证：
-
-- deck term 是否映射到课程级 term；
-- course-scoped object 是否存在于课程注册表；
-- 后续 deck 是否声明 `incoming_from`；
-- 是否存在相应 cross-deck handoff；
-- 重新激活的术语和对象是否真实存在。
-
-这样减少跨课的术语漂移、对象换名和无解释的抽象跳转。
-
-## 7. 页面教学动作密度
-
-每张 slide 在 `SLIDE-DENSITY-AUDIT.yaml` 中声明：
+批准后，程序把共同约束和 unit-specific delta 展开为每个 unit 的 executable assignment，并记录：
 
 ```yaml
-id:
-principal_teaching_move:
-substantial_blocks:
-split_rationale:
+written_by: planner-via-approved-batch
+semantic_owner: planner
 ```
 
-硬规则不是固定字符数，而是“一页主要承担一个教学动作”。超过三个 substantial blocks 且没有合理的同屏理由会阻塞；三个块没有理由会报警。字符数、bullet 数和表格行数只作为辅助信号。
+程序只能机械展开已批准语义，不能补写新的教学要求或削弱约束。每个 unit 仍只有一份 assignment；禁止 stage-specific assignment。
 
-## 8. 选择题要求
+## 3. Production profiles
 
-课程每个课次必须有 2—3 对：
+| mode | stage profile | 用途 |
+|---|---|---|
+| `greenfield_full` | 课程六阶段或完整报告阶段 | 难度较高、从零创作 |
+| `greenfield_compact` | 紧凑四阶段 | 普通从零创作 |
+| `legacy_migration` | 三阶段 migration profile | 已有成熟课件迁移 |
+| `targeted_revision` | 两阶段 revision profile | 有界局部修改 |
+
+### Migration profile
+
+`legacy_migration` 完全跳过绿地六阶段：
+
+1. `m01_baseline_audit`：建立旧课件基线和 canonical `UNIT-DELTA.yaml`；
+2. `m02_delta_design_patch`：保留合格内容，只实现必要差量；
+3. `m03_integration_semantic_check`：检查连续性、数学、认知入口、时长、互动题、编号和 Marp 集成。
+
+迁移任务仍默认一节课一个固定 lesson author。author 完成 context packet 和 durable handoff 后即可关闭，不必保留到 review 结束。
+
+## 4. 关键路径与延迟初始化
+
+v0.6.0 的调度顺序是：
 
 ```text
-core prompt slide
-→ 紧邻的 support answer/hint slide
+完成当前 review / revision / release
+        ↓
+完成当前 presentation
+        ↓
+启动下一个 ready presentation
+        ↓
+只准备更远期元数据，不启动 model worker
 ```
 
-MCQ audit 至少记录：
+约束包括：
 
-- 学生在 prompt 前已经掌握的信息；
-- 有意保留到回答页的信息；
-- 题目要求的新推理；
-- 单一 decision unit；
-- prerequisite 是否已经出现；
-- cue leakage 检查；
-- composite-option 检查；
-- visible labels、正确项理由和每个错误项对应的误区。
+- unit 初始为 `uninitialized`；只有 batch plan 已批准且 unit 入队时才创建 workspace；
+- 同时最多一份 presentation 处于 review/revision/release；
+- 当前课件之外，最多允许一个下一课件 active authoring；
+- 冻结前不生成 reviewer assignment 或 reviewer workspace；
+- review 聚合前不生成 deck revision author；
+- `release_ready` 前不生成 release coordinator；
+- 禁止 prospective hold thread；
+- `delivery_mode: all` 只表示不逐份等待用户，不表示可以提前展开全部工作。
 
-只复制上一页结论、prompt 泄露答案、一道题包含多个独立任务、题答不相邻或 option audit 不完整都会阻塞。
+## 5. 角色图
 
-## 9. Author 机械提交门
+```text
+main/delegated planner
+        ↓ approved batch semantics
+author coordinator
+        ↓
+fixed lesson authors (one per unit)
+        ↓ durable unit handoffs + context packets
+integrated frozen deck
+        ↓
+five isolated full-deck reviewers
+        ↓ atomic aggregation
+one deck revision author
+        ↓ complete response + revised deck
+release coordinator
+        ↓
+Marp source + PDF
+```
 
-review request 之前，author 必须通过：
+### Author coordinator
+
+负责 deck map、当前关键路径监督、lesson 集成、author gates、`AUTHOR-CONTEXT-PACKET.yaml` 和 freeze。冻结交接后可关闭，不负责 post-review revision。
+
+### Lesson author
+
+负责一个固定 content unit，在一份 assignment 和一个连续 thread 下完成 profile-selected stages。handoff 后可关闭；review 后不会重新唤醒。
+
+### Reviewers
+
+五个通道：
+
+- `language`
+- `domain_accuracy`
+- `layout`
+- `pedagogy`
+- `audience`
+
+五名 reviewer 都完整阅读同一份冻结 deck，互相隔离，只做这一轮审核。reviewer 不查看后续修订。
+
+### Deck revision author
+
+读取完整冻结稿、五通道 findings、`REVIEW-PLAN.yaml`、`AUTHOR-CONTEXT-PACKET.yaml` 和 `REVISION-ROUTING.yaml`，统一修订整份 deck。所有 finding 都路由给它，而不是返回原 lesson authors。
+
+### Release coordinator
+
+只在 `release_ready` 后启动，执行机械门、构建和打包；不判断 finding 是否在语义上“修好”，不改教学内容。
+
+## 6. Canonical records
+
+v0.6.0 避免多份可编辑文档重复表达同一事实：
+
+| 文件 | 唯一职责 |
+|---|---|
+| `PRODUCTION-PROFILE.yaml` | 模式、stage graph、review scope |
+| `BATCH-ASSIGNMENT-PLAN.yaml` | planner 批次语义 |
+| `PRESENTATION-WORK-PLAN.yaml` | 关键路径与 launch window |
+| `UNIT-DELTA.yaml` | keep/modify/move/delete/add 决策 |
+| `UNIT-CONTEXT-PACKET.yaml` | 单元作者的紧凑上下文 |
+| `INTERACTION-RECORD.yaml` | 唯一可编辑的 MCQ/互动记录 |
+| `AUTHOR-CONTEXT-PACKET.yaml` | 审后整稿修订上下文 |
+| `REVIEW-PLAN.yaml` | 冻结稿与五通道完整阅读范围 |
+| `REVISION-ROUTING.yaml` | finding 的确定性定位 |
+| `TOOLCHAIN-LOCK.yaml` | 精确工具版本 |
+| `ENGINE-INCIDENT.yaml` | 技术缺陷与 amendment 要求 |
+| `MILESTONE-CHECKPOINT.json` | 稀疏里程碑状态 |
+
+旧格式报告如 MCQ audit 或 interaction manifest 只能由 canonical record 机械生成，不可作为另一份独立真源。
+
+## 7. 课程规则
+
+课程以顺序编号的“第几节课”为 content unit，不按教材章节直接拆分。每个 unit 使用两个不同字段：
+
+- `global_meeting_number`：全课程课次；
+- `deck_local_ordinal`：该 deck 内的顺序。
+
+每节课必须包含 2–3 组诊断性选择题 prompt/answer，分别放在不同概念转折处；报告免除该配额。名义时长定义自然停止点，默认可准备约 1.5 倍材料，把延伸例题置于 core path 之后。
+
+## 8. 来源、资产与视觉边界
+
+worker 只能读取：
+
+```text
+tasks/<slug>/downloads/text/
+```
+
+原 PDF 位于 restricted area，只允许系统 ingestion；worker 不得打开、解析、渲染、转换、OCR、截图或交给视觉模型。抽取文本不足时应记录 source gap、改用其它批准文本/网页、缩小表述或升级范围问题。
+
+截图、PDF contact sheet 和模型视觉审核全部禁止。GeoGebra 只能使用已验证 `geogebra.org/m/...` 的普通超链接。Python 作图默认关闭，只有任务明确批准时才启用。
+
+## 9. 工具链锁定与 smoke test
+
+根目录 `TOOLCHAIN-LOCK.yaml` 要求：
+
+```yaml
+marp:
+  package: "@marp-team/marp-cli"
+  version: "4.5.0"
+  install_policy: exact_pinned_version
+```
+
+正式 production 前必须运行三页 smoke test，验证：
+
+- 实际 Marp 版本；
+- Marp 4.5 的 slide DOM；
+- 数学、字体和图片 readiness；
+- HTML slide count；
+- PDF 构建和页数；
+- `global_meeting_number` / `deck_local_ordinal` schema。
+
+HTML inspector 使用显式 slide-ready 条件，不等待可能长期不结束的 `networkidle`。匹配不到 slide 时快速失败；渲染 timeout 随 deck 页数调整。
+
+## 10. Author/release 机械门
+
+增量 authoring 检查只处理变化内容；freeze 和 release 运行完整门：
 
 1. Marp source lint；
-2. 本地资产与 GeoGebra 规则；
-3. 课程术语、语义对象和 continuity；
+2. asset 与 GeoGebra 验证；
+3. terminology、semantic objects、课次编号和 continuity；
 4. principal-teaching-move density；
-5. 数学 source inventory；
-6. 临时 Marp HTML renderer probe；
-7. 临时 HTML overflow/out-of-bounds 检查；
-8. Marp PDF 构建；
-9. PDF 页面、文字层、字号、裁切和内部词检查。
+5. math source inventory 与 disposable-HTML renderer probe；
+6. HTML overflow/out-of-bounds；
+7. PDF build；
+8. PDF 页数、几何与文本层检查。
 
-### 临时 HTML 溢出检查
+临时 HTML 必须删除。reviewer 不重复机械 overflow 检查。项目没有 `MATH-PDF-EVIDENCE`；数学正确性由 domain reviewer 判断。
 
-框架运行 Marp HTML 输出到临时目录，再用 Playwright 遍历：
+## 11. Workflow-engine incident
 
-```css
-section[data-marpit-scope], .marpit > section
-```
-
-逐页比较实际：
+技术 bug 不因“纯技术”而获得任务内热修权限：
 
 ```text
-scrollWidth / clientWidth
-scrollHeight / clientHeight
+record ENGINE-INCIDENT.yaml
+        ↓
+propose workflow_engine_technical_fix amendment
+        ↓
+main agent revises TASK.md
+        ↓
+present and reconfirm TASK.md
+        ↓
+engine refactoring handled as separate work
 ```
 
-并检查直接子元素越界、重复 slide ID、浏览器错误、本地请求失败和非预期外部请求。临时 HTML 随检查目录删除。
+禁止一边修改 workflow engine、补测试，一边让原课件任务继续运行。
 
-机械 overflow 是 author/release 的阻塞式自检，**不是 reviewer 工作**。
+## 12. 安装
 
-### 数学排版检查
-
-只保留两个机械层次：
-
-```text
-MATH-SOURCE-INVENTORY
-MATH-RENDERER-PROBE
-```
-
-不建立 `MATH-PDF-EVIDENCE`。source 层检查 delimiter、environment 和命令；HTML renderer 层检查 MathJax/KaTeX/MathML 节点、renderer error 和原始 TeX 泄漏。通过不代表公式在数学上正确，domain-accuracy reviewer 仍需完整判断数学内容。
-
-## 10. 唯一一次五通道审核
-
-冻结稿由五个隔离通道并行审核：
-
-```text
-language
-domain_accuracy
-layout
-pedagogy
-audience
-```
-
-layout reviewer 只评价信息层级、语义分组、密度、节奏和呈现设计，不重复做机械 overflow。
-
-reviewer 在聚合前可受限重提交，但只能改：
-
-```text
-location
-evidence_path
-reviewer_note
-```
-
-finding ID、channel、issue、learner impact、acceptance criteria 和 verification method 不得改变。
-
-review coordinator 先验证全部五个当前 handoff；任何一份失败都不修改共享 registry。全部通过后一次性提交，并根据冻结 `DECK-MANIFEST.yaml` 生成：
-
-```text
-finding → slide/source → 原 lesson-author 或 author-coordinator
-```
-
-无法路由便 fail closed。作者逐条回应、修改并重跑全部机械门，随后直接发布；没有 reviewer recheck，也不检查 resolved。
-
-## 11. 单一项目日志守护进程
-
-所有角色把日志请求发给常驻 Python daemon。只有 daemon 写入：
-
-```text
-tasks/<slug>/logs/project.jsonl
-```
-
-调用者不打开各自日志文件，也不接触并发写入锁。daemon 内部串行化请求并写入单调递增的 `daemon_sequence`。
-
-```bash
-mpres log-daemon start
-mpres log-daemon status
-mpres log-daemon stop
-mpres log tail <slug>
-```
-
-`start.sh`、`start.ps1` 和安全启动器会在 Codex 前启动 daemon。测试使用明确的 test transport，生产路径始终使用 daemon。
-
-本项目**不实现 crash-recovery 子系统**；崩溃后由 planner 检查 task state、单一 project log、thread registry、checkpoint、handoff 和现有产物后决定继续或重启。
-
-## 12. 确定性 current launch plan
-
-机械调度由 Python 汇总，但不替 planner 写 assignment，也不创建 orchestration journal：
-
-```bash
-mpres orchestration author-plan <slug> --presentation p01
-mpres orchestration review-plan <slug> --presentation p01
-```
-
-计划显示：
-
-- assignment 是否 ready；
-- unit 当前内部 stage；
-- 是否应启动、复用或继续同一 thread；
-- 可复用 handle；
-- 实际 model/effort 政策；
-- 所需新 handle 和 capacity preflight。
-
-`--save` 只覆盖一个当前 plan 文件，不保存 attempt 历史。
-
-## 13. 线程生命周期
-
-`THREAD-REGISTRY.yaml` 记录 handle、实际 model/effort、当前 assignment、独立性标签和 handoff。规则包括：
-
-- planner thread 必须符合 Sol/max；
-- workers 必须符合 Sol/high；
-- author thread 不得审核自己参与制作的 deck；
-- 五个 reviewer 使用独立 active handles；
-- idle compatible handle 优先复用；
-- interrupt 不等于真正释放容量；
-- capacity preflight 必须保留配置的余量。
-
-## 14. Extracted-text-only 参考资料
-
-系统 ingestion 可以接收 PDF，但 worker 只能看到：
-
-```text
-downloads/text/
-```
-
-禁止 worker 打开、解析、渲染、转换、OCR 或截图原 PDF。抽取文本不足时，只能记录 source gap、寻找已批准文本/网页资料、收缩表述或升级范围问题。
-
-## 15. GeoGebra 与 Python 图形
-
-GeoGebra：
-
-- 只允许已验证的 `https://www.geogebra.org/m/...`；
-- 只用普通描述性 Markdown 超链接；
-- 不嵌入、不截图、不下载 applet；
-- 同一资源可在不同课次重复使用，不做去重硬门。
-
-Python 图形默认关闭。只有 TASK 和 exact asset decision 双重批准才可使用。优先顺序：
-
-```text
-自然语言/公式 → Markdown 表格 → CSS → 简单 SVG → 合法已有资源 → Python 图形
-```
-
-## 16. Corrective maintenance
-
-已发布 deck 可以进入：
-
-```text
-targeted_patch
-full_corrective_review
-```
-
-planner 亲写 maintenance assignment；历史 release 不覆盖。targeted patch 只改授权缺陷并重跑机械门。full corrective review 进行一次新的五通道完整审核，作者自行修订后直接发布，不复核。新版本发布到：
-
-```text
-deliverables/<id>/revisions/rNNNN/
-```
-
-`CURRENT-REVISION.json` 指向当前版本。
-
-## 17. 明确不实现的系统
-
-v0.5.0 有意不实现：
-
-- crash-recovery/resume orchestration subsystem；
-- workflow-engine freeze/migration subsystem；
-- `MATH-PDF-EVIDENCE`；
-- token 与 orchestration attempt 的关联；
-- reviewer 对 author revision 的二次验收；
-- persistent HTML delivery；
-- non-TASK hashes。
-
-## 18. 安装与启动
-
-要求：
-
-- Python 3.11+；
-- Node.js 18+ 和 npm；
-- Codex CLI；
-- Chromium/Chrome；
-- `pdftotext`；
-- Tesseract 仅供 system ingestion 的最后手段。
+需要 Python 3.11+、Node.js 18+、Chromium/Playwright，以及可用的 PDF 文本工具。推荐在隔离的 VM 或容器中运行。
 
 ```bash
 python scripts/bootstrap.py
-./start.sh
 ```
+
+这个命令会创建 `.venv`、安装 Python 包、安装精确 Marp 4.5.0、准备 Playwright 浏览器并运行 doctor。可用参数见：
+
+```bash
+python scripts/bootstrap.py --help
+```
+
+生产前再次检查：
+
+```bash
+.venv/bin/mpres doctor --strict
+.venv/bin/mpres toolchain smoke
+```
+
+Windows 对应可执行文件在 `.venv\Scripts\`。
+
+## 13. 启动方式
 
 安全模式：
 
@@ -380,41 +286,92 @@ python scripts/bootstrap.py
 ./start-safe.sh
 ```
 
-Windows：
-
-```powershell
-.\start.ps1
-# 或
-.\start-safe.ps1
-```
-
-Marp 版本不固定，`package-lock.json` 禁止提交。环境兼容性由：
+无 sandbox/approval 的模式只应在外部隔离环境中使用：
 
 ```bash
-.venv/bin/mpres doctor --strict
+./start.sh
 ```
 
-实际执行 Marp PDF 和浏览器 probe 判断。
+PowerShell 使用 `start-safe.ps1` 或 `start.ps1`。
 
-## 19. 常用命令
+## 14. 常用 CLI
+
+```bash
+# 创建并确认任务
+mpres task init --title "..." --kind course --stop-mode all \
+  --sessions 8 --minutes 90 --production-mode legacy_migration
+mpres task present <slug>
+mpres task confirm <slug>
+
+# 工具链
+mpres toolchain status
+mpres toolchain smoke
+
+# 初始化 presentation/unit 元数据
+mpres production init <slug> \
+  --presentation 'p01::矩阵与线性变换' \
+  --unit 'p01::u01::第 1 节课'
+
+# planner 批次计划
+mpres assignment batch-status <slug>
+mpres assignment batch-approve <slug> --planner-actor delegated-planner
+
+# 延迟展开并进入关键路径
+mpres production queue-unit <slug> --presentation p01 --unit u01
+mpres production critical-path <slug>
+
+# 阶段、审核与发布状态
+mpres stage --help
+mpres review --help
+mpres maintenance --help
+
+# 技术故障
+mpres engine incident <slug> --id marp-dom-regression \
+  --symptom "..." --blocked-operation "..." \
+  --reproduction "step 1" --reproduction "step 2"
+```
+
+具体参数以 `mpres <command> --help` 为准。
+
+## 15. 日志、线程与 token
+
+所有角色通过常驻 Python daemon 写入唯一日志：
 
 ```text
-mpres task ...
-mpres policy ...
-mpres assignment ...
-mpres production ...
-mpres stage start|submit|status|reopen ...
-mpres orchestration author-plan|review-plan ...
-mpres thread capacity|register|assign|handoff|release ...
-mpres render ...
-mpres inspect html-layout ...
-mpres review ...
-mpres maintenance ...
-mpres audit ...
-mpres log-daemon ...
-mpres log tail ...
+tasks/<slug>/logs/project.jsonl
 ```
 
-## 20. 安全边界
+控制平面自动记录 routine transition；模型只记录语义决策、阻塞、handoff、policy change 和 delivery。token 只在 workflow milestone 收集精确计数，不用模型定期轮询。
 
-`--dangerously-bypass-approvals-and-sandbox` 只能在外部隔离 VM/container 或专用低权限账户中使用。项目状态、目录与 audit 能减少普通流程漂移，但不能替代操作系统权限隔离。详见 `docs/SECURITY.md`。
+lesson author 完成 handoff 后应关闭或释放 thread；不要为了可能出现的 review finding 长期占位。
+
+## 16. 验证与开发
+
+```bash
+export PYTHONPATH=src
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+python -m compileall -q src scripts tests
+python -m pytest -q
+python scripts/validate_project.py --skip-tests
+```
+
+安装 dev 依赖后还可运行：
+
+```bash
+python -m ruff check .
+```
+
+发布前应清理 `.venv`、`node_modules`、`.mpres`、测试缓存、`__pycache__` 和任务运行数据。源码包不生成 archive checksum，因为项目政策只允许顶层 `TASK.md` 使用确认 digest。
+
+## 17. 有意不实现的功能
+
+- reviewer 对修订稿进行第二轮复核；
+- 截图或模型视觉审核；
+- worker 访问原 PDF；
+- persistent HTML deliverable；
+- 非 `TASK.md` 哈希；
+- stage-specific assignment；
+- speculative reviewer/release worker；
+- lesson author 在 review 后重新打开；
+- 任务内 workflow-engine hot patch；
+- 由 release coordinator 作内容判断。

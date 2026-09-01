@@ -1,0 +1,22 @@
+schema_version: 1
+task_kind: "[[TASK_KIND]]"
+mode: "[[PRODUCTION_MODE]]"
+stage_profile: "[[STAGE_PROFILE]]"
+stages: [[STAGE_LIST_FLOW]]
+unit_granularity: "[[UNIT_GRANULARITY]]"
+review_scope: full_deck
+reviewers_read_entire_deck: true
+lazy_unit_initialization: true
+lesson_author_policy:
+  one_fixed_author_per_lesson: true
+  may_close_after_handoff: true
+post_review_revision:
+  role: deck-revision-author
+  uses_author_context_packet: true
+planner_delegation:
+  main_agent_exclusive: [write_or_revise_TASK_md]
+  all_other_planner_operations_may_be_delegated: true
+engine_bug_policy:
+  hot_patch_during_task: forbidden
+  requires_task_policy_amendment: true
+  refactoring_is_separate_work: true

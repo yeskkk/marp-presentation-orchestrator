@@ -1,39 +1,55 @@
-# Design notes — v0.5.0
+# Design notes — v0.6.0
 
-## Main changes from v0.4.1
+## Why v0.6.0 exists
 
-- Replaced per-role JSONL logs with a persistent project-level logging daemon and one append-only task log.
-- Unified each lesson's authoring stages under one planner-approved assignment and one continuous lesson-author thread.
-- Added deterministic current author/review launch plans without an orchestration journal.
-- Added thread runtime verification and reserved-capacity preflight.
-- Added atomic five-channel aggregation and narrowly constrained pre-aggregation resubmission.
-- Added mechanical finding routing back to original lesson units or coordinator reconciliation.
-- Added course-level terminology, semantic-object and cross-deck continuity validation.
-- Added principal-teaching-move density audit.
-- Added source and disposable-HTML mathematics inspection; deliberately omitted PDF-math evidence.
-- Added numbered targeted/full-review corrective maintenance without overwriting historical releases.
-- Added contextual language finding templates.
+A mature linear-algebra course migration exposed a control-plane bottleneck: after more than seven hours, useful lesson writing had progressed far less than expected while thousands of model calls repeatedly produced assignments, checkpoints, speculative reviewer material, status supervision, and duplicate evidence. Some ready lesson work waited for hours because future-task preparation occupied capacity. Tool-version drift and a numbering-validator defect then blocked an almost-finished deck.
 
-## Why one log daemon
+v0.6.0 treats those observations as workflow-design failures rather than a reason to reduce author/reviewer reasoning quality.
 
-Many agents may report progress concurrently, but they should not know about filesystem locking or write coordination. A long-running Python daemon receives requests, serializes them through its own queue and writes one `project.jsonl`. Startup coordination and socket details remain hidden under `.mpres/` and are implementation details, not part of the worker protocol.
+## Production profiles instead of one universal pipeline
 
-## Why internal stages, not stage workers
+The six-stage course method remains valuable for difficult greenfield creation, but it is wasteful when a mature deck already supplies structure, examples, language, and continuity. Production profiles select the smallest semantically adequate stage graph. Legacy migration therefore has exactly three stages and preserves qualified material through a canonical delta record.
 
-The six-stage method improves author attention, but repeated assignment approval and respawn add cost without improving semantics. A whole lesson now has one planner-owned contract; stage artifacts/checkpoints preserve structure while the same thread continues.
+The user explicitly retained one fixed author per lesson in migration. Deck-level continuity is recovered at integration and in the later deck revision author, not by replacing lesson ownership with one migration author.
 
-## Why source + HTML math checks only
+## Planner authorship without repetitive prose
 
-Source lint catches delimiter/environment/command errors. Disposable HTML reveals renderer failures and raw-marker leakage. A separate PDF-math evidence layer would add cost while still not proving mathematical correctness; general PDF structural inspection and domain review are sufficient boundaries.
+The key invariant is that a planner chooses assignment semantics, not that the main agent manually repeats the same global policy dozens of times. A planner-approved batch plan is therefore the authoritative semantic act; deterministic unit expansion counts as planner-written. Only top-level `TASK.md` is exclusive to the main agent. All other planner work may be delegated.
 
-## Why no crash-recovery subsystem
+This preserves responsibility while removing model-generated control-plane repetition.
 
-The user explicitly rejected a heavier recovery design. v0.5.0 preserves durable state, one project log, checkpoints, handoffs and thread registry, but recovery decisions remain planner work rather than a new workflow/skill/template system.
+## Critical path rather than speculative concurrency
 
-## Why no workflow freeze
+Higher concurrency does not improve throughput when reviewer assignments, release roles, and distant presentations are created before they can run. v0.6.0 uses one current presentation and at most one next authoring presentation. Reviewer, revision, and release roles are just-in-time. Lazy unit initialization keeps directory existence and actual execution state distinct.
 
-The project does not implement engine-generation locks or migration transactions. Material policy changes still require TASK reconfirmation; ordinary source-code maintenance relies on normal testing and careful task supervision.
+The scheduler favors completing deliverables over preparing distant work.
 
-## Why token accounting remains limited
+## Why lesson authors close before review
 
-Exact counters can still be imported and reported. v0.5.0 does not add orchestration-attempt attribution or budget automation.
+Keeping every lesson author alive for possible findings consumes handles and encourages fragmented revision. Each author now produces a durable unit context packet and closes after handoff. After five full-deck reviews, one deck revision author sees every finding and the complete frozen source, so it can repair cross-lesson consistency rather than distribute changes back into isolated fragments.
+
+## Why all five reviewers still read the whole deck
+
+The user rejected risk-stratified or delta-only review. Each specialist therefore reads the complete frozen deck. The optimization is temporal and structural: reviewers launch only after freeze, share one frozen anchor, submit schema-validated reports, and never recheck the revision. Review quality is not traded for speed.
+
+## Canonical records instead of evidence duplication
+
+Prior versions repeated time plans, MCQ logic, legacy-reuse decisions, and constraints across stage artifacts, manifests, audits, and self-checks. v0.6.0 names a small set of editable canonical records and treats other reports as generated views. Context packets compile references to those records instead of copying entire task histories into each worker prompt.
+
+## Why the engine cannot hot-fix itself
+
+A workflow bug and a courseware task are different projects. Even a purely technical defect may change execution assumptions or distract the task from its confirmed purpose. The user therefore requires `ENGINE-INCIDENT.yaml`, a task policy amendment, revised/reconfirmed `TASK.md`, and separate engine-refactoring work. v0.6.0 deliberately has no in-task hotfix lane.
+
+## Why the toolchain is pinned
+
+The prior unpinned Marp installation changed its generated HTML DOM and invalidated the layout inspector. Exact Marp 4.5.0 pinning plus a three-slide startup smoke fixture turns tool compatibility into a precondition rather than a late production surprise. Explicit DOM readiness and size-aware timeouts prevent zero-slide errors from consuming long fixed waits.
+
+## What remains intentionally unchanged
+
+- Planners use `gpt-5.6-sol/max`; workers use `gpt-5.6-sol/high` by default.
+- Five review channels remain independent.
+- Review aggregation is atomic.
+- There is no reviewer recheck after author revision.
+- Screenshots, model vision, original-PDF worker access, persistent HTML, and non-`TASK.md` hashes remain forbidden.
+- One daemon remains the only project-log writer.
+- Corrective releases never overwrite historical deliverables.

@@ -1,30 +1,22 @@
 ---
 name: presentation-authoring
-description: Coordinate staged parallel lesson authors and integrate a coherent Marp course or report without turning planner suggestions into a rigid classroom script.
+description: Coordinate fixed lesson authors on the critical path, integrate canonical unit handoffs, freeze a coherent Marp deck, and transfer durable context for later revision.
 ---
 
 # Presentation authoring
 
-The author coordinator completes deck-level maps, requests planner-written unit assignments, supervises one lesson author per content unit, validates durable same-thread stage artifacts, integrates fragments, reconciles terminology and semantic objects, builds the PDF, and responds to the sole review.
+The author coordinator works only on an active current-path deck. It supervises one fixed author per materialized lesson, validates the profile-selected stage sequence and canonical unit records, integrates lesson snapshots, reconciles terminology and semantic objects, and runs all author gates.
 
-Planner examples, titles, activities, and page sequences are replaceable hypotheses unless explicitly listed as hard constraints. Local authors may improve them while preserving confirmed scope and recording important decisions.
+The coordinator does not write lesson assignments and does not pre-create future workers. It may request planner decisions, but lesson semantics come from the approved batch plan.
 
-For courses, every unit includes exactly 2–3 diagnostically useful multiple-choice prompt/answer pairs at different conceptual points. Reports are exempt. A question must require fresh inference, not merely repeat the previous slide.
+Before freeze, require:
 
-After review, the author responds to every finding, completes the modification checklist, revises, reruns lint/assets/PDF inspection, and submits the revision. No reviewer or verifier evaluates the revision again.
+- complete `UNIT-DELTA.yaml`, `UNIT-CONTEXT-PACKET.yaml`, `UNIT-MANIFEST.yaml`, `INTERACTION-RECORD.yaml`, time plan, GeoGebra record, and self-check for every unit;
+- course-level terminology, semantic-object, and cross-deck continuity consistency;
+- valid 2–3 diagnostic MCQ pairs per course lesson; reports are exempt;
+- source, asset, math, density, disposable-HTML overflow, and PDF checks;
+- a compiled `AUTHOR-CONTEXT-PACKET.yaml` based on integrated snapshots rather than live lesson threads.
 
-Only extracted reference text and explicitly permitted web text may be read. Never open or process the original reference PDF.
+Freeze the complete deck exactly once and hand it to review. The author coordinator and original lesson authors may then close. They do not own post-review revision; a single deck revision author revises the whole deck from the context packet and five-channel findings.
 
-## Course meeting and time strategy
-
-A course deck is organized by numbered class meetings, not by textbook chapter boundaries. Each meeting has a core path intended to fit the nominal class duration and an optional worked-example extension bank afterward. Preparing about 1.5 times the nominal duration is a default planning heuristic, not a completion requirement or hard gate. At class end the instructor may stop without presenting the extension examples.
-
-Before any review request, the author coordinator must pass the temporary Marp HTML overflow check and record it in SELF-CHECK.md. Reviewers do not repeat this mechanical check.
-
-## Course-level continuity
-
-For a course, use `COURSE-TERMINOLOGY.yaml`, `COURSE-SEMANTIC-OBJECTS.yaml`, `CROSS-DECK-HANDOFFS.yaml`, and each deck's `PRESENTATION-CONTINUITY-MAP.yaml`. A deck term must map to a course term, course-scoped semantic objects must exist in the course registry, and later decks must state what terms/objects are reactivated from the previous meeting.
-
-## Teaching-move density
-
-Every slide receives one `principal_teaching_move` entry in `SLIDE-DENSITY-AUDIT.yaml`, plus its substantial blocks and any reason not to split. Character/bullet counts are warnings; the contract is that unrelated teaching actions should not be crowded onto one slide.
+Course meeting time plans are advisory: the core path targets nominal class time and optional worked examples follow it. Preparing roughly 1.5 times the nominal duration is a planning heuristic, not a hard completion gate.

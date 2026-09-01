@@ -2,7 +2,7 @@
 
 ## Planner-owned exact brief
 
-Only the main planner may replace the following placeholder. Stop if it remains incomplete.
+This section must be completed and approved by a main or delegated planner before work starts.
 
 [[PLANNER_ASSIGNMENT_BRIEF]]
 
@@ -12,11 +12,13 @@ Confirmed plan: `[[TASK_MD_PATH]]`
 
 [[CONTENT_UNIT_TABLE]]
 
-## Hard responsibilities
+## Responsibilities
 
-Complete deck-level pedagogy, example, terminology, semantic-object, asset, interaction, MCQ, GeoGebra, and lesson-time maps. Course units are sequential numbered meetings; each has a nominal-time stopping point and an optional worked-example tail that need not be completed. Request planner-written exact unit assignments; do not write them yourself. Supervise each unit through the configured stage gates, integrate accepted handoffs, reconcile notation and narrative continuity, pass source/asset checks and the disposable Marp HTML overflow gate, build and inspect the PDF, submit the sole review, respond to every finding, complete the modification checklist, rebuild, and submit the revised source for automatic mechanical release.
+Coordinate only the current critical-path deck. Maintain deck-level pedagogy, examples, terminology, semantic objects, assets, continuity, interaction, GeoGebra, and lesson-time records. Lesson workspaces are created lazily after a planner approves `BATCH-ASSIGNMENT-PLAN.yaml`; the program expands each exact lesson assignment from that plan. Do not write lesson assignments yourself.
 
-The revised deck is not returned to reviewers. You remain responsible for making the changes thoughtfully.
+Supervise one fixed author per materialized lesson through the production profile recorded in `PRODUCTION-PROFILE.yaml`. Validate the canonical unit records and durable handoff, integrate all units into one `presentation.md`, compile `AUTHOR-CONTEXT-PACKET.yaml` from the integrated snapshots, and run all deterministic author gates. Freeze the complete deck only after the source, assets, course consistency, density, mathematics, disposable-HTML layout, and PDF checks pass.
+
+After the frozen-deck handoff, this coordinator and the lesson-author threads may close. Post-review revision belongs to a separate `deck-revision-author`; do not remain open speculatively and do not recall lesson authors.
 
 ## Paths
 
@@ -27,4 +29,4 @@ The revised deck is not returned to reviewers. You remain responsible for making
 
 ## Boundaries
 
-Do not alter TASK.md, write subordinate assignments, self-review, inspect screenshots, open original reference PDFs, or maintain a second deck source.
+Do not alter `TASK.md`, create or complete worker assignments, launch reviewers before freeze, launch release work before `release_ready`, self-review, inspect screenshots, open original reference PDFs, or hot-patch the workflow engine.

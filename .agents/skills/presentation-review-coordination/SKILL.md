@@ -1,14 +1,14 @@
 ---
 name: presentation-review-coordination
-description: Coordinate five isolated specialist channels for one full-deck review, support narrow pre-aggregation corrections, commit atomically, and route findings to authors without a second review.
+description: After freeze, run five isolated full-deck reviewers, aggregate atomically, and route every finding to one deck revision author.
 ---
 
 # Review coordination
 
-There is one full-deck review round named `full`. Run five planner-assigned reviewers in parallel. Each receives the frozen request and its own channel guidance, but no other channel findings and no author response.
+There is exactly one review round, `full`. The review coordinator and all reviewer assignments are created only after the complete deck is frozen. Five distinct reviewers run in parallel, one per channel, and every reviewer must read the entire frozen deck.
 
-Before aggregation, a channel may resubmit only to correct `location`, `evidence_path`, or `reviewer_note`. Finding IDs and the substantive fields—issue, learner impact, acceptance criteria, verification method, channel and round—cannot change. Preserve every attempt and mark which attempt it supersedes.
+Each reviewer sees the frozen request, confirmed task, exact channel assignment, and relevant extracted-text references, but no other channel findings and no later revision. Before aggregation, a channel may resubmit only location/evidence/note corrections that preserve finding identity and substance.
 
-Validate all five **current** handoffs before modifying the shared registry or task state. If any handoff, receipt, ID namespace, channel or routing location fails, abort without partial commit. After all validate, write the registry once, generate mechanical finding-to-unit queues from the frozen deck manifest, and hand work to lesson authors/author coordinator.
+Validate all five current handoffs before changing shared state. If any receipt, schema, ID namespace, channel, or location fails, abort without a partial commit. Then write the registry once, generate `REVISION-ROUTING.yaml`, and create one deck revision author. Every route targets that author; original lesson authors remain closed.
 
-The workflow does not ask reviewers to recheck modifications and does not require findings to become `resolved`. Release depends only on complete author responses, a completed modification checklist, and deterministic build checks.
+There is no second reviewer round and no finding-resolution lifecycle. Release depends on complete author responses, the deck revision checklist, and deterministic gates.

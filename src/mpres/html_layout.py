@@ -11,6 +11,10 @@ from mpres.browser import browser_launch_options
 from mpres.util import MPresError, copy_source_tree, executable, local_marp_binary, run_command
 
 SYNTHETIC_ORIGIN = "http://mpres.invalid"
+SLIDE_SELECTOR = (
+    "section[data-marpit-scope], .marpit > section, "
+    "svg[data-marpit-svg] > foreignObject > section, svg[data-marpit-svg] section"
+)
 
 
 def _marp_html_command(root: Path, source: Path, output: Path, policy: dict[str, Any]) -> list[str]:
@@ -42,7 +46,9 @@ _LAYOUT_SCRIPT = r"""
 () => {
   const candidates = [
     ...document.querySelectorAll('section[data-marpit-scope]'),
-    ...document.querySelectorAll('.marpit > section')
+    ...document.querySelectorAll('.marpit > section'),
+    ...document.querySelectorAll('svg[data-marpit-svg] > foreignObject > section'),
+    ...document.querySelectorAll('svg[data-marpit-svg] section')
   ];
   const slides = [...new Set(candidates)];
   function stableSlideId(slide, index) {
@@ -147,7 +153,8 @@ def _inspect_with_playwright(html_path: Path, asset_root: Path, *, timeout: int)
             try:
                 context = browser.new_context(viewport={"width": 1440, "height": 900})
                 page = context.new_page()
-                page.set_default_timeout(timeout_ms)
+                readiness_timeout_ms = min(timeout_ms, 10000)
+                page.set_default_timeout(readiness_timeout_ms)
                 page.on("pageerror", lambda error: page_errors.append(str(error)))
                 page.on(
                     "requestfailed",
@@ -191,11 +198,15 @@ def _inspect_with_playwright(html_path: Path, asset_root: Path, *, timeout: int)
                     route.fulfill(status=200, content_type=content_type, body=candidate.read_bytes())
 
                 context.route("**/*", route_request)
-                page.set_content(html_text, wait_until="networkidle", timeout=timeout_ms)
+                page.set_content(
+                    html_text,
+                    wait_until="domcontentloaded",
+                    timeout=min(timeout_ms, 15000),
+                )
                 page.wait_for_selector(
-                    "section[data-marpit-scope], .marpit > section",
+                    SLIDE_SELECTOR,
                     state="attached",
-                    timeout=timeout_ms,
+                    timeout=readiness_timeout_ms,
                 )
                 page.evaluate(
                     """async () => {
@@ -217,7 +228,9 @@ def _inspect_with_playwright(html_path: Path, asset_root: Path, *, timeout: int)
                     r"""() => {
                       const candidates = [
                         ...document.querySelectorAll('section[data-marpit-scope]'),
-                        ...document.querySelectorAll('.marpit > section')
+                        ...document.querySelectorAll('.marpit > section'),
+                        ...document.querySelectorAll('svg[data-marpit-svg] > foreignObject > section'),
+                        ...document.querySelectorAll('svg[data-marpit-svg] section')
                       ];
                       const sections = [...new Set(candidates)];
                       return sections.map((slide, index) => {
@@ -237,7 +250,7 @@ def _inspect_with_playwright(html_path: Path, asset_root: Path, *, timeout: int)
             finally:
                 browser.close()
     except PlaywrightTimeoutError as exc:
-        raise MPresError("Timed out while waiting for the temporary Marp HTML layout.") from exc
+        raise MPresError("Temporary Marp HTML did not expose a supported slide DOM within 10 seconds; check the pinned Marp/inspector contract.") from exc
     except MPresError:
         raise
     except Exception as exc:

@@ -8,7 +8,14 @@ from typing import Any
 
 from mpres.assignments import scaffold_assignment_contract
 from mpres.logs import append_log
-from mpres.production import assignment_path, check_assignment
+from mpres.milestones import record_milestone
+from mpres.production import (
+    assignment_path,
+    check_assignment,
+    prepare_release_coordinator_workspace,
+    prepare_review_coordinator_workspace,
+    prepare_revision_author_workspace,
+)
 from mpres.rendering import RENDER_PIPELINE, source_and_build_paths
 from mpres.revision_routing import build_revision_routing, write_revision_work_queues
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state, save_state
@@ -152,8 +159,8 @@ def _scaffold_specialist_assignments(
             channel=channel,
             requested_by="review-coordinator",
             need=(
-                f"Planner must personally write the exact {channel} assignment for the sole "
-                "full-deck review."
+                f"A planner must own the exact {channel} assignment for the sole full-deck review; "
+                "the reviewer must read the complete frozen deck."
             ),
         )
         report = report_template.replace("[[CHANNEL]]", channel).replace(
@@ -184,6 +191,8 @@ def request_review(
     *,
     changed_areas: list[str] | None = None,
 ) -> dict[str, Any]:
+    """Freeze one complete deck, then materialize—not pre-create—the five-channel review."""
+
     require_gate(root, slug)
     state = load_state(root, slug)
     if state.get("phase") != "working":
@@ -191,10 +200,9 @@ def request_review(
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") != "authoring":
         raise MPresError("The sole full review may be requested only from authoring status.")
-    for role in ("author-coordinator", "review-coordinator"):
-        assignment = check_assignment(root, slug, role, presentation_id)
-        if not assignment.get("ready"):
-            raise MPresError(f"{role} assignment is incomplete or not planner-approved.")
+    author_assignment = check_assignment(root, slug, "author-coordinator", presentation_id)
+    if not author_assignment.get("ready"):
+        raise MPresError("author-coordinator assignment is incomplete or not planner-approved.")
     source, build = source_and_build_paths(root, slug, presentation_id, "author")
     report, evidence_paths = _validate_render(build, "author")
     self_check = source / "SELF-CHECK.md"
@@ -212,37 +220,53 @@ def request_review(
     for path in evidence_paths:
         shutil.copy2(path, request_root / "rendered" / path.name)
     make_tree_read_only(request_root / "rendered")
+    frozen_utc = utc_now()
     request = {
-        "schema_version": 3,
+        "schema_version": 4,
         "task_slug": slug,
         "presentation_id": presentation_id,
         "round": REVIEW_ROUND,
-        "created_utc": utc_now(),
-        "scope": "one complete frozen-deck review across five isolated channels",
+        "created_utc": frozen_utc,
+        "scope": "complete frozen deck; every one of five reviewers reads the entire deck",
         "changed_areas": changed_areas or [],
         "source_path": relative_display(request_root / "source", root),
-        "pdf_path": relative_display(
-            request_root / "rendered" / f"{presentation_id}.pdf", root
-        ),
+        "pdf_path": relative_display(request_root / "rendered" / f"{presentation_id}.pdf", root),
         "render_transaction_id": report.get("render_transaction_id"),
-        "status": "pending",
+        "status": "pending_planner_approval_of_review_assignments",
         "post_revision_review": "forbidden-by-policy",
         "integrity_policy": "frozen snapshot; no hashes except TASK.md confirmation",
     }
     write_json_atomic(request_root / "request.json", request)
     make_tree_read_only(request_root / "source")
-    _scaffold_specialist_assignments(root, slug, presentation_id, request_root)
+
+    review_root = _review_root(root, slug, presentation_id)
+    review_plan = review_root / "REVIEW-PLAN.yaml"
+    plan_text = (root / "templates" / "structured" / "REVIEW-PLAN.template.yaml").read_text(encoding="utf-8")
+    for old, new in {
+        "[[PRESENTATION_ID]]": presentation_id,
+        "[[FROZEN_UTC]]": frozen_utc,
+        "[[FROZEN_SOURCE]]": relative_display(request_root / "source", root),
+        "[[FROZEN_PDF]]": relative_display(request_root / "rendered" / f"{presentation_id}.pdf", root),
+    }.items():
+        plan_text = plan_text.replace(old, new)
+    review_plan.write_text(plan_text, encoding="utf-8", newline="\n")
+
     presentation["status"] = "review_requested"
     presentation["active_round"] = REVIEW_ROUND
     presentation["rounds"] = {
         REVIEW_ROUND: {
             "status": "requested",
             "request": relative_display(request_root / "request.json", root),
+            "review_plan": relative_display(review_plan, root),
             "channels": {},
             "requested_utc": request["created_utc"],
         }
     }
     save_state(root, slug, state)
+    # Review workers and assignments are created only after the frozen snapshot exists.
+    prepare_review_coordinator_workspace(root, slug, presentation_id)
+    _scaffold_specialist_assignments(root, slug, presentation_id, request_root)
+    record_milestone(root, slug, "deck_frozen", presentation_id=presentation_id, data={"review_plan": relative_display(review_plan, root)})
     append_log(
         root,
         slug,
@@ -250,11 +274,10 @@ def request_review(
         kind="review",
         presentation_id=presentation_id,
         round_name=REVIEW_ROUND,
-        message="Submitted the sole full-deck review request.",
-        data={"request": relative_display(request_root / "request.json", root)},
+        message="Froze the complete deck and created the just-in-time five-channel full-deck review.",
+        data={"request": relative_display(request_root / "request.json", root), "review_plan": relative_display(review_plan, root)},
     )
     return request
-
 
 def _normalize_findings_file(path: Path) -> list[dict[str, Any]]:
     value = read_yaml(path)
@@ -474,6 +497,9 @@ def aggregate_round(
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") not in {"review_requested", "reviewing"}:
         raise MPresError(f"Cannot aggregate in {presentation.get('status')!r} status.")
+    coordinator_assignment = check_assignment(root, slug, "review-coordinator", presentation_id)
+    if not coordinator_assignment.get("ready"):
+        raise MPresError("review-coordinator assignment is incomplete or not planner-approved.")
     round_state = presentation["rounds"][REVIEW_ROUND]
     channels = round_state.get("channels", {})
     missing = [channel for channel in REVIEW_CHANNELS if channel not in channels]
@@ -486,7 +512,6 @@ def aggregate_round(
     if len(aggregate_text.strip()) < 350:
         raise MPresError("Aggregate report is too short.")
 
-    # Validate every current handoff before changing the shared registry or task state.
     collected: list[dict[str, Any]] = []
     source_submissions: dict[str, str] = {}
     ids: set[str] = set()
@@ -513,41 +538,36 @@ def aggregate_round(
 
     request = read_json(_request_root(root, slug, presentation_id) / "request.json")
     request_source = root / str(request["source_path"])
-    routing = build_revision_routing(
-        root,
-        slug,
-        presentation_id,
-        findings=collected,
-        request_source=request_source,
-    )
+    review_plan = _review_root(root, slug, presentation_id) / "REVIEW-PLAN.yaml"
+    routing = build_revision_routing(root, slug, presentation_id, findings=collected, request_source=request_source)
 
     canonical = _review_root(root, slug, presentation_id) / REVIEW_ROUND / "aggregate.md"
     registry_value = {
-        "schema_version": 4,
+        "schema_version": 5,
         "presentation_id": presentation_id,
         "findings": collected,
         "source_submissions": source_submissions,
     }
-    # Commit only after all validation and routing have succeeded.
     canonical.write_text(aggregate_text, encoding="utf-8", newline="\n")
     _save_findings(root, slug, presentation_id, registry_value)
-    routing_result = write_revision_work_queues(root, slug, presentation_id, routing)
 
-    source = (
-        task_path(root, slug)
-        / "workers"
-        / "author-coordinator"
-        / "drafts"
-        / presentation_id
-        / "source"
+    _, source = prepare_revision_author_workspace(
+        root,
+        slug,
+        presentation_id,
+        frozen_source=request_source,
+        finding_registry=_findings_path(root, slug, presentation_id),
+        review_plan=review_plan,
     )
+    routing_result = write_revision_work_queues(root, slug, presentation_id, routing)
     response_path = source / "AUTHOR-RESPONSES.yaml"
     write_yaml_atomic(
         response_path,
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "presentation_id": presentation_id,
             "responding_to_round": REVIEW_ROUND,
+            "responding_role": "deck-revision-author",
             "responses": [
                 {
                     "id": str(item["id"]),
@@ -561,24 +581,26 @@ def aggregate_round(
         },
     )
     checklist_path = source / "AUTHOR-MODIFICATION-CHECKLIST.yaml"
-    template = (
-        root / "templates" / "structured" / "AUTHOR-MODIFICATION-CHECKLIST.template.yaml"
-    ).read_text(encoding="utf-8").replace("[[PRESENTATION_ID]]", presentation_id)
+    template = (root / "templates" / "structured" / "AUTHOR-MODIFICATION-CHECKLIST.template.yaml").read_text(encoding="utf-8").replace("[[PRESENTATION_ID]]", presentation_id)
     checklist_path.write_text(template, encoding="utf-8", newline="\n")
     decision = {
-        "schema_version": 4,
+        "schema_version": 5,
         "presentation_id": presentation_id,
         "round": REVIEW_ROUND,
         "completed_utc": utc_now(),
         "required_channels": list(REVIEW_CHANNELS),
+        "each_reviewer_read_entire_deck": True,
         "finding_ids": sorted(ids),
         "source_submissions": source_submissions,
         "aggregate_report": relative_display(canonical, root),
         "revision_routing": routing_result["routing"],
+        "revision_queue": routing_result["revision_queue"],
+        "revision_role": "deck-revision-author",
         "author_response_template": relative_display(response_path, root),
         "modification_checklist": relative_display(checklist_path, root),
         "next_status": "author_revision",
         "post_revision_review": "none",
+        "original_lesson_authors_reopened": False,
     }
     write_json_atomic(canonical.parent / "decision.json", decision)
     round_state["status"] = "completed"
@@ -587,6 +609,8 @@ def aggregate_round(
     presentation["status"] = "author_revision"
     presentation["active_round"] = None
     save_state(root, slug, state)
+    record_milestone(root, slug, "review_aggregated", presentation_id=presentation_id, data={"finding_count": len(ids)})
+    record_milestone(root, slug, "revision_handoff", presentation_id=presentation_id, data={"role": "deck-revision-author"})
     append_log(
         root,
         slug,
@@ -594,14 +618,10 @@ def aggregate_round(
         kind="review",
         presentation_id=presentation_id,
         round_name=REVIEW_ROUND,
-        message=(
-            f"Atomically collected five current channel handoffs with {len(ids)} finding(s), "
-            "generated mechanical revision routing, and handed work to the author without re-review."
-        ),
-        data={"routing": routing_result["routing"]},
+        message=(f"Atomically collected five full-deck channel handoffs with {len(ids)} finding(s) and handed the frozen deck to one deck-revision-author; original lesson authors remain closed."),
+        data={"routing": routing_result["routing"], "revision_queue": routing_result["revision_queue"]},
     )
     return decision
-
 
 def record_author_responses(
     root: Path,
@@ -614,9 +634,12 @@ def record_author_responses(
     state = load_state(root, slug)
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") != "author_revision":
-        raise MPresError("Author responses are expected only during author_revision.")
+        raise MPresError("Deck-revision-author responses are expected only during author_revision.")
+    revision_assignment = check_assignment(root, slug, "deck-revision-author", presentation_id)
+    if not revision_assignment.get("ready"):
+        raise MPresError("deck-revision-author assignment is incomplete or not planner-approved.")
     if not response_file.is_file() or text_placeholders(response_file):
-        raise MPresError("Structured author response file is missing or incomplete.")
+        raise MPresError("Structured revision-author response file is missing or incomplete.")
     data = read_yaml(response_file)
     responses = data.get("responses") if isinstance(data, dict) else None
     if not isinstance(responses, list) or data.get("responding_to_round") != REVIEW_ROUND:
@@ -625,48 +648,33 @@ def record_author_responses(
     by_id = {str(item.get("id")): item for item in registry["findings"] if isinstance(item, dict)}
     response_ids = [str(item.get("id")) for item in responses if isinstance(item, dict)]
     if len(response_ids) != len(set(response_ids)):
-        raise MPresError("Author response file contains duplicate finding IDs.")
+        raise MPresError("Revision-author response file contains duplicate finding IDs.")
     if set(response_ids) != set(by_id):
         missing = sorted(set(by_id) - set(response_ids))
         extra = sorted(set(response_ids) - set(by_id))
-        raise MPresError(f"Author responses must cover every finding exactly; missing={missing}, extra={extra}.")
+        raise MPresError(f"Responses must cover every finding exactly; missing={missing}, extra={extra}.")
     for response in responses:
         finding_id = str(response["id"])
         disposition = str(response.get("disposition") or "")
         if disposition not in AUTHOR_DISPOSITIONS:
-            raise MPresError(f"Author response {finding_id} has invalid disposition.")
+            raise MPresError(f"Response {finding_id} has invalid disposition.")
         for field in ("evidence", "location"):
             if len(str(response.get(field) or "").strip()) < 5:
-                raise MPresError(f"Author response {finding_id} lacks substantive {field}.")
+                raise MPresError(f"Response {finding_id} lacks substantive {field}.")
         by_id[finding_id]["author_response"] = {
             "recorded_utc": utc_now(),
+            "responding_role": "deck-revision-author",
             "disposition": disposition,
             "evidence": response["evidence"],
             "location": response["location"],
             "remaining_uncertainty": response.get("remaining_uncertainty"),
         }
     _save_findings(root, slug, presentation_id, registry)
-    canonical = (
-        task_path(root, slug)
-        / "workers"
-        / "author-coordinator"
-        / "drafts"
-        / presentation_id
-        / "source"
-        / "AUTHOR-RESPONSES.yaml"
-    )
+    canonical = task_path(root, slug) / "workers" / "deck-revision-author" / "drafts" / presentation_id / "source" / "AUTHOR-RESPONSES.yaml"
     if response_file.resolve() != canonical.resolve():
         shutil.copy2(response_file, canonical)
-    append_log(
-        root,
-        slug,
-        actor="author-coordinator",
-        kind="review",
-        presentation_id=presentation_id,
-        message=f"Recorded author responses for all {len(response_ids)} finding(s).",
-    )
-    return {"presentation_id": presentation_id, "responses_recorded": response_ids}
-
+    append_log(root, slug, actor="deck-revision-author", kind="review", presentation_id=presentation_id, message=f"Recorded deck revision responses for all {len(response_ids)} finding(s).")
+    return {"presentation_id": presentation_id, "responses_recorded": response_ids, "role": "deck-revision-author"}
 
 def complete_author_revision(
     root: Path,
@@ -675,56 +683,40 @@ def complete_author_revision(
     *,
     checklist_file: Path,
 ) -> dict[str, Any]:
-    """Accept the author's completed revision without reviewer re-verification.
-
-    This gate checks workflow completion and successful mechanical rebuild only. It deliberately
-    does not decide whether any finding is resolved.
-    """
+    """Accept the deck revision author's completed work without reviewer re-verification."""
 
     require_gate(root, slug)
     state = load_state(root, slug)
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") != "author_revision":
-        raise MPresError("Author revision may be completed only from author_revision status.")
+        raise MPresError("Deck revision may be completed only from author_revision status.")
+    revision_assignment = check_assignment(root, slug, "deck-revision-author", presentation_id)
+    if not revision_assignment.get("ready"):
+        raise MPresError("deck-revision-author assignment is incomplete or not planner-approved.")
     registry = _load_findings(root, slug, presentation_id)
-    missing_responses = [
-        str(item.get("id"))
-        for item in registry["findings"]
-        if isinstance(item, dict) and not isinstance(item.get("author_response"), dict)
-    ]
+    missing_responses = [str(item.get("id")) for item in registry["findings"] if isinstance(item, dict) and not isinstance(item.get("author_response"), dict)]
     if missing_responses:
-        raise MPresError("Every finding needs an author response before release: " + ", ".join(missing_responses))
+        raise MPresError("Every finding needs a deck-revision-author response before release: " + ", ".join(missing_responses))
     if not checklist_file.is_file() or text_placeholders(checklist_file):
-        raise MPresError("Author modification checklist is missing or incomplete.")
+        raise MPresError("Deck revision modification checklist is missing or incomplete.")
     checklist = read_yaml(checklist_file)
     steps = checklist.get("steps") if isinstance(checklist, dict) else None
     required_steps = {
-        "reread_all_findings",
-        "responded_to_every_finding",
-        "revised_source",
-        "reran_source_lint",
-        "reran_asset_validation",
-        "reran_html_layout_inspection",
-        "rebuilt_pdf",
-        "reran_pdf_inspection",
-        "completed_self_check",
+        "reread_all_findings", "responded_to_every_finding", "revised_source",
+        "reran_source_lint", "reran_asset_validation", "reran_html_layout_inspection",
+        "rebuilt_pdf", "reran_pdf_inspection", "completed_self_check",
     }
     if not isinstance(steps, dict) or any(steps.get(key) is not True for key in required_steps):
-        raise MPresError("Every author modification checklist step must be true.")
+        raise MPresError("Every deck revision modification checklist step must be true.")
     if len(str(checklist.get("author_declaration") or "").strip()) < 20:
-        raise MPresError("Author declaration is missing or too short.")
-    release_assignment = check_assignment(root, slug, "release-coordinator", presentation_id)
-    if not release_assignment.get("ready"):
-        raise MPresError("The planner-written release-coordinator assignment is incomplete or unapproved.")
+        raise MPresError("Deck revision author declaration is missing or too short.")
     source, build = source_and_build_paths(root, slug, presentation_id, "author")
     canonical_checklist = source / "AUTHOR-MODIFICATION-CHECKLIST.yaml"
     if checklist_file.resolve() != canonical_checklist.resolve():
-        raise MPresError(
-            "Complete the canonical AUTHOR-MODIFICATION-CHECKLIST.yaml inside the author source."
-        )
+        raise MPresError("Complete the canonical AUTHOR-MODIFICATION-CHECKLIST.yaml inside the deck revision source.")
     completed_utc = parse_utc(str(checklist.get("completed_utc") or ""))
     if completed_utc is None:
-        raise MPresError("Author modification checklist must record a valid completed_utc timestamp.")
+        raise MPresError("Modification checklist must record a valid completed_utc timestamp.")
     revision_note = source / "AUTHOR-REVISION.md"
     if not revision_note.is_file() or text_placeholders(revision_note):
         raise MPresError("AUTHOR-REVISION.md is missing or incomplete.")
@@ -732,18 +724,9 @@ def complete_author_revision(
         raise MPresError("AUTHOR-REVISION.md is too short to document the completed revision workflow.")
     report, evidence_paths = _validate_render(build, "author")
     report_time = parse_utc(report.get("started_and_finished_utc"))
-    latest_input_mtime = max(
-        canonical.stat().st_mtime
-        for canonical in (
-            source / "AUTHOR-RESPONSES.yaml",
-            checklist_file,
-            source / "SELF-CHECK.md",
-            source / "AUTHOR-REVISION.md",
-        )
-        if canonical.exists()
-    )
+    latest_input_mtime = max(path.stat().st_mtime for path in (source / "AUTHOR-RESPONSES.yaml", checklist_file, source / "SELF-CHECK.md", source / "AUTHOR-REVISION.md") if path.exists())
     if report_time is None or report_time.timestamp() + 1 < latest_input_mtime:
-        raise MPresError("The successful author render predates the response/checklist; rerender after revision.")
+        raise MPresError("The successful revision render predates the response/checklist; rerender after revision.")
 
     task = task_path(root, slug)
     ready_root = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
@@ -762,15 +745,14 @@ def complete_author_revision(
     for path in evidence_paths:
         shutil.copy2(path, ready_root / path.name)
     approval = {
-        "schema_version": 3,
+        "schema_version": 4,
         "task_slug": slug,
         "presentation_id": presentation_id,
         "ready_utc": utc_now(),
         "source": relative_display(ready_root / "source", root),
+        "revision_role": "deck-revision-author",
         "author_responses": relative_display(ready_root / "AUTHOR-RESPONSES.yaml", root),
-        "modification_checklist": relative_display(
-            ready_root / "AUTHOR-MODIFICATION-CHECKLIST.yaml", root
-        ),
+        "modification_checklist": relative_display(ready_root / "AUTHOR-MODIFICATION-CHECKLIST.yaml", root),
         "finding_count": len(registry["findings"]),
         "finding_resolution_checked": False,
         "post_revision_reviewer_verification": False,
@@ -780,20 +762,14 @@ def complete_author_revision(
     presentation["status"] = "release_ready"
     presentation["author_revision_completed_utc"] = approval["ready_utc"]
     save_state(root, slug, state)
+    prepare_release_coordinator_workspace(root, slug, presentation_id)
+    record_milestone(root, slug, "release_ready", presentation_id=presentation_id, data={"revision_role": "deck-revision-author"})
     append_log(
-        root,
-        slug,
-        actor="author-coordinator",
-        kind="handoff",
-        presentation_id=presentation_id,
-        message=(
-            "Completed the author-owned revision and handed the frozen source directly to "
-            "mechanical release without reviewer confirmation or resolved-status checks."
-        ),
+        root, slug, actor="deck-revision-author", kind="handoff", presentation_id=presentation_id,
+        message="Completed the deck-wide revision and handed the frozen source directly to mechanical release without reviewer recheck.",
         data={"release_ready": relative_display(ready_root / "release-readiness.json", root)},
     )
     return approval
-
 
 def return_to_author(
     root: Path, slug: str, presentation_id: str, *, reason: str
@@ -804,7 +780,7 @@ def return_to_author(
     state = load_state(root, slug)
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") != "release_ready":
-        raise MPresError("Only a release-ready presentation can return to the author.")
+        raise MPresError("Only a release-ready presentation can return to the deck revision author.")
     ready = task_path(root, slug) / "workers" / "release-coordinator" / "release-ready" / presentation_id
     archive = ready.parent / f"{presentation_id}-returned-{utc_now().replace(':', '')}"
     if ready.exists():
@@ -819,7 +795,7 @@ def return_to_author(
         actor="release-coordinator",
         kind="warning",
         presentation_id=presentation_id,
-        message="Returned release-ready source because a semantic source change became necessary.",
+        message="Returned release-ready source to the deck revision author because a semantic source change became necessary.",
         data=record,
     )
     return record
@@ -940,30 +916,34 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
         state["phase"] = "complete"
     elif state.get("stop_mode") == "each":
         state["phase"] = "awaiting_user_continuation"
+        for item in remaining:
+            item["active"] = False
+        state["critical_path_presentation"] = str(remaining[0].get("id"))
     elif state.get("stop_mode") == "pilot" and not state.get("pilot_pause_completed") and sequence == 1:
         state["phase"] = "awaiting_user_continuation"
+        for item in remaining:
+            item["active"] = False
+        state["critical_path_presentation"] = str(remaining[0].get("id"))
     else:
         state["phase"] = "working"
-        policy = read_yaml(task / "EXECUTION-POLICY.yaml") or {}
-        capacity = max(1, int(((policy.get("authoring") or {}).get("max_parallel_presentations", 2)) or 2))
-        active = sum(
-            1 for item in state.get("presentations", [])
-            if item.get("active") and item.get("status") != "finalized"
-        )
-        for item in state.get("presentations", []):
-            if active >= capacity:
-                break
-            if not item.get("active") and item.get("status") != "finalized":
-                item["active"] = True
-                active += 1
+        from mpres.scheduling import rebalance_active_presentations
+
+        rebalance_active_presentations(root, slug, state, allow_next=True)
     save_state(root, slug, state)
+    if state.get("phase") == "working":
+        from mpres.production import materialize_active_author_coordinators
+
+        materialize_active_author_coordinators(root, slug, state=state)
+    from mpres.scheduling import sync_work_plan
+
+    sync_work_plan(root, slug, state=state)
     append_log(
         root,
         slug,
         actor="release-coordinator",
         kind="delivery",
         presentation_id=presentation_id,
-        message="Published the Marp PDF and source after author-owned revision and mechanical release.",
+        message="Published the Marp PDF and source after deck-revision-author work and mechanical release.",
         data={"pdf": release["pdf"], "next_phase": state["phase"]},
     )
     return release

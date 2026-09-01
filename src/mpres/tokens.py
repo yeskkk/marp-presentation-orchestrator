@@ -284,9 +284,24 @@ def _identity(meta: dict[str, Any], overrides: dict[str, Any]) -> dict[str, str]
     declared = str(meta.get("declared_role") or "")
     if path == "/root":
         role, stage = "planner", "planning-supervision"
-    elif declared in {"lesson-author", "author-coordinator", "review-coordinator", "release-coordinator", "specialist-reviewer"}:
+    elif declared in {
+        "lesson-author",
+        "author-coordinator",
+        "deck-revision-author",
+        "review-coordinator",
+        "release-coordinator",
+        "specialist-reviewer",
+        "delegated-planner",
+    }:
         role = declared
-        stage = "review" if "review" in role else "authoring" if "author" in role else "release"
+        if role == "delegated-planner":
+            stage = "planning-supervision"
+        elif "review" in role:
+            stage = "review"
+        elif "author" in role:
+            stage = "authoring"
+        else:
+            stage = "release"
     elif "review" in path:
         role, stage = "specialist-reviewer", "review"
     elif "lesson" in path or "author" in path:

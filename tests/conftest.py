@@ -10,8 +10,14 @@ import fitz
 import pytest
 import yaml
 
-from mpres.assignments import approve_assignment, contract_paths
+from mpres.assignments import (
+    approve_assignment,
+    approve_batch_plan,
+    batch_plan_path,
+    contract_paths,
+)
 from mpres.production import initialize_production
+from mpres.scheduling import queue_unit
 from mpres.stages import (
     stage_artifact_path,
     stage_status,
@@ -35,10 +41,45 @@ def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "AGENTS.md",
         "AGENT.md",
         "MODEL-POLICY.yaml",
+        "TOOLCHAIN-LOCK.yaml",
     ]:
         if (source / name).exists():
             shutil.copy2(source / name, tmp_path / name)
     (tmp_path / "tasks").mkdir()
+    smoke = tmp_path / ".mpres" / "toolchain-smoke.yaml"
+    smoke.parent.mkdir(parents=True, exist_ok=True)
+    smoke.write_text(
+        "schema_version: 1\n"
+        "completed_utc: 2026-09-01T00:00:00Z\n"
+        "expected_marp_version: 4.5.0\n"
+        "actual_marp_version: 4.5.0\n"
+        "html_slide_count: 3\n"
+        "pdf_page_count: 3\n"
+        "meeting_number_fields: [global_meeting_number, deck_local_ordinal]\n"
+        "errors: []\n"
+        "success: true\n",
+        encoding="utf-8",
+    )
+    smoke_dir = tmp_path / ".mpres"
+    smoke_dir.mkdir(parents=True, exist_ok=True)
+    write_yaml_atomic(
+        smoke_dir / "toolchain-smoke.yaml",
+        {
+            "schema_version": 1,
+            "completed_utc": utc_now(),
+            "expected_marp_version": "4.5.0",
+            "actual_marp_version": "4.5.0",
+            "html_slide_count": 3,
+            "pdf_page_count": 3,
+            "meeting_number_fields": ["global_meeting_number", "deck_local_ordinal"],
+            "errors": [],
+            "success": True,
+            "test_fixture": True,
+        },
+    )
+    # A successful smoke report implies that the exact pinned local CLI is installed. The test
+    # fixture materializes the deterministic fake equivalent before any production initialization.
+    install_fake_marp(tmp_path, version="4.5.0")
     if Path("/usr/bin/chromium").is_file():
         os.environ["MPRES_CHROMIUM_EXECUTABLE"] = "/usr/bin/chromium"
     return tmp_path
@@ -136,6 +177,7 @@ def make_confirmed_task(
     stop_mode: str = "all",
     slug: str = "test-task",
     minutes: int = 90,
+    production_mode: str = "greenfield_full",
 ) -> tuple[str, Path]:
     slug, task = create_task(
         root=root,
@@ -145,6 +187,7 @@ def make_confirmed_task(
         stop_mode=stop_mode,
         sessions=2 if kind == "course" else None,
         minutes=minutes if kind == "course" else None,
+        production_mode=production_mode,
     )
     fill_placeholders(task / "TASK.md")
     with (task / "TASK.md").open("a", encoding="utf-8") as handle:
@@ -161,9 +204,15 @@ def initialize_one_deck(
     stop_mode: str = "all",
     slug: str = "test-task",
     minutes: int = 90,
+    production_mode: str = "greenfield_full",
 ) -> tuple[str, Path]:
     slug, task = make_confirmed_task(
-        root, kind=kind, stop_mode=stop_mode, slug=slug, minutes=minutes
+        root,
+        kind=kind,
+        stop_mode=stop_mode,
+        slug=slug,
+        minutes=minutes,
+        production_mode=production_mode,
     )
     initialize_production(
         root,
@@ -194,18 +243,78 @@ def planner_write_and_approve(root: Path, slug: str, assignment: Path) -> None:
     value["acceptance_criteria"] = ["完成指定产物并通过结构化检查。"]
     value["deferred_questions"] = ["无"]
     write_yaml_atomic(brief, value)
-    approve_assignment(root, slug, assignment, notes="planner personally wrote this assignment")
+    approve_assignment(
+        root,
+        slug,
+        assignment,
+        notes="a main or delegated planner wrote this assignment",
+        planner_actor="delegated-planner:test",
+    )
+
+
+def approve_batch_and_queue_unit(root: Path, slug: str, task: Path) -> Path:
+    plan = batch_plan_path(root, slug)
+    if not plan.is_file():
+        raise AssertionError(f"missing batch plan: {plan}")
+    if (read_yaml(plan) or {}).get("status") != "approved":
+        fill_placeholders(
+            plan,
+            value=(
+                "由受委派 planner 写定的精确单元范围、听众背景、先备知识、"
+                "允许的局部判断、基线差量、资料路径和验收标准"
+            ),
+        )
+        value = read_yaml(plan)
+        assert isinstance(value, dict)
+        value["written_by"] = "planner"
+        value["planner_actor"] = "delegated-planner:test"
+        value["common"]["hard_constraints"] = ["只执行获批批次计划，不访问受限原件。"]
+        value["common"]["replaceable_hypotheses"] = ["可调整局部措辞，不改变课程目标。"]
+        value["common"]["local_decision_rights"] = ["可调整局部页序和例题数字。"]
+        value["common"]["approved_text_sources"] = [
+            f"tasks/{slug}/downloads/text/reference.txt"
+        ]
+        value["common"]["acceptance_criteria"] = ["完成阶段产物并通过结构化检查。"]
+        for presentation in value.get("presentations", []):
+            presentation["common_constraints"] = ["保持整份课件术语和对象连续。"]
+            for unit in presentation.get("units", []):
+                unit["unit_scope"] = "完成本课次的概念链、诊断题和可选延伸例题。"
+                unit["audience_context"] = "面向需要直观入口、但仍须看到严格定义的学习者。"
+                unit["prior_knowledge_to_reactivate"] = "只重新激活当前课次直接使用的既有知识，并明确不扩展到与本课次无关的先备内容。"
+                unit["local_decision_rights"] = ["可调整本课次页序、措辞和例题数字。"]
+                unit["approved_text_sources"] = [f"tasks/{slug}/downloads/text/reference.txt"]
+                unit["acceptance_criteria"] = ["交付完整 lesson fragment 和 durable handoff。"]
+                unit["baseline_source"] = "none"
+                unit["baseline_maturity"] = "not_applicable"
+                unit["legacy_source_ranges"] = ["none"]
+                unit["required_delta"] = ["完成本课次获批教学目标。"]
+                unit["known_risks"] = ["避免课次编号、互动配对和核心/选讲边界漂移。"]
+        write_yaml_atomic(plan, value)
+        approve_batch_plan(
+            root,
+            slug,
+            planner_actor="delegated-planner:test",
+            notes="test planner approved one batch plan for deterministic expansion",
+        )
+    queue_unit(root, slug, "p01", "u01")
+    return task / "workers" / "lesson-authors" / "p01" / "u01" / "TASK-LESSON-AUTHOR.md"
 
 
 def approve_core_assignments(root: Path, slug: str, task: Path) -> None:
-    paths = [
-        task / "workers" / "author-coordinator" / "assignments" / "p01" / "TASK-AUTHOR-COORDINATOR.md",
-        task / "workers" / "review-coordinator" / "assignments" / "p01" / "TASK-REVIEW-COORDINATOR.md",
-        task / "workers" / "release-coordinator" / "assignments" / "p01" / "TASK-RELEASE-COORDINATOR.md",
-        task / "workers" / "lesson-authors" / "p01" / "u01" / "TASK-LESSON-AUTHOR.md",
-    ]
-    for path in paths:
-        planner_write_and_approve(root, slug, path)
+    # The deck coordinator is individually planner-approved. Lesson semantics come from the
+    # approved batch plan. Review, revision, and release roles do not exist until their gates.
+    author = (
+        task
+        / "workers"
+        / "author-coordinator"
+        / "assignments"
+        / "p01"
+        / "TASK-AUTHOR-COORDINATOR.md"
+    )
+    if not (read_yaml(contract_paths(author)[2]) or {}).get("status") == "approved":
+        planner_write_and_approve(root, slug, author)
+    lesson = approve_batch_and_queue_unit(root, slug, task)
+    assert (read_yaml(contract_paths(lesson)[2]) or {}).get("written_by") == "planner-via-approved-batch"
 
 
 def complete_authoring_stages(root: Path, slug: str, task: Path) -> None:
@@ -388,6 +497,8 @@ def write_unit_source(task: Path, *, kind: str = "course") -> None:
             "unit_id": "u01",
             "title": "第一节内容",
             "meeting_number": 1 if kind == "course" else None,
+            "global_meeting_number": 1 if kind == "course" else None,
+            "deck_local_ordinal": 1,
             "meeting_label": "第 1 节课" if kind == "course" else "报告部分 1",
             "organization_basis": "course_meeting" if kind == "course" else "report_section",
             "slide_ids": slide_ids,
@@ -398,24 +509,20 @@ def write_unit_source(task: Path, *, kind: str = "course") -> None:
         },
     )
     write_yaml_atomic(
-        unit / "INTERACTION-MANIFEST.yaml",
+        unit / "INTERACTION-RECORD.yaml",
         {
-            "schema_version": 2,
-            "presentation_id": "p01",
-            "unit_id": "u01",
-            "interactions": interactions,
-        },
-    )
-    write_yaml_atomic(
-        unit / "MCQ-AUDIT.yaml",
-        {
-            "schema_version": 2,
+            "schema_version": 1,
             "presentation_id": "p01",
             "unit_id": "u01",
             "task_kind": kind,
-            "items": items,
+            "canonical": True,
+            "interactions": interactions,
+            "mcq_items": items,
         },
     )
+    from mpres.interactions import materialize_unit_interaction_views
+
+    materialize_unit_interaction_views(unit)
     write_yaml_atomic(
         unit / "GEOGEBRA-RESOURCES.yaml",
         {
@@ -575,6 +682,8 @@ def prepare_author_source(root: Path, slug: str, task: Path, *, kind: str = "cou
                     "id": "u01",
                     "title": "第一节内容",
                     "meeting_number": 1 if kind == "course" else None,
+                    "global_meeting_number": 1 if kind == "course" else None,
+                    "deck_local_ordinal": 1,
                     "meeting_label": "第 1 节课" if kind == "course" else "报告部分 1",
                     "organization_basis": "course_meeting" if kind == "course" else "report_section",
                     "source": "sections/u01/section.md",
@@ -604,7 +713,7 @@ def prepare_author_source(root: Path, slug: str, task: Path, *, kind: str = "cou
     return author
 
 
-def install_fake_marp(root: Path, *, version: str = "9.9.9", overflow_html: bool = False) -> Path:
+def install_fake_marp(root: Path, *, version: str = "4.5.0", overflow_html: bool = False) -> Path:
     """Install a fast deterministic Marp test double."""
 
     binary = root / "node_modules" / ".bin" / "marp"
@@ -639,6 +748,46 @@ def complete_specialist_assignments(root: Path, slug: str, task: Path) -> None:
         planner_write_and_approve(root, slug, assignment)
 
 
+def approve_review_coordinator(root: Path, slug: str, task: Path) -> None:
+    planner_write_and_approve(
+        root,
+        slug,
+        task
+        / "workers"
+        / "review-coordinator"
+        / "assignments"
+        / "p01"
+        / "TASK-REVIEW-COORDINATOR.md",
+    )
+
+
+def approve_revision_author(root: Path, slug: str, task: Path) -> Path:
+    planner_write_and_approve(
+        root,
+        slug,
+        task
+        / "workers"
+        / "deck-revision-author"
+        / "assignments"
+        / "p01"
+        / "TASK-DECK-REVISION-AUTHOR.md",
+    )
+    return task / "workers" / "deck-revision-author" / "drafts" / "p01" / "source"
+
+
+def approve_release_coordinator(root: Path, slug: str, task: Path) -> None:
+    planner_write_and_approve(
+        root,
+        slug,
+        task
+        / "workers"
+        / "release-coordinator"
+        / "assignments"
+        / "p01"
+        / "TASK-RELEASE-COORDINATOR.md",
+    )
+
+
 def release_zero_finding_deck(
     root: Path, *, slug: str = "maintenance-task"
 ) -> tuple[str, Path, dict[str, Any]]:
@@ -655,10 +804,11 @@ def release_zero_finding_deck(
     from mpres.state import REVIEW_CHANNELS
 
     slug, task = initialize_one_deck(root, slug=slug)
-    install_fake_marp(root, version="55.0.0")
+    install_fake_marp(root, version="4.5.0")
     source = prepare_author_source(root, slug, task)
     render_presentation(root, slug, "p01", stage="author", timeout=60)
     request_review(root, slug, "p01")
+    approve_review_coordinator(root, slug, task)
     for channel in REVIEW_CHANNELS:
         channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel
         planner_write_and_approve(root, slug, channel_root / "TASK-SPECIALIST-REVIEWER.md")
@@ -693,6 +843,7 @@ def release_zero_finding_deck(
         encoding="utf-8",
     )
     aggregate_round(root, slug, "p01", round_name="full", aggregate_path=aggregate)
+    source = approve_revision_author(root, slug, task)
     responses = source / "AUTHOR-RESPONSES.yaml"
     response_value = read_yaml(responses)
     assert response_value["responses"] == []
@@ -714,6 +865,7 @@ def release_zero_finding_deck(
     )
     render_presentation(root, slug, "p01", stage="author", timeout=60)
     complete_author_revision(root, slug, "p01", checklist_file=checklist)
+    approve_release_coordinator(root, slug, task)
     render_presentation(root, slug, "p01", stage="release", timeout=60)
     release = finalize_release(root, slug, "p01")
     return slug, task, release

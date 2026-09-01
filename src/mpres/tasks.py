@@ -11,22 +11,31 @@ except ImportError:
     _slugify = None
 
 from mpres.logs import append_log
+from mpres.milestones import record_milestone
+from mpres.production_profiles import PRODUCTION_MODES, profile_for
 from mpres.state import SCHEMA_VERSION, load_state, save_state, state_file
 from mpres.util import (
     MPresError,
+    read_yaml,
     relative_display,
     task_path,
     task_sha256,
     text_placeholders,
     utc_now,
     write_json_atomic,
-    read_yaml,
 )
 
 STOP_MODES = {"pilot", "each", "all"}
 
 
-def _copy_policy_templates(root: Path, task: Path, slug: str, kind: str) -> None:
+def _copy_policy_templates(
+    root: Path,
+    task: Path,
+    slug: str,
+    kind: str,
+    production_mode: str,
+) -> None:
+    profile = profile_for(production_mode, kind)
     templates = {
         "EXECUTION-POLICY.yaml": "policies/EXECUTION-POLICY.template.yaml",
         "REVIEW-PROFILE.yaml": "policies/REVIEW-PROFILE.template.yaml",
@@ -43,14 +52,16 @@ def _copy_policy_templates(root: Path, task: Path, slug: str, kind: str) -> None
     for destination, template_name in templates.items():
         source = root / "templates" / template_name
         text = source.read_text(encoding="utf-8")
-        text = text.replace("[[TASK_SLUG]]", slug)
-        text = text.replace("[[REPOSITORY_PATH]]", ".")
-        text = text.replace("[[TASK_KIND_CODE]]", kind)
-        text = text.replace("[[MCQ_ENABLED]]", "true" if kind == "course" else "false")
-        text = text.replace(
-            "[[AUTHORING_STAGE_PROFILE]]",
-            "course_six" if kind == "course" else "report_compact",
-        )
+        replacements = {
+            "[[TASK_SLUG]]": slug,
+            "[[REPOSITORY_PATH]]": ".",
+            "[[TASK_KIND_CODE]]": kind,
+            "[[MCQ_ENABLED]]": "true" if kind == "course" else "false",
+            "[[AUTHORING_STAGE_PROFILE]]": profile.stage_profile,
+            "[[PRODUCTION_MODE]]": production_mode,
+        }
+        for old, new in replacements.items():
+            text = text.replace(old, new)
         (task / destination).write_text(text, encoding="utf-8", newline="\n")
 
 
@@ -72,6 +83,51 @@ def _choose_slug(title: str, slug: str | None) -> str:
     return selected
 
 
+def _stage_description(mode: str, kind: str) -> tuple[str, str, str]:
+    profile = profile_for(mode, kind)
+    labels = {
+        "01_scope_sources": "scope_sources",
+        "02_learner_need": "learner_need",
+        "03_domain_development": "domain_development",
+        "04_entry_diagnostics": "entry_diagnostics",
+        "05_learner_language": "learner_language",
+        "06_marp_integration": "marp_integration",
+        "02_audience_domain": "audience_domain",
+        "03_narrative_language": "narrative_language",
+        "04_marp_integration": "marp_integration",
+        "m01_baseline_audit": "baseline_audit",
+        "m02_delta_design_patch": "delta_design_patch",
+        "m03_integration_semantic_check": "integration_semantic_check",
+        "r01_defect_scope": "defect_scope",
+        "r02_patch_regression": "patch_regression",
+    }
+    stage_list = "\n".join(
+        f"{index}. `{labels.get(stage, stage)}`" for index, stage in enumerate(profile.stages, start=1)
+    )
+    if mode == "legacy_migration":
+        description = (
+            "迁移任务完全跳过绿地六阶段流程；每个课次仍固定由一名 lesson-author 在同一 thread 内完成三阶段 migration profile。"
+        )
+        mcq = (
+            "迁移阶段保留并修正既有互动；课程 unit 仍须最终包含 2—3 道合格诊断性选择题。"
+            if kind == "course"
+            else "学术报告不设选择题数量配额。"
+        )
+    elif mode == "targeted_revision":
+        description = "定点修订只执行缺陷界定和补丁回归两个阶段，不扩张范围。"
+        mcq = "仅当受影响时回归检查互动题；不得借机重写整课。"
+    else:
+        description = (
+            "每个 lesson-author 在一份 planner-approved assignment 和同一个 thread 内采用任务选定的绿地写作阶段。"
+        )
+        mcq = (
+            "课程 unit 必须设计 2—3 道高质量诊断性选择题并完成唯一 canonical interaction record。"
+            if kind == "course"
+            else "学术报告不设选择题数量配额；保留互动仍须有明确作用。"
+        )
+    return description, stage_list, mcq
+
+
 def create_task(
     *,
     root: Path,
@@ -81,12 +137,15 @@ def create_task(
     stop_mode: str,
     sessions: int | None,
     minutes: int | None,
+    production_mode: str = "greenfield_full",
 ) -> tuple[str, Path]:
     title = title.strip()
     if not title:
         raise MPresError("The title/topic is required.")
     if kind not in {"course", "report"}:
         raise MPresError("Task kind must be course or report.")
+    if production_mode not in PRODUCTION_MODES:
+        raise MPresError("Unsupported production mode: " + production_mode)
     if stop_mode not in STOP_MODES:
         raise MPresError("Stop mode must be pilot, each, or all.")
     if kind == "course" and (sessions is None or minutes is None):
@@ -96,6 +155,7 @@ def create_task(
     if minutes is not None and minutes <= 0:
         raise MPresError("--minutes must be positive.")
 
+    profile = profile_for(production_mode, kind)
     selected_slug = _choose_slug(title, slug)
     task = task_path(root, selected_slug)
     if task.exists():
@@ -110,10 +170,13 @@ def create_task(
         task / "downloads" / "tmp",
         task / "review-cache",
         task / "token-usage",
+        task / "planning",
+        task / "engine-incidents",
     ]:
         directory.mkdir(parents=True, exist_ok=True)
 
     template = (root / "templates" / "TASK.template.md").read_text(encoding="utf-8")
+    description, stage_list, mcq_requirement = _stage_description(production_mode, kind)
     replacements = {
         "[[TASK_TITLE]]": title,
         "[[TASK_SLUG]]": selected_slug,
@@ -123,36 +186,41 @@ def create_task(
         "[[TASK_NAME]]": title,
         "[[SESSION_COUNT_OR_NA]]": str(sessions) if sessions is not None else "不适用",
         "[[MINUTES_OR_NA]]": str(minutes) if minutes is not None else "不适用",
-        "[[AUTHORING_STAGE_DESCRIPTION]]": (
-            "每个 lesson-author 在一份 planner assignment 和同一个 thread 内采用六阶段课程写作流程；"
-            if kind == "course"
-            else "每个 lesson-author 在一份 planner assignment 和同一个 thread 内采用四阶段精简报告流程；"
-        ),
-        "[[AUTHORING_STAGE_LIST]]": (
-            "1. `scope_sources`\n2. `learner_need`\n3. `domain_development`\n"
-            "4. `entry_diagnostics`\n5. `learner_language`\n6. `marp_integration`"
-            if kind == "course"
-            else "1. `scope_sources`\n2. `audience_domain`\n"
-            "3. `narrative_language`\n4. `marp_integration`"
-        ),
-        "[[MCQ_STAGE_REQUIREMENT]]": (
-            "课程 unit 的 `entry_diagnostics` 阶段必须设计 2—3 道高质量诊断性选择题；"
-            "最终集成阶段负责题答相邻分页、manifest 和 option audit。"
-            if kind == "course"
-            else "学术报告不设选择题数量配额；保留的互动仍须有明确作用并完成审计。"
-        ),
+        "[[PRODUCTION_MODE]]": production_mode,
+        "[[AUTHORING_STAGE_PROFILE]]": profile.stage_profile,
+        "[[AUTHORING_STAGE_DESCRIPTION]]": description,
+        "[[AUTHORING_STAGE_LIST]]": stage_list,
+        "[[MCQ_STAGE_REQUIREMENT]]": mcq_requirement,
     }
     for old, new in replacements.items():
         template = template.replace(old, new)
     (task / "TASK.md").write_text(template, encoding="utf-8", newline="\n")
-    _copy_policy_templates(root, task, selected_slug, kind)
+    _copy_policy_templates(root, task, selected_slug, kind, production_mode)
+
+    profile_template = (root / "templates" / "structured" / "PRODUCTION-PROFILE.template.yaml").read_text(encoding="utf-8")
+    for old, new in {
+        "[[TASK_KIND]]": kind,
+        "[[PRODUCTION_MODE]]": production_mode,
+        "[[STAGE_PROFILE]]": profile.stage_profile,
+        "[[STAGE_LIST_FLOW]]": "[" + ", ".join(profile.stages) + "]",
+        "[[UNIT_GRANULARITY]]": profile.unit_granularity,
+    }.items():
+        profile_template = profile_template.replace(old, new)
+    (task / "PRODUCTION-PROFILE.yaml").write_text(profile_template, encoding="utf-8", newline="\n")
+    shutil.copy2(
+        root / "templates" / "structured" / "PERFORMANCE-BUDGET.template.yaml",
+        task / "PERFORMANCE-BUDGET.yaml",
+    )
+    shutil.copy2(
+        root / "templates" / "structured" / "MILESTONE-CHECKPOINT.template.json",
+        task / "state" / "MILESTONE-CHECKPOINT.json",
+    )
     (task / "THREAD-REGISTRY.yaml").write_text(
         (root / "templates" / "structured" / "THREAD-REGISTRY.template.yaml").read_text(encoding="utf-8"),
         encoding="utf-8",
         newline="\n",
     )
     (task / "policy-change-requests").mkdir(parents=True, exist_ok=True)
-
     (task / "downloads" / "INDEX.md").write_text(
         "# Extracted reference-text index\n\n"
         "Workers may read only files under `downloads/text/`. Original files and ingestion "
@@ -162,7 +230,7 @@ def create_task(
         newline="\n",
     )
     (task / "token-usage" / "README.md").write_text(
-        "# Token usage\n\nUse exact exported counters only; unavailable values remain unavailable.\n",
+        "# Token usage\n\nCollect exact counters at workflow milestones; unavailable values remain unavailable.\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -173,6 +241,8 @@ def create_task(
         "task_slug": selected_slug,
         "title": title,
         "kind": kind,
+        "production_mode": production_mode,
+        "stage_profile": profile.stage_profile,
         "stop_mode": stop_mode,
         "pilot_pause_completed": False,
         "sessions": sessions,
@@ -195,12 +265,11 @@ def create_task(
         actor="planner",
         kind="decision",
         message=(
-            "Created the Marp task planning directory. Remind the user that there is one full-deck "
-            "five-channel review, no reviewer recheck of author changes, screenshot-free PDF-only "
-            "inspection, high default reasoning, 2–3 course MCQs per unit, extracted-text-only "
-            "reference access, planner-owned assignments, and disabled-by-default Python figures."
+            "Created a profile-driven Marp task. The main agent alone writes or revises TASK.md; "
+            "all later planner operations may be delegated. Control-plane scheduling is deterministic, "
+            "five reviewers read the full deck, and engine bugs require a policy amendment rather than a hot patch."
         ),
-        data={"title": title, "kind": kind, "stop_mode": stop_mode},
+        data={"title": title, "kind": kind, "stop_mode": stop_mode, "production_mode": production_mode},
     )
     return selected_slug, task
 
@@ -271,6 +340,7 @@ def confirm_task(root: Path, slug: str) -> dict[str, Any]:
     state.pop("phase_before_confirmation", None)
     state.pop("confirmation_kind", None)
     save_state(root, slug, state)
+    record_milestone(root, slug, "task_confirmed", data={"confirmation_sequence": state["confirmation_sequence"]})
     append_log(
         root,
         slug,
@@ -323,10 +393,21 @@ def gate_status(root: Path, slug: str) -> tuple[bool, str, dict[str, Any]]:
     return True, "Confirmation gate passed.", state
 
 
-def require_gate(root: Path, slug: str) -> dict[str, Any]:
+def require_gate(
+    root: Path,
+    slug: str,
+    *,
+    allow_pending_policy_change: bool = False,
+) -> dict[str, Any]:
     ok, message, state = gate_status(root, slug)
     if not ok:
         raise MPresError(message)
+    pending = state.get("pending_policy_change_request")
+    if pending and not allow_pending_policy_change:
+        raise MPresError(
+            f"Task policy amendment {pending!r} is pending. Revise and reconfirm TASK.md, then "
+            "confirm the amendment before resuming production."
+        )
     return state
 
 
@@ -364,24 +445,20 @@ def continue_task(root: Path, slug: str) -> dict[str, Any]:
     if state.get("stop_mode") == "pilot" and not state.get("pilot_pause_completed"):
         state["pilot_pause_completed"] = True
     state["phase"] = "working"
-    policy = read_yaml(task_path(root, slug) / "EXECUTION-POLICY.yaml") or {}
-    authoring = policy.get("authoring", {}) if isinstance(policy, dict) else {}
-    configured = int(authoring.get("max_parallel_presentations", 2) or 2)
-    capacity = 1 if state.get("stop_mode") == "each" else max(1, configured)
-    active = sum(
-        1
-        for item in state.get("presentations", [])
-        if item.get("active") and item.get("status") != "finalized"
+    from mpres.scheduling import rebalance_active_presentations, sync_work_plan
+
+    window = rebalance_active_presentations(
+        root,
+        slug,
+        state,
+        allow_next=state.get("stop_mode") != "each",
     )
-    activated: list[str] = []
-    for item in state.get("presentations", []):
-        if active >= capacity:
-            break
-        if not item.get("active") and item.get("status") != "finalized":
-            item["active"] = True
-            active += 1
-            activated.append(str(item.get("id")))
+    activated = window["activated"]
     save_state(root, slug, state)
+    from mpres.production import materialize_active_author_coordinators
+
+    materialize_active_author_coordinators(root, slug, state=state)
+    sync_work_plan(root, slug, state=state)
     append_log(
         root,
         slug,

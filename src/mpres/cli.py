@@ -9,7 +9,9 @@ from typing import Any
 from mpres.assets import run_python_asset, validate_assets
 from mpres.assignments import (
     approve_assignment,
+    approve_batch_plan,
     assignment_contract_status,
+    batch_plan_status,
     revoke_assignment,
 )
 from mpres.audit import audit_task
@@ -18,6 +20,7 @@ from mpres.doctor import doctor_report
 from mpres.geogebra import validate_task_geogebra
 from mpres.course_consistency import validate_course_consistency
 from mpres.density import validate_slide_density
+from mpres.engine_incidents import record_engine_incident
 from mpres.html_layout import inspect_task_html_layout
 from mpres.log_daemon import daemon_status, start_log_daemon, stop_log_daemon
 from mpres.logs import append_log, log_file, read_log_tail
@@ -42,6 +45,8 @@ from mpres.production import (
     check_assignment,
     initialize_production,
 )
+from mpres.production_profiles import PRODUCTION_MODES
+from mpres.scheduling import critical_path_plan, queue_unit
 from mpres.references import ingest_reference
 from mpres.rendering import render_presentation, source_and_build_paths
 from mpres.review import (
@@ -84,7 +89,8 @@ from mpres.tokens import (
     save_token_snapshot,
     token_report,
 )
-from mpres.util import MPresError, find_repo_root
+from mpres.toolchain import load_toolchain_lock, smoke_toolchain
+from mpres.util import MPresError, find_repo_root, read_yaml
 
 
 def _json(value: Any) -> None:
@@ -135,6 +141,7 @@ def _checkpoint_coordinates(parser: argparse.ArgumentParser) -> None:
             "author-coordinator",
             "lesson-author",
             "review-coordinator",
+            "deck-revision-author",
             "release-coordinator",
         ],
         required=True,
@@ -148,7 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="mpres",
         description=(
             "Parallel Marp-to-PDF presentation orchestration with staged authors, one "
-            "five-channel full-deck review, and author-owned post-review revision."
+            "five-channel full-deck review, and deck-revision-author-owned post-review revision."
         ),
     )
     parser.add_argument("--root", type=Path)
@@ -168,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--stop-mode", choices=["pilot", "each", "all"], required=True)
     init.add_argument("--sessions", type=int)
     init.add_argument("--minutes", type=int)
+    init.add_argument("--production-mode", choices=PRODUCTION_MODES, default="greenfield_full")
     task_sub.add_parser("list").add_argument("--json", action="store_true")
     for name in ("present", "confirm", "gate", "status", "continue", "restore-confirmed"):
         sub = task_sub.add_parser(name)
@@ -194,8 +202,15 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("path", type=Path)
         if name == "approve":
             sub.add_argument("--notes")
+            sub.add_argument("--planner-actor", default="delegated-planner")
         if name == "revoke":
             sub.add_argument("--reason", required=True)
+    batch_status = assignment_sub.add_parser("batch-status")
+    batch_status.add_argument("slug")
+    batch_approve = assignment_sub.add_parser("batch-approve")
+    batch_approve.add_argument("slug")
+    batch_approve.add_argument("--planner-actor", required=True)
+    batch_approve.add_argument("--notes")
 
     production = commands.add_parser("production")
     production_sub = production.add_subparsers(dest="production_command", required=True)
@@ -206,6 +221,12 @@ def build_parser() -> argparse.ArgumentParser:
     activate = production_sub.add_parser("activate")
     activate.add_argument("slug")
     activate.add_argument("--presentation", action="append", required=True)
+    queue = production_sub.add_parser("queue-unit")
+    queue.add_argument("slug")
+    queue.add_argument("--presentation", required=True)
+    queue.add_argument("--unit", required=True)
+    critical = production_sub.add_parser("critical-path")
+    critical.add_argument("slug")
 
     author = commands.add_parser("author")
     author_sub = author.add_subparsers(dest="author_command", required=True)
@@ -529,6 +550,21 @@ def build_parser() -> argparse.ArgumentParser:
             default="presentation_id",
         )
 
+    toolchain = commands.add_parser("toolchain")
+    toolchain_sub = toolchain.add_subparsers(dest="toolchain_command", required=True)
+    smoke = toolchain_sub.add_parser("smoke")
+    smoke.add_argument("--timeout", type=int, default=120)
+    toolchain_sub.add_parser("status")
+
+    engine = commands.add_parser("engine")
+    engine_sub = engine.add_subparsers(dest="engine_command", required=True)
+    incident = engine_sub.add_parser("incident")
+    incident.add_argument("slug")
+    incident.add_argument("--id", required=True)
+    incident.add_argument("--symptom", required=True)
+    incident.add_argument("--reproduction", action="append", required=True)
+    incident.add_argument("--blocked-operation", required=True)
+
     audit = commands.add_parser("audit")
     audit.add_argument("slug")
     return parser
@@ -555,6 +591,7 @@ def main(argv: list[str] | None = None) -> int:
                     stop_mode=args.stop_mode,
                     sessions=args.sessions,
                     minutes=args.minutes,
+                    production_mode=args.production_mode,
                 )
                 _json({"task_slug": slug, "task_path": str(path)})
             elif args.task_command == "list":
@@ -595,11 +632,17 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "assignment":
+            if args.assignment_command == "batch-status":
+                _json(batch_plan_status(root, args.slug))
+                return 0
+            if args.assignment_command == "batch-approve":
+                _json(approve_batch_plan(root, args.slug, planner_actor=args.planner_actor, notes=args.notes))
+                return 0
             path = args.path.expanduser().resolve()
             if args.assignment_command == "status":
                 _json(assignment_contract_status(path))
             elif args.assignment_command == "approve":
-                _json(approve_assignment(root, args.slug, path, notes=args.notes))
+                _json(approve_assignment(root, args.slug, path, notes=args.notes, planner_actor=args.planner_actor))
             else:
                 _json(revoke_assignment(root, args.slug, path, reason=args.reason))
             return 0
@@ -607,8 +650,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "production":
             if args.production_command == "init":
                 _json(initialize_production(root, args.slug, args.presentation, args.unit))
-            else:
+            elif args.production_command == "activate":
                 _json(activate_presentations(root, args.slug, args.presentation))
+            elif args.production_command == "queue-unit":
+                _json(queue_unit(root, args.slug, args.presentation, args.unit))
+            else:
+                _json(critical_path_plan(root, args.slug))
             return 0
 
         if args.command == "author":
@@ -1046,6 +1093,28 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 result = token_report(root, args.slug, group_by=args.group_by)
             _json(result)
+            return 0
+
+        if args.command == "toolchain":
+            if args.toolchain_command == "smoke":
+                result = smoke_toolchain(root, timeout=args.timeout)
+                _json(result)
+                return 0 if result.get("success") else 1
+            _json({
+                "lock": load_toolchain_lock(root),
+                "smoke": read_yaml(root / ".mpres" / "toolchain-smoke.yaml") if (root / ".mpres" / "toolchain-smoke.yaml").is_file() else None,
+            })
+            return 0
+
+        if args.command == "engine":
+            _json(record_engine_incident(
+                root,
+                args.slug,
+                incident_id=args.id,
+                symptom=args.symptom,
+                reproduction=args.reproduction,
+                blocked_operation=args.blocked_operation,
+            ))
             return 0
 
         if args.command == "audit":

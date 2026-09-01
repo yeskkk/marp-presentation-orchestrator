@@ -1,0 +1,17 @@
+schema_version: 1
+presentation_id: "[[PRESENTATION_ID]]"
+created_for: deck-revision-author
+frozen_source: "[[FROZEN_SOURCE]]"
+finding_registry: "[[FINDING_REGISTRY]]"
+review_plan: "[[REVIEW_PLAN]]"
+original_author_threads_may_be_closed: true
+invariants: []
+known_cross_unit_dependencies: []
+mechanical_gates_to_rerun:
+  - source_lint
+  - asset_and_geogebra_validation
+  - course_consistency
+  - density
+  - math_source_and_renderer
+  - temporary_html_overflow
+  - pdf_inspection

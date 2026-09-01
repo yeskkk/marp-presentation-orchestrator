@@ -374,3 +374,43 @@ def validate_presentation_interactions(
         "warnings": warnings,
         "success": not errors,
     }
+
+
+def materialize_unit_interaction_views(source: Path) -> tuple[Path, Path]:
+    """Generate compatibility views from the canonical INTERACTION-RECORD.yaml.
+
+    Authors edit one record only. The two historical files are generated mechanically because the
+    existing validators and release bundles still expose separate interaction and MCQ views.
+    """
+
+    from mpres.util import write_yaml_atomic
+
+    record_path = source / "INTERACTION-RECORD.yaml"
+    value = _mapping(record_path)
+    interactions = value.get("interactions") or []
+    mcq_items = value.get("mcq_items") or []
+    interaction_path = source / "INTERACTION-MANIFEST.yaml"
+    mcq_path = source / "MCQ-AUDIT.yaml"
+    write_yaml_atomic(
+        interaction_path,
+        {
+            "schema_version": 1,
+            "presentation_id": value.get("presentation_id"),
+            "unit_id": value.get("unit_id"),
+            "task_kind": value.get("task_kind"),
+            "generated_from": "INTERACTION-RECORD.yaml",
+            "interactions": interactions,
+        },
+    )
+    write_yaml_atomic(
+        mcq_path,
+        {
+            "schema_version": 1,
+            "presentation_id": value.get("presentation_id"),
+            "unit_id": value.get("unit_id"),
+            "task_kind": value.get("task_kind"),
+            "generated_from": "INTERACTION-RECORD.yaml",
+            "items": mcq_items,
+        },
+    )
+    return interaction_path, mcq_path

@@ -1,10 +1,10 @@
 ---
 name: token-accounting
-description: Collect exact Codex token counters without reading message content and attribute them by presentation, role, unit, channel, stage, and thread.
+description: Import exact token counters at workflow milestones without model polling or repeated full-context collection.
 ---
 
 # Token accounting
 
-Before the first coordinator starts, initialize the collector configuration and run the collector at the task policy interval. It reads only session metadata and token-count event fields, never prompts, responses, or tool contents. Missing counters remain unavailable and are never estimated.
+Collect only exact counters exposed by session metadata; never estimate missing values or read prompt/response contents. Attribute imported counters by assignment epoch, role, presentation, unit, review channel, stage profile, and thread handle.
 
-Planner supervision checks collector freshness and records gaps without stopping recoverable work.
+Generate summaries at meaningful milestones—assignment start/handoff, freeze, review completion, revision completion, and release—not by periodic model polling. Record unavailable counters as unavailable. Cached input remains distinct from uncached input.

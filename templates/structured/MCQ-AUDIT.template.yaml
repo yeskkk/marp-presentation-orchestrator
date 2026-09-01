@@ -1,6 +1,7 @@
-schema_version: 3
+schema_version: 1
 presentation_id: "[[PRESENTATION_ID]]"
 task_kind: "[[TASK_KIND]]"
+generated_from: INTERACTION-RECORD.yaml
 quota:
   course_minimum: 2
   course_maximum: 3

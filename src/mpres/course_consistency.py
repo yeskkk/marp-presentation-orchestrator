@@ -185,14 +185,24 @@ def validate_course_consistency(
     }
     if write_report:
         target_stage = stage or "author"
-        build = (
-            task
-            / "workers"
-            / ("author-coordinator" if target_stage == "author" else "release-coordinator")
-            / ("drafts" if target_stage == "author" else "release-ready")
-            / presentation_id
-            / "build"
-        )
+        if target_stage == "author":
+            state = load_state(root, slug)
+            presentation = get_presentation(state, presentation_id)
+            role = (
+                "deck-revision-author"
+                if presentation.get("status") == "author_revision"
+                else "author-coordinator"
+            )
+            build = task / "workers" / role / "drafts" / presentation_id / "build"
+        else:
+            build = (
+                task
+                / "workers"
+                / "release-coordinator"
+                / "release-ready"
+                / presentation_id
+                / "build"
+            )
         build.mkdir(parents=True, exist_ok=True)
         write_json_atomic(build / f"course-consistency-{target_stage}.json", report)
     return report

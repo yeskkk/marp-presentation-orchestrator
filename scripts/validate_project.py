@@ -15,7 +15,8 @@ from typing import Any
 import yaml
 
 PLACEHOLDER_RE = re.compile(r"\[\[[A-Z0-9_]+\]\]")
-EXPECTED_VERSION = "0.5.0"
+EXPECTED_VERSION = "0.6.0"
+EXPECTED_MARP_VERSION = "4.5.0"
 
 
 class UniqueKeyLoader(yaml.SafeLoader):
@@ -47,6 +48,7 @@ def _filled_template_text(path: Path) -> str:
     text = text.replace(
         "[[CONTENT_UNITS_YAML]]",
         '  - id: "u01"\n    title: "Example unit"\n    meeting_number: 1\n'
+        '    global_meeting_number: 1\n    deck_local_ordinal: 1\n'
         '    meeting_label: "第 1 节课"\n    organization_basis: "course_meeting"\n'
         '    source: "sections/u01/section.md"',
     )
@@ -60,58 +62,133 @@ def _require_paths(root: Path, paths: list[str], errors: list[str]) -> None:
             errors.append(f"required path is missing: {relative}")
 
 
+def _expect(condition: bool, message: str, errors: list[str]) -> None:
+    if not condition:
+        errors.append(message)
+
+
 def _semantic_checks(root: Path, errors: list[str]) -> None:
     pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
     project_version = str(pyproject.get("project", {}).get("version"))
-    if project_version != EXPECTED_VERSION:
-        errors.append(f"pyproject version is {project_version!r}, expected {EXPECTED_VERSION!r}")
+    _expect(
+        project_version == EXPECTED_VERSION,
+        f"pyproject version is {project_version!r}, expected {EXPECTED_VERSION!r}",
+        errors,
+    )
 
     package = json.loads((root / "package.json").read_text(encoding="utf-8"))
-    if str(package.get("version")) != EXPECTED_VERSION:
-        errors.append("package.json version does not match v0.5.0")
+    _expect(
+        str(package.get("version")) == EXPECTED_VERSION,
+        f"package.json version does not match v{EXPECTED_VERSION}",
+        errors,
+    )
     marp_version = package.get("devDependencies", {}).get("@marp-team/marp-cli")
-    if marp_version != "latest":
-        errors.append("Marp CLI must remain unpinned as @marp-team/marp-cli: latest")
+    _expect(
+        marp_version == EXPECTED_MARP_VERSION,
+        f"Marp CLI must be exactly pinned to {EXPECTED_MARP_VERSION}",
+        errors,
+    )
+
+    toolchain = yaml.safe_load((root / "TOOLCHAIN-LOCK.yaml").read_text(encoding="utf-8"))
+    _expect(
+        toolchain.get("marp")
+        == {
+            "package": "@marp-team/marp-cli",
+            "version": EXPECTED_MARP_VERSION,
+            "install_policy": "exact_pinned_version",
+        },
+        "TOOLCHAIN-LOCK.yaml does not contain the exact Marp 4.5.0 policy",
+        errors,
+    )
+    _expect(
+        toolchain.get("inspection", {}).get("smoke_fixture_slides") == 3
+        and toolchain.get("inspection", {}).get("require_success_before_production") is True,
+        "TOOLCHAIN-LOCK.yaml must require a three-slide pre-production smoke test",
+        errors,
+    )
 
     model_policy = yaml.safe_load((root / "MODEL-POLICY.yaml").read_text(encoding="utf-8"))
-    if model_policy.get("planner") != {
-        "model": "gpt-5.6-sol",
-        "reasoning_effort": "max",
-    }:
-        errors.append("MODEL-POLICY.yaml planner runtime must be gpt-5.6-sol/max")
-    if model_policy.get("workers") != {
-        "model": "gpt-5.6-sol",
-        "reasoning_effort": "high",
-    }:
-        errors.append("MODEL-POLICY.yaml worker runtime must be gpt-5.6-sol/high")
+    _expect(
+        model_policy.get("planner")
+        == {"model": "gpt-5.6-sol", "reasoning_effort": "max"},
+        "MODEL-POLICY.yaml planner runtime must be gpt-5.6-sol/max",
+        errors,
+    )
+    _expect(
+        model_policy.get("workers")
+        == {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
+        "MODEL-POLICY.yaml worker runtime must be gpt-5.6-sol/high",
+        errors,
+    )
 
     codex = tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))
-    if codex.get("model") != "gpt-5.6-sol" or codex.get("model_reasoning_effort") != "max":
-        errors.append(".codex/config.toml planner runtime does not match MODEL-POLICY.yaml")
+    _expect(
+        codex.get("model") == "gpt-5.6-sol"
+        and codex.get("model_reasoning_effort") == "max",
+        ".codex/config.toml planner runtime does not match MODEL-POLICY.yaml",
+        errors,
+    )
     agents = codex.get("agents", {})
-    if agents.get("default_subagent_model") != "gpt-5.6-sol" or agents.get(
-        "default_subagent_reasoning_effort"
-    ) != "high":
-        errors.append(".codex/config.toml worker defaults do not match MODEL-POLICY.yaml")
+    _expect(
+        agents.get("default_subagent_model") == "gpt-5.6-sol"
+        and agents.get("default_subagent_reasoning_effort") == "high",
+        ".codex/config.toml worker defaults do not match MODEL-POLICY.yaml",
+        errors,
+    )
 
     for path in sorted((root / ".codex/agents").glob("*.toml")):
         value = tomllib.loads(path.read_text(encoding="utf-8"))
-        if value.get("model") != "gpt-5.6-sol" or value.get("model_reasoning_effort") != "high":
-            errors.append(f"worker runtime mismatch in {path.relative_to(root)}")
+        expected_effort = "max" if path.stem == "delegated-planner" else "high"
+        _expect(
+            value.get("model") == "gpt-5.6-sol"
+            and value.get("model_reasoning_effort") == expected_effort,
+            f"runtime mismatch in {path.relative_to(root)}; expected gpt-5.6-sol/{expected_effort}",
+            errors,
+        )
 
     required = [
+        # Core v0.6.0 control plane.
+        "src/mpres/production_profiles.py",
+        "src/mpres/scheduling.py",
+        "src/mpres/assignments.py",
+        "src/mpres/context_packets.py",
+        "src/mpres/toolchain.py",
+        "src/mpres/engine_incidents.py",
         "src/mpres/log_daemon.py",
-        "src/mpres/logs.py",
-        "src/mpres/stages.py",
-        "src/mpres/orchestration.py",
+        "src/mpres/review.py",
         "src/mpres/revision_routing.py",
-        "src/mpres/course_consistency.py",
-        "src/mpres/density.py",
-        "src/mpres/math_inspection.py",
         "src/mpres/maintenance.py",
+        # New roles.
+        ".codex/agents/delegated-planner.toml",
+        ".codex/agents/deck-revision-author.toml",
+        # New skills.
+        ".agents/skills/courseware-production-profiling/SKILL.md",
+        ".agents/skills/legacy-presentation-migration/SKILL.md",
+        ".agents/skills/critical-path-production-scheduling/SKILL.md",
+        ".agents/skills/context-packet-compilation/SKILL.md",
+        ".agents/skills/workflow-engine-maintenance/SKILL.md",
+        ".agents/skills/deck-revision-authoring/SKILL.md",
+        # Canonical structured records.
+        "templates/structured/PRODUCTION-PROFILE.template.yaml",
+        "templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml",
+        "templates/structured/PRESENTATION-WORK-PLAN.template.yaml",
+        "templates/structured/UNIT-DELTA.template.yaml",
+        "templates/structured/UNIT-CONTEXT-PACKET.template.yaml",
+        "templates/structured/AUTHOR-CONTEXT-PACKET.template.yaml",
+        "templates/structured/INTERACTION-RECORD.template.yaml",
+        "templates/structured/REVIEW-PLAN.template.yaml",
+        "templates/structured/ENGINE-INCIDENT.template.yaml",
+        "templates/structured/PERFORMANCE-BUDGET.template.yaml",
+        "templates/structured/MILESTONE-CHECKPOINT.template.json",
+        "templates/structured/TOOLCHAIN-LOCK.template.yaml",
+        # Profile-specific stages and assignments.
+        "templates/stages/STAGE-M01-BASELINE-AUDIT.template.md",
+        "templates/stages/STAGE-M02-DELTA-DESIGN-PATCH.template.md",
+        "templates/stages/STAGE-M03-INTEGRATION-SEMANTIC-CHECK.template.md",
+        "templates/assignments/TASK-deck-revision-author.template.md",
+        # Retained inspection and maintenance gates.
         ".agents/skills/mathematical-typesetting-inspection/SKILL.md",
         ".agents/skills/presentation-corrective-maintenance/SKILL.md",
-        "templates/assignments/TASK-maintenance.template.md",
         "templates/structured/COURSE-TERMINOLOGY.template.yaml",
         "templates/structured/COURSE-SEMANTIC-OBJECTS.template.yaml",
         "templates/structured/CROSS-DECK-HANDOFFS.template.yaml",
@@ -122,48 +199,164 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     ]
     _require_paths(root, required, errors)
 
+    forbidden_paths = [
+        "templates/structured/LEGACY-MARP-AUDIT.template.md",
+        "templates/structured/LEGACY-REUSE-MAP.template.md",
+        "templates/structured/UNIT-INTERACTION-MANIFEST.template.yaml",
+        "templates/structured/UNIT-MCQ-AUDIT.template.yaml",
+        "tests/test_v050_features.py",
+    ]
+    for relative in forbidden_paths:
+        if (root / relative).exists():
+            errors.append(f"obsolete v0.5.0 path must be removed: {relative}")
+
+    # Exact direct dependency plus explicit repository lock is the selected npm policy.
     if (root / "package-lock.json").exists():
-        errors.append("package-lock.json is forbidden by the unpinned Marp policy")
+        errors.append("package-lock.json is excluded by this repository's explicit lock-file policy")
     if list((root / "templates").rglob("STAGE-ASSIGNMENT*")):
         errors.append("stage-specific assignment templates are forbidden")
     if list(root.rglob("MATH-PDF-EVIDENCE*")):
         errors.append("MATH-PDF-EVIDENCE artifacts/templates are forbidden")
 
-    forbidden_names = {
-        "crash-recovery-and-resumption",
-        "workflow-maintenance-safety",
-    }
-    for path in (root / ".agents/skills").iterdir():
-        if path.name in forbidden_names:
-            errors.append(f"forbidden heavyweight subsystem skill exists: {path.name}")
     for filename in ("recovery.py", "engine_migration.py", "workflow_freeze.py"):
         if (root / "src/mpres" / filename).exists():
             errors.append(f"forbidden heavyweight subsystem module exists: src/mpres/{filename}")
 
     logs_source = (root / "src/mpres/logs.py").read_text(encoding="utf-8")
-    if "project_log_path" not in logs_source or "submit_log_record" not in logs_source:
-        errors.append("logs.py must submit all production logs to the single project log daemon")
     daemon_source = (root / "src/mpres/log_daemon.py").read_text(encoding="utf-8")
-    if '"daemon_sequence"' not in daemon_source or "project_log_path" not in daemon_source:
-        errors.append("log daemon is missing serialized project-log sequencing")
+    _expect(
+        "project_log_path" in logs_source and "submit_log_record" in logs_source,
+        "logs.py must submit production logs to the single project log daemon",
+        errors,
+    )
+    _expect(
+        '"daemon_sequence"' in daemon_source and "project_log_path" in daemon_source,
+        "log daemon is missing serialized project-log sequencing",
+        errors,
+    )
 
-    stage_source = (root / "src/mpres/stages.py").read_text(encoding="utf-8")
-    if "start_stage_sequence" not in stage_source or "submit_stage" not in stage_source:
-        errors.append("one-thread staged authoring API is incomplete")
-    if "STAGE-ASSIGNMENT" in stage_source:
-        errors.append("stages.py still creates stage-specific assignments")
+    profile_source = (root / "src/mpres/production_profiles.py").read_text(encoding="utf-8")
+    for stage_id in (
+        "m01_baseline_audit",
+        "m02_delta_design_patch",
+        "m03_integration_semantic_check",
+    ):
+        _expect(stage_id in profile_source, f"migration profile is missing {stage_id}", errors)
+    _expect(
+        "MIGRATION_STAGES" in profile_source and "COURSE_FULL_STAGES" in profile_source,
+        "production profile module does not separate migration and greenfield stage graphs",
+        errors,
+    )
+
+    execution = yaml.safe_load(
+        (root / "templates/policies/EXECUTION-POLICY.template.yaml").read_text(encoding="utf-8")
+    )
+    _expect(
+        execution.get("planner_delegation", {}).get("main_agent_exclusive")
+        == ["write_or_revise_TASK_md"]
+        and execution.get("planner_delegation", {}).get(
+            "all_other_planner_operations_may_be_delegated"
+        )
+        is True,
+        "execution policy must reserve only TASK.md authorship to the main agent",
+        errors,
+    )
+    _expect(
+        execution.get("authoring", {}).get("one_fixed_author_per_lesson") is True
+        and execution.get("authoring", {}).get("lazy_unit_initialization") is True
+        and execution.get("authoring", {}).get("post_review_revision_role")
+        == "deck-revision-author",
+        "execution policy does not encode fixed lesson authors, lazy init, and deck-level revision",
+        errors,
+    )
+    _expect(
+        execution.get("review", {}).get("each_reviewer_reads_entire_frozen_deck") is True
+        and execution.get("review", {}).get("launch_only_after_freeze") is True,
+        "all five reviewers must launch after freeze and read the entire deck",
+        errors,
+    )
+    _expect(
+        execution.get("engine_changes", {}).get("in_task_hot_patch") == "forbidden"
+        and execution.get("engine_changes", {}).get(
+            "technical_bug_requires_task_policy_amendment"
+        )
+        is True,
+        "workflow-engine technical bugs must require a task policy amendment",
+        errors,
+    )
+    _expect(
+        execution.get("marp", {}).get("version") == EXPECTED_MARP_VERSION
+        and execution.get("marp", {}).get("version_policy") == "exact_pinned_version",
+        "execution policy must use exact Marp 4.5.0",
+        errors,
+    )
+
+    work_plan = yaml.safe_load(
+        (root / "templates/structured/PRESENTATION-WORK-PLAN.template.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    _expect(
+        work_plan.get("policy", {}).get("priority_order")
+        == [
+            "finish_current_review_revision_or_release",
+            "finish_current_presentation",
+            "start_next_ready_presentation",
+            "prepare_future_metadata_without_model_workers",
+        ],
+        "PRESENTATION-WORK-PLAN priority order is inconsistent with scheduling.py",
+        errors,
+    )
 
     cli_source = (root / "src/mpres/cli.py").read_text(encoding="utf-8")
-    if 'commands.add_parser("log-daemon")' not in cli_source:
-        errors.append("CLI does not expose the persistent log daemon")
-    if 'commands.add_parser("maintenance")' not in cli_source:
-        errors.append("CLI does not expose corrective maintenance")
-    if 'commands.add_parser("recover")' in cli_source:
-        errors.append("crash-recovery CLI is intentionally out of scope")
+    for command in (
+        "log-daemon",
+        "maintenance",
+        "production",
+        "toolchain",
+        "engine",
+    ):
+        _expect(
+            f'commands.add_parser("{command}")' in cli_source
+            or f'commands.add_parser(\n        "{command}"' in cli_source,
+            f"CLI does not expose {command}",
+            errors,
+        )
+    _expect('commands.add_parser("recover")' not in cli_source, "recovery CLI is out of scope", errors)
 
     for path in (root / ".codex/agents").glob("*.toml"):
         if path.stem in {"worker1", "worker2"}:
             errors.append(f"numbered worker role is forbidden: {path.name}")
+
+    stale_files = [
+        root / "AGENTS.md",
+        root / "README.md",
+        root / "docs/WORKFLOW.md",
+        root / "docs/DESIGN-NOTES.md",
+        root / "docs/VALIDATION.md",
+        root / "templates/TASK.template.md",
+        root / "templates/policies/WORKER-PROMPT-PREAMBLE.template.md",
+    ]
+    for path in stale_files:
+        text = path.read_text(encoding="utf-8")
+        lowered = text.lower()
+        _expect(
+            "v0.5.0" not in lowered and "0.5.0" not in lowered,
+            f"stale v0.5.0 policy text remains in {path.relative_to(root)}",
+            errors,
+        )
+        for phrase in (
+            "planner personally writes every exact assignment",
+            "every exact worker assignment is written by the main planner",
+            "personally writes and approves every",
+            "unpinned_latest_at_install_time",
+            "latest-at-install",
+        ):
+            _expect(
+                phrase not in lowered,
+                f"stale policy phrase {phrase!r} remains in {path.relative_to(root)}",
+                errors,
+            )
 
 
 def _run_command(command: list[str], *, root: Path, timeout: int = 180) -> tuple[int, str]:
@@ -182,14 +375,23 @@ def _run_command(command: list[str], *, root: Path, timeout: int = 180) -> tuple
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
-        output = (exc.stdout or "") + (exc.stderr or "")
-        return 124, f"timed out after {timeout}s\n{output}"
+        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        return 124, f"timed out after {timeout}s\n{stdout}{stderr}"
     return result.returncode, result.stdout + result.stderr
 
 
 def validate(root: Path, *, run_tests: bool) -> list[str]:
     errors: list[str] = []
-    ignored_parts = {".venv", "node_modules", ".pytest_cache", ".ruff_cache", "__pycache__"}
+    ignored_parts = {
+        ".git",
+        ".venv",
+        "node_modules",
+        ".pytest_cache",
+        ".ruff_cache",
+        "__pycache__",
+        "tasks",
+    }
 
     for path in sorted(root.rglob("*.toml")):
         if any(part in ignored_parts for part in path.parts):
@@ -238,9 +440,13 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
     help_commands = [
         [sys.executable, "-m", "mpres", "--help"],
         [sys.executable, "-m", "mpres", "log-daemon", "--help"],
+        [sys.executable, "-m", "mpres", "assignment", "--help"],
+        [sys.executable, "-m", "mpres", "production", "--help"],
         [sys.executable, "-m", "mpres", "stage", "--help"],
         [sys.executable, "-m", "mpres", "review", "--help"],
         [sys.executable, "-m", "mpres", "maintenance", "--help"],
+        [sys.executable, "-m", "mpres", "toolchain", "--help"],
+        [sys.executable, "-m", "mpres", "engine", "--help"],
     ]
     for command in help_commands:
         returncode, output = _run_command(command, root=root, timeout=30)
@@ -260,7 +466,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate v0.5.0 configs, templates, policies, CLI, source, and tests."
+        description="Validate v0.6.0 configs, templates, policies, CLI, source, and tests."
     )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--skip-tests", action="store_true")

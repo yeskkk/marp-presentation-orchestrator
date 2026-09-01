@@ -25,7 +25,7 @@ def checkpoint_path(
             raise MPresError("lesson-author checkpoint requires --unit.")
         safe_id(unit_id, label="content-unit ID")
         return task / "workers" / "lesson-authors" / presentation_id / unit_id / "checkpoints" / "latest.json"
-    if role in {"review-coordinator", "release-coordinator"}:
+    if role in {"review-coordinator", "deck-revision-author", "release-coordinator"}:
         return task / "workers" / role / "checkpoints" / presentation_id / "latest.json"
     raise MPresError(f"Unsupported checkpoint role: {role}")
 

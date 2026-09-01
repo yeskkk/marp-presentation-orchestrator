@@ -2,7 +2,7 @@
 
 ## Planner-owned exact brief
 
-Only the main planner may replace this placeholder. Stop if it remains incomplete.
+This assignment is runnable only after its semantics have been written by a main or delegated planner, either directly or through an approved batch plan.
 
 [[PLANNER_ASSIGNMENT_BRIEF]]
 
@@ -18,20 +18,24 @@ Only the main planner may replace this placeholder. Stop if it remains incomplet
 
 [[LOCAL_DECISION_RIGHTS]]
 
-## Staged workflow
+## Profile-selected staged workflow
 
 Stage state: `[[STAGE_STATE_PATH]]`
 
-Use the `lesson-authoring-stages` skill. This single planner-approved assignment governs the whole unit. One lesson-author thread completes the stages in order, writes a durable artifact and checkpoint for each stage, and immediately continues to the next stage after `mpres stage submit` validates the current artifact. Do not spawn a new worker, request a new stage assignment, or wait for coordinator acceptance between stages. Course units use all six stages and must design 2–3 valid diagnostic multiple-choice prompt/answer pairs. Academic reports use the compact stage profile and are exempt from the MCQ quota.
+Use `lesson-authoring-stages` and `PRODUCTION-PROFILE.yaml`. One fixed lesson-author thread completes exactly the stage sequence recorded in `UNIT-STAGE-STATE.yaml` under this single assignment. After `mpres stage submit` validates a durable artifact, continue immediately to the next stage. Do not spawn a new worker, request a stage-specific assignment, or wait for coordinator acceptance.
 
-## Shared conventions
+For `legacy_migration`, the three stages are baseline audit, delta design/patch, and integration/semantic check; the six-stage greenfield process is skipped completely. Course units must finish with 2–3 valid diagnostic multiple-choice prompt/answer pairs. Academic reports are exempt from the quota.
 
+## Canonical context and shared conventions
+
+- Unit delta: `[[UNIT_SOURCE_PATH]]/UNIT-DELTA.yaml`
+- Unit context packet: `[[UNIT_SOURCE_PATH]]/UNIT-CONTEXT-PACKET.yaml`
 - Terminology: `[[TERMINOLOGY_PATH]]`
 - Semantic objects: `[[SEMANTIC_OBJECTS_PATH]]`
 - Deck manifest: `[[DECK_MANIFEST_PATH]]`
 - Example map: `[[EXAMPLE_MAP_PATH]]`
-- Interaction manifest: `[[INTERACTION_MANIFEST_PATH]]`
-- MCQ audit: `[[MCQ_AUDIT_PATH]]`
+- Canonical interaction record: `[[INTERACTION_MANIFEST_PATH]]`
+- Generated MCQ compatibility view: `[[MCQ_AUDIT_PATH]]`
 - Asset decisions: `[[ASSET_DECISIONS_PATH]]`
 - GeoGebra record: `[[GEOGEBRA_UNIT_RESOURCES_PATH]]`
 - Lesson/time plan: `[[LESSON_TIME_PLAN_PATH]]`
@@ -40,21 +44,24 @@ Use the `lesson-authoring-stages` skill. This single planner-approved assignment
 
 [[REFERENCES]]
 
-Workers may read only approved extracted text and explicitly permitted web text. Never open, render, convert, OCR, or otherwise inspect an original reference PDF. Record source gaps rather than guessing.
+Read only approved extracted text and explicitly permitted web text. Never open, render, convert, OCR, or otherwise inspect an original reference PDF. Record a source gap rather than guessing.
 
-GeoGebra search is bounded and optional. A selected link must be a verified `geogebra.org/m/...` resource and appears only as a descriptive Markdown hyperlink. Reusing the same verified resource in more than one lesson is allowed; no de-duplication quota applies.
+GeoGebra search is optional and bounded. A selected item must be a verified `geogebra.org/m/...` resource and appear only as a descriptive Markdown hyperlink.
 
-For a course, organize the fragment explicitly as the assigned numbered class meeting, not as a textbook chapter. Use the nominal class duration to define a natural stopping point, but prepare roughly 1.5 times that amount when useful. Place the extra material mainly in explanatory worked examples after the core path; the teacher may stop at class end without finishing them.
+For a course, organize the fragment as the assigned numbered class meeting. Give the core path a natural stopping point near the nominal duration; optional worked examples may follow and need not be taught if class ends.
 
-## Outputs
+## Required handoff
 
 - `[[UNIT_SOURCE_PATH]]/section.md`
 - `UNIT-MANIFEST.yaml`
+- `UNIT-DELTA.yaml`
+- `UNIT-CONTEXT-PACKET.yaml`
+- `INTERACTION-RECORD.yaml` as the sole editable interaction/MCQ record
 - `GEOGEBRA-RESOURCES.yaml`
 - `LESSON-TIME-PLAN.yaml`
 - `SELF-CHECK.md`
-- stage artifacts, one stage-sequence state, and one continuous thread handoff
-- local approved assets
+- all profile-selected stage artifacts and the stage-sequence state
+- local approved assets, if any
 - checkpoint under `[[UNIT_CHECKPOINT_PATH]]`
 
-Do not edit another unit, the integrated deck, TASK.md, reviewer files, or deliverables. Do not use screenshots or model vision.
+After the durable handoff is validated, close or release the thread. Do not remain available for post-review revision. Do not edit another unit, the integrated deck, `TASK.md`, reviewer files, deliverables, or workflow-engine code. Do not use screenshots or model vision.

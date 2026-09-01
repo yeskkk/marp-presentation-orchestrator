@@ -9,6 +9,7 @@ from urllib.parse import unquote
 
 from mpres.geogebra import validate_presentation_geogebra_registry
 from mpres.interactions import MCQ_RATIONALES, validate_presentation_interactions
+from mpres.state import get_presentation, load_state
 from mpres.util import MPresError, read_yaml, relative_display, task_path, write_json_atomic
 
 SLIDE_ID_RE = re.compile(r"<!--\s*slide-id\s*:\s*([^>]+?)\s*-->", re.IGNORECASE)
@@ -585,25 +586,36 @@ def _manifest_check(
         errors.append("DECK-MANIFEST.yaml content_units must be a list.")
         content_units = []
     if task_kind == "course":
-        expected_meeting = 1
+        expected_local = 1
+        previous_global: int | None = None
         for unit in content_units:
             if not isinstance(unit, dict):
                 errors.append("Every course content unit must be a mapping.")
                 continue
-            meeting_number = unit.get("meeting_number")
-            if meeting_number != expected_meeting:
+            local_ordinal = unit.get("deck_local_ordinal")
+            global_number = unit.get("global_meeting_number", unit.get("meeting_number"))
+            if local_ordinal != expected_local:
                 errors.append(
-                    f"Course content units must use sequential meeting_number values; expected "
-                    f"{expected_meeting}, got {meeting_number!r}."
+                    f"Course content units must use sequential deck_local_ordinal values; expected "
+                    f"{expected_local}, got {local_ordinal!r}."
+                )
+            if not isinstance(global_number, int) or global_number <= 0:
+                errors.append("Course units require a positive global_meeting_number.")
+            elif previous_global is not None and global_number != previous_global + 1:
+                errors.append(
+                    f"Global meeting numbers inside a deck must be contiguous; expected "
+                    f"{previous_global + 1}, got {global_number}."
                 )
             if unit.get("organization_basis") != "course_meeting":
                 errors.append("Course content units must use organization_basis: course_meeting.")
-            expected_label = f"第 {expected_meeting} 节课"
+            expected_label = f"第 {global_number} 节课" if isinstance(global_number, int) else ""
             if unit.get("meeting_label") != expected_label:
                 errors.append(
-                    f"Course meeting {expected_meeting} must use meeting_label: {expected_label}."
+                    f"Course global meeting {global_number!r} must use meeting_label: {expected_label}."
                 )
-            expected_meeting += 1
+            expected_local += 1
+            if isinstance(global_number, int):
+                previous_global = global_number
         row_units = [
             str(item.get("unit"))
             for item in rows
@@ -901,7 +913,14 @@ def lint_task_source(
 ) -> dict[str, Any]:
     task = task_path(root, slug)
     if stage == "author":
-        base = task / "workers" / "author-coordinator" / "drafts" / presentation_id
+        state = load_state(root, slug)
+        presentation = get_presentation(state, presentation_id)
+        role = (
+            "deck-revision-author"
+            if presentation.get("status") == "author_revision"
+            else "author-coordinator"
+        )
+        base = task / "workers" / role / "drafts" / presentation_id
     elif stage == "release":
         base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
     else:

@@ -38,7 +38,7 @@ def _model_policy(root: Path) -> dict[str, Any]:
 
 def expected_runtime(root: Path, role: str) -> dict[str, str]:
     policy = _model_policy(root)
-    key = "planner" if role == "planner" else "workers"
+    key = "planner" if role in {"planner", "delegated-planner"} else "workers"
     row = policy.get(key)
     if not isinstance(row, dict):
         raise MPresError(f"MODEL-POLICY.yaml lacks the {key} runtime policy.")
@@ -227,7 +227,7 @@ def validate_handoff(
     row["durable_paths"] = durable_paths
     row["handoff_summary"] = summary
     presentation_id = row.get("presentation_id")
-    if row.get("role") in {"lesson-author", "author-coordinator"} and presentation_id:
+    if row.get("role") in {"lesson-author", "author-coordinator", "deck-revision-author"} and presentation_id:
         authored = set(row.get("authored_presentations", []))
         authored.add(presentation_id)
         row["authored_presentations"] = sorted(authored)

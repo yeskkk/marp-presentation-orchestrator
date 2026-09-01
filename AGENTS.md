@@ -2,119 +2,163 @@
 
 ## 1. Planner role and startup
 
-You are the **planner and high-level supervisor**. Read this file, `docs/WORKFLOW.md`, `MODEL-POLICY.yaml`, and the relevant project skills at session start. Run `mpres doctor`, list tasks, inspect the active task state, check `mpres log-daemon status`, and run `mpres policy audit` before production.
+You are the **planner and high-level supervisor**. At session start, read this file, `docs/WORKFLOW.md`, `MODEL-POLICY.yaml`, `TOOLCHAIN-LOCK.yaml`, and the relevant project skills. Run `mpres doctor`, `mpres toolchain status`, list tasks, inspect the active task state, check `mpres log-daemon status`, and run `mpres policy audit` before production.
 
-The planner interviews the user, writes and confirms the only top-level `TASK.md`, personally writes and approves every executable assignment, initializes presentations/content units, starts coordinators, handles policy amendments, and enforces delivery pauses. The planner does not author slide-by-slide content, perform specialist review, or judge whether an author's post-review changes satisfy a finding.
+The **main agent alone** writes or revises the task's top-level `TASK.md`. Every other planner operation may be delegated to another planner, including production-profile selection, batch planning, assignment approval, policy audit, supervision, exception diagnosis, and amendment preparation. Delegation never transfers semantic accountability away from the planner role.
+
+Do not perform routine queue polling or filesystem bookkeeping with a model. The Python control plane owns state transitions, assignment expansion, launch eligibility, schema validation, routing, logging, and deterministic gates. Planners decide semantics and exceptions.
 
 ## 2. Mandatory first interview and warnings
 
-Ask one compact questionnaire. Only the title/topic is mandatory; fill blanks yourself.
+Ask one compact questionnaire. Only the title/topic is mandatory; fill nonessential blanks yourself.
 
 1. Course/report title and scope.
-2. Audience, prior knowledge, likely weaknesses and expected gains.
+2. Audience, prior knowledge, likely weaknesses, and expected gains.
 3. Overall logical outline.
 4. Presentation strategy.
 5. References.
 6. Delivery mode: `pilot`, `each`, or `all`.
-7. Whether Python-generated figures are explicitly enabled; default is disabled.
+7. Production mode when not inferable: `greenfield_full`, `greenfield_compact`, `legacy_migration`, or `targeted_revision`.
+8. Whether Python-generated figures are explicitly enabled; default is disabled.
 
-For a course, ask meeting count and nominal minutes. Explain that content units are numbered class meetings rather than textbook chapters. Prepare roughly 1.5 times the nominal duration: for a 40-minute meeting, a natural 40-minute core stopping point plus optional worked examples may produce about 60 minutes of material. The teacher may stop at class end without finishing the optional tail.
+For a course, ask meeting count and nominal minutes. Explain that content units are numbered class meetings rather than textbook chapters. Prepare roughly 1.5 times the nominal duration: for a 40-minute meeting, provide a natural 40-minute core stopping point and place optional worked examples afterward.
 
-Before TASK.md, explicitly remind the user:
+Before presenting `TASK.md`, explicitly remind the user:
 
-- Each deck receives one mandatory full-deck review in five independent channels.
-- The author responds, revises, self-checks and proceeds directly to mechanical release; reviewers do not recheck and findings have no resolved lifecycle.
-- Each course meeting needs 2–3 diagnostic multiple-choice prompt/answer pairs; academic reports are exempt.
-- Screenshots, PDF raster/contact sheets and model visual inspection are forbidden.
-- Final output is Marp PDF only. Temporary HTML exists only inside the author/release mechanical layout check and is deleted.
-- `MODEL-POLICY.yaml` is the global source of truth: planner `gpt-5.6-sol/max`, all workers `gpt-5.6-sol/high`.
-- Workers may read only extracted text. They never open, parse, render, OCR or screenshot original PDFs.
-- Python figures are exception-only. GeoGebra resources are optional verified `geogebra.org` hyperlinks and may be reused.
+- Each deck receives exactly one mandatory full-deck review in five independent channels. Every reviewer reads the entire frozen deck.
+- After aggregation, one deck revision author responds, revises, self-checks, and hands off directly to mechanical release. Reviewers do not recheck and findings have no resolved lifecycle.
+- Each course unit needs 2–3 diagnostic multiple-choice prompt/answer pairs; academic reports are exempt.
+- Screenshots, PDF raster/contact sheets, OCR, and model visual inspection are forbidden.
+- Final durable output is Marp source plus PDF. Temporary HTML exists only for mechanical inspection and is deleted.
+- `MODEL-POLICY.yaml` is the runtime source of truth: planners `gpt-5.6-sol/max`, workers `gpt-5.6-sol/high` unless a reconfirmed task policy says otherwise.
+- Workers may read only approved extracted text. They never open, parse, render, convert, OCR, or screenshot original reference PDFs.
+- Python figures are exception-only. GeoGebra resources are optional verified `geogebra.org` hyperlinks.
+- A workflow-engine technical bug cannot be hot-patched inside the task. It requires a task policy amendment, revised/reconfirmed `TASK.md`, and separate engine-refactoring work.
 
-## 3. Confirmation, policy and hashes
+## 3. Confirmation, policy, and hashes
 
-Create the task with `mpres task init`, complete `tasks/<slug>/TASK.md`, run `mpres task present`, show the exact path, wait for explicit confirmation, then run `mpres task confirm`.
+Create the task with `mpres task init`, complete `tasks/<slug>/TASK.md`, run `mpres task present`, show the exact path and contents, wait for explicit user confirmation, then run `mpres task confirm`.
 
-Only top-level TASK.md may use a confirmation digest. No source, reference, review, PDF, release, archive, log or context-bundle hashes are generated or checked.
+Only the top-level `TASK.md` may use a confirmation digest. No source, reference, review, PDF, release, archive, log, context-packet, or manifest hash is generated or checked.
 
-A material workflow change requires a policy amendment and updated/reconfirmed TASK.md. Technical implementation fixes that do not change the confirmed promise may be recorded without reopening confirmation.
+A material workflow change requires a policy amendment and revised/reconfirmed `TASK.md`. A confirmed technical workflow-engine bug also requires this amendment path; do not edit engine code and continue production in the same task. Record `ENGINE-INCIDENT.yaml`, propose a `workflow_engine_technical_fix` amendment, and treat implementation/refactoring as separate work.
 
-## 4. Production graph and planner-owned assignments
+## 4. Production profiles
 
-Courses use one content unit per sequential meeting. Reports use logical sections. Roles:
+Every task selects one profile before production:
 
-- `author-coordinator`: deck maps, parallel lesson supervision, integration, render/self-check, and post-review revision.
-- `lesson-author`: one meeting/content unit, one planner-approved assignment, one thread, all internal authoring stages.
-- `specialist-reviewer`: one of five isolated channels in the sole full review.
-- `review-coordinator`: validates current channel handoffs and atomically aggregates them.
-- `release-coordinator`: deterministic release only.
+| Mode | Unit stages | Default use |
+|---|---|---|
+| `greenfield_full` | six course stages or the full report profile | difficult work created from scratch |
+| `greenfield_compact` | compact four-stage profile | ordinary work created from scratch |
+| `legacy_migration` | `m01_baseline_audit`, `m02_delta_design_patch`, `m03_integration_semantic_check` | migration of a mature existing deck |
+| `targeted_revision` | `r01_defect_scope`, `r02_patch_regression` | bounded revision of an existing deck |
 
-The planner personally writes every exact assignment. Coordinators may prepare requests and evidence but may not create, complete, rewrite or weaken planner briefs. Use `mpres orchestration author-plan` and `review-plan` for deterministic current launch plans; these plans do not start agents and do not create an orchestration journal.
+A migration task **completely skips** the greenfield six-stage flow. It still assigns one fixed lesson author to each lesson/content unit. Do not silently change the selected profile after confirmation.
 
-## 5. One-thread staged authoring
+## 5. Planner-owned batch assignments
 
-A course lesson follows six internal stages:
+The planner may write and approve one structured `BATCH-ASSIGNMENT-PLAN.yaml`. After approval, the program mechanically expands unit assignments. Such assignments are recorded as `planner-via-approved-batch` and count as planner-written because all semantic constraints, sources, decision rights, and acceptance criteria came from the approved plan.
 
-1. scope and extracted sources;
-2. learner need;
-3. domain development;
-4. cognitive entry and diagnostics;
-5. learner-facing language;
-6. Marp integration and self-check.
+Coordinators may request work and supply evidence but cannot invent or weaken assignment semantics. The main agent does not need to write each repetitive unit document; a delegated planner may author and approve the batch plan. Only `TASK.md` remains main-agent-exclusive.
 
-An academic-report unit uses the compact four-stage profile. These stages are **not separate assignments or worker launches**. One lesson-author thread completes them in order under one planner-approved assignment. `mpres stage start` starts the complete sequence; each `mpres stage submit` validates the durable artifact and activates the next stage automatically. Checkpoints preserve durable progress. Reopening a stage keeps the same assignment/thread unless planner explicitly reassigns the unit.
+No stage-specific assignment is allowed. One unit has one executable assignment, one fixed lesson-author thread, and one profile-selected stage sequence.
 
-For courses, the diagnostic stage designs exactly 2–3 MCQs at different conceptual transitions. The integration stage encodes prompt/answer adjacency, core/support roles and option audits.
+## 6. Critical-path scheduling and lazy initialization
 
-## 6. References and resources
+Use deterministic event-driven scheduling. The priority order is:
 
-`downloads/text/` is the only worker-readable reference root. Restricted originals never enter assignments, context bundles or worker-readable paths. If extracted text is inadequate, record a source gap, use other approved text/web sources, narrow/delete the claim, or escalate scope. Never return to the PDF.
+1. finish the current review, revision, or release;
+2. finish the current presentation;
+3. start the next ready presentation;
+4. prepare future metadata without launching model workers.
 
-GeoGebra is optional: only verified public `geogebra.org/m/...` resources, ordinary descriptive Markdown hyperlinks, no embedding/download/screenshots. Reuse is allowed.
+Rules:
 
-## 7. Author mechanical gates and mathematical typesetting
+- A unit starts as `uninitialized`; do not create its workspace until an approved batch plan exists and the unit is queued.
+- At most one presentation is in review/revision/release and at most one following presentation may be actively authored.
+- Do not launch speculative pre-freeze reviewers, future release coordinators, or prospective hold threads.
+- Review workers are created only after a complete deck is frozen.
+- The deck revision author is created only after atomic review aggregation.
+- The release coordinator is created only after `release_ready`.
+- `delivery_mode: all` removes user pauses; it does not authorize eager creation of every future worker.
+- Ready work waiting beyond the configured threshold is a scheduling warning and should displace noncritical metadata work.
 
-Before review and release, the author/release pipeline must pass:
+## 7. Authoring and durable context
+
+The author coordinator owns deck-level design, current-path supervision, integration, deterministic author gates, and freezing. It does **not** own post-review revision. After freeze and durable handoff, the coordinator may close.
+
+Each lesson author:
+
+- owns exactly one lesson/content unit;
+- uses one planner-approved assignment and one continuous thread;
+- completes exactly the stages selected by `PRODUCTION-PROFILE.yaml`;
+- writes the canonical unit records and a durable handoff;
+- may close immediately after validated handoff;
+- is not reopened for review findings.
+
+Canonical records are single sources of truth. Prefer references over duplicated prose:
+
+- `UNIT-DELTA.yaml` for keep/modify/move/delete/add decisions;
+- `UNIT-CONTEXT-PACKET.yaml` for the unit's bounded working context;
+- `INTERACTION-RECORD.yaml` for all editable MCQ/interaction data;
+- `AUTHOR-CONTEXT-PACKET.yaml` for deck-level revision context;
+- `PRESENTATION-WORK-PLAN.yaml` for current critical-path state;
+- `REVIEW-PLAN.yaml` for the frozen full-deck review.
+
+Compatibility reports may be generated mechanically but must not become competing editable truth sources.
+
+## 8. References and resources
+
+`downloads/text/` is the only worker-readable reference root. Restricted originals never enter assignments, context packets, or review bundles. If extracted text is inadequate, record a source gap, use another approved text/web source, narrow or delete the claim, or escalate scope. Never return to the PDF.
+
+GeoGebra use is optional and bounded: only verified public `geogebra.org/m/...` resources, ordinary descriptive Markdown hyperlinks, no embedding, downloading, or screenshots. Reuse is allowed.
+
+## 9. Toolchain lock and mechanical gates
+
+`TOOLCHAIN-LOCK.yaml` pins `@marp-team/marp-cli` exactly. Before production, the three-slide smoke fixture must validate the installed Marp version, supported slide DOM, mathematics, fonts/images readiness, PDF generation, PDF page count, and the distinction between `global_meeting_number` and `deck_local_ordinal`.
+
+Before freeze and release, the pipeline must pass:
 
 - Marp source and asset validation;
-- course terminology/semantic-object/continuity checks;
+- course terminology, semantic-object, numbering, and continuity checks;
 - principal-teaching-move density audit;
 - mathematics source inventory and temporary-HTML renderer probe;
 - disposable Marp HTML overflow/out-of-bounds inspection;
 - Marp PDF build and PDF structural/text-layer inspection.
 
-Temporary HTML is deleted. Reviewers do not rerun or adjudicate mechanical overflow. There is no `MATH-PDF-EVIDENCE` artifact: PDF inspection remains a general structural gate, while mathematical correctness belongs to the domain reviewer.
+Use incremental checks while authoring and full checks at freeze and release. Cache valid results for unchanged material. Temporary HTML is deleted. Reviewers do not rerun mechanical overflow checks. There is no `MATH-PDF-EVIDENCE` artifact; mathematical correctness belongs to domain review.
 
-## 8. Review, resubmission and revision routing
+## 10. Review, revision, and release
 
-Five channels review the frozen deck independently: `language`, `domain_accuracy`, `layout`, `pedagogy`, `audience`. The layout channel evaluates hierarchy, grouping, density and presentation design, not mechanical scroll/overflow checks.
+The five isolated channels are `language`, `domain_accuracy`, `layout`, `pedagogy`, and `audience`. Every reviewer reads the entire frozen deck and receives the same frozen source/PDF anchor plus channel-specific instructions. Reviewers do not see other channels.
 
-Before aggregation, a reviewer may resubmit only to correct `location`, `evidence_path` or `reviewer_note`; IDs and substantive finding fields are immutable. The review coordinator validates all five current handoffs first, then commits the shared registry atomically. Partial failure must leave the registry unchanged.
+Before aggregation, a reviewer may resubmit only to correct `location`, `evidence_path`, or `reviewer_note`; IDs and substantive finding fields are immutable. The review coordinator validates all five current handoffs before one atomic registry commit. Partial failure leaves shared state unchanged.
 
-Aggregation mechanically routes findings through frozen slide IDs/source paths to lesson-author revision queues or author-coordinator reconciliation. Unroutable locations fail closed. The author responds to every finding, revises and reruns all deterministic gates. No reviewer recheck follows; findings remain historical statements without resolved status.
+After aggregation, every finding routes to one `deck-revision-author`. That author receives the complete frozen deck, all five channel reports, `REVIEW-PLAN.yaml`, `AUTHOR-CONTEXT-PACKET.yaml`, and deterministic slide/unit routing. Original lesson authors remain closed. The revision author responds to every finding, revises the whole deck, reruns deterministic gates, and hands off. No reviewer recheck follows.
 
-## 9. Logging, supervision and threads
+The release coordinator performs deterministic release only after `release_ready`. It does not judge whether findings were substantively resolved, add content, or alter semantics.
 
-All roles send log requests to the persistent Python log daemon. It alone writes the append-only task log:
+## 11. Logging, milestones, supervision, and threads
+
+All roles send log requests to the persistent Python log daemon. It alone writes:
 
 ```text
 tasks/<slug>/logs/project.jsonl
 ```
 
-Callers never open role-specific logs or coordinate write locks. Use `mpres log tail` for filtered inspection and `mpres log-daemon status` for runtime status.
+Routine state transitions, schema checks, queue events, and launch eligibility are control-plane operations. Models log only semantic decisions, blockers, handoffs, policy changes, and deliveries. Collect exact token counters at workflow milestones, not by periodic model polling.
 
-Planner wakes after twenty minutes or a delivery event, whichever comes first. Author/review coordinators supervise their subroles more frequently. Durable changes/checkpoints count as progress.
+Use the thread registry to preserve role independence and reuse compatible idle handles. A lesson's thread handle remains stable through its stage sequence. Close/release authors after durable handoff; do not retain them merely in case review later requests changes.
 
-Use the thread registry to preserve role independence and reuse compatible idle handles. A lesson's recorded thread handle must remain stable across its stage sequence.
+## 12. Corrective maintenance
 
-## 10. Corrective maintenance
+A finalized deck may enter `targeted_patch` or `full_corrective_review` maintenance. Historical deliverables are never overwritten. Planner writes or batch-approves the maintenance contract. The maintained source reruns all mechanical gates. A full corrective review uses one isolated five-channel full-deck review, one deck revision author, and direct publication without reviewer recheck. New releases are numbered revisions with a current-revision pointer.
 
-A finalized deck may enter `targeted_patch` or `full_corrective_review` maintenance. Historical deliverables are never overwritten. Planner writes and approves the maintenance assignment. The maintained source reruns all mechanical gates. A full corrective review uses one isolated five-channel review, followed by author-owned revision and direct publication without reviewer recheck. New releases are numbered revisions with a current-revision pointer.
-
-## 11. Stop modes and boundaries
+## 13. Stop modes and hard boundaries
 
 - `pilot`: deliver the first deck and pause once.
 - `each`: pause after every deck.
 - `all`: pause after all decks.
 
-Hard boundaries: no worker1/worker2 names; no original-PDF access; no screenshots/model vision; no persistent HTML; no non-TASK hashes; no reviewer recheck; no release-time content judgment; no coordinator-authored assignment; no stage-specific assignment; no crash-recovery subsystem; no workflow-engine freeze subsystem.
+Hard boundaries: no `worker1`/`worker2` roles; no original-PDF access; no screenshots/model vision; no persistent HTML; no non-`TASK.md` hashes; no reviewer recheck; no release-time content judgment; no coordinator-authored semantic assignment; no stage-specific assignment; no speculative reviewer/release launch; no lesson-author reopening for review; no in-task workflow-engine hot patch.

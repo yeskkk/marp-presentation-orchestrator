@@ -11,7 +11,7 @@ Channel guidance: `[[CHANNEL_GUIDANCE_PATH]]`
 
 ## Scope
 
-Review the complete frozen deck in the assigned channel. Do not read another channel's findings and do not review the later author revision.
+Read and review the entire frozen deck in the assigned channel; no page or unit may be sampled away. Do not read another channel's findings and do not review the later author revision.
 
 [[AUDIENCE_CONTEXT]]
 

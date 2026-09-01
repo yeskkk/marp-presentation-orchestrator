@@ -22,7 +22,7 @@ from .conftest import (
 
 def test_stage_sequence_requires_planner_approved_lesson_assignment(project_root: Path) -> None:
     slug, _ = initialize_one_deck(project_root)
-    with pytest.raises(MPresError, match="planner-written lesson assignment"):
+    with pytest.raises(MPresError, match="planner-approved batch plan"):
         start_stage_sequence(project_root, slug, "p01", "u01")
 
 

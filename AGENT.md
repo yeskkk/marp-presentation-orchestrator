@@ -1,3 +1,1 @@
-# Compatibility pointer
-
-Codex reads `AGENTS.md` (plural). That file is authoritative.
+Read and obey `AGENTS.md` as the binding project instructions.

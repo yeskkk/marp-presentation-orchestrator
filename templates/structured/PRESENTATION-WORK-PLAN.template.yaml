@@ -1,0 +1,14 @@
+schema_version: 1
+policy:
+  priority_order:
+    - finish_current_review_revision_or_release
+    - finish_current_presentation
+    - start_next_ready_presentation
+    - prepare_future_metadata_without_model_workers
+  max_presentations_reviewing: 1
+  max_current_authoring_presentations: 1
+  max_next_authoring_presentations: 1
+  reviewers_before_freeze: false
+  release_before_release_ready: false
+  prospective_hold_threads: false
+presentations: []

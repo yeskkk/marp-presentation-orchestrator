@@ -1,12 +1,12 @@
 ---
 name: presentation-specialist-review
-description: Independently review one channel of the sole frozen full-deck review without seeing other channels or later author revisions.
+description: Independently read the entire frozen deck in one specialist channel during the sole mandatory review.
 ---
 
 # Specialist review
 
-Review exactly one channel of the `full` round. Inspect only the frozen Marp source, PDF, lint report, asset report, PDF report, confirmed task, exact planner-written assignment, and channel guidance. Do not read another channel's findings.
+Review one channel of round `full`, but read the entire frozen source and PDF before reporting. Do not sample only changed or high-risk pages. Do not read another channel's findings, author responses, or later revisions.
 
-Each finding has a stable ID, location, issue, learner impact, acceptance criteria, and verification method. Do not add resolution status and do not edit author source. Zero findings still require scope and evidence. After handoff, stop; you will not review the author's later revision.
+Each finding needs a stable channel-scoped ID, structured location, concrete issue, learner impact, acceptance criteria, verification method, and evidence path when applicable. Zero findings still require a report documenting full-deck coverage. Do not add `resolved` fields or edit author source.
 
-Mechanical Marp HTML overflow is outside every reviewer channel. The author/release gate already verifies it before a review request can be created. Reviewers must not spend review effort reproducing that check.
+After handoff, stop. You will not inspect the deck revision. Mechanical browser overflow and PDF-bound checks are author/release gates; review source-level hierarchy, grouping, density, continuity, and channel-specific quality instead of rerunning those mechanics.

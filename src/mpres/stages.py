@@ -5,6 +5,8 @@ from typing import Any
 
 from mpres.assignments import assignment_contract_status
 from mpres.logs import append_log
+from mpres.production_profiles import profile_for
+from mpres.milestones import record_milestone
 from mpres.state import get_content_unit, get_presentation, load_state, save_state, stage_ids_for_kind
 from mpres.tasks import require_gate
 from mpres.threads import list_threads
@@ -28,6 +30,11 @@ STAGE_ARTIFACT_TEMPLATES = {
     "02_audience_domain": "STAGE-REPORT-02-AUDIENCE-DOMAIN.template.md",
     "03_narrative_language": "STAGE-REPORT-03-NARRATIVE-LANGUAGE.template.md",
     "04_marp_integration": "STAGE-REPORT-04-MARP-INTEGRATION.template.md",
+    "m01_baseline_audit": "STAGE-M01-BASELINE-AUDIT.template.md",
+    "m02_delta_design_patch": "STAGE-M02-DELTA-DESIGN-PATCH.template.md",
+    "m03_integration_semantic_check": "STAGE-M03-INTEGRATION-SEMANTIC-CHECK.template.md",
+    "r01_defect_scope": "STAGE-R01-DEFECT-SCOPE.template.md",
+    "r02_patch_regression": "STAGE-R02-PATCH-REGRESSION.template.md",
 }
 STAGE_MINIMUM_CHARACTERS = {
     "01_scope_sources": 700,
@@ -39,6 +46,11 @@ STAGE_MINIMUM_CHARACTERS = {
     "02_audience_domain": 1000,
     "03_narrative_language": 900,
     "04_marp_integration": 500,
+    "m01_baseline_audit": 500,
+    "m02_delta_design_patch": 500,
+    "m03_integration_semantic_check": 500,
+    "r01_defect_scope": 400,
+    "r02_patch_regression": 500,
 }
 
 
@@ -66,8 +78,10 @@ def initialize_unit_stages(
     *,
     unit_title: str,
     task_kind: str,
+    production_mode: str | None = None,
 ) -> None:
-    stage_order = list(stage_ids_for_kind(task_kind))
+    stage_order = list(stage_ids_for_kind(task_kind, production_mode))
+    stage_profile = profile_for(production_mode or "greenfield_full", task_kind).stage_profile
     values = {
         "[[PRESENTATION_ID]]": presentation_id,
         "[[UNIT_ID]]": unit_id,
@@ -80,26 +94,30 @@ def initialize_unit_stages(
         artifact = (
             root / "templates" / "stages" / STAGE_ARTIFACT_TEMPLATES[stage_id]
         ).read_text(encoding="utf-8")
-        for old, new in values.items():
-            artifact = artifact.replace(old, new)
+        for old, replacement in values.items():
+            artifact = artifact.replace(old, replacement)
         artifact_path = directory / "STAGE-ARTIFACT.md"
         artifact_path.write_text(artifact, encoding="utf-8", newline="\n")
         stages[stage_id] = {
             "status": "planned",
             "artifact": relative_display(artifact_path, root),
             "task_kind": task_kind,
+            "production_mode": production_mode,
         }
     write_yaml_atomic(
         stage_state_path(root, slug, presentation_id, unit_id),
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "presentation_id": presentation_id,
             "unit_id": unit_id,
             "unit_title": unit_title,
             "task_kind": task_kind,
+            "production_mode": production_mode,
+            "stage_profile": stage_profile,
             "sequence_status": "awaiting_start",
             "stage_order": stage_order,
             "current_stage": stage_order[0],
+            "fixed_author_for_all_stages": True,
             "thread_handle": None,
             "stages": stages,
         },
@@ -115,6 +133,7 @@ def initialize_stage_files(root: Path, slug: str, presentation_id: str, unit_id:
         unit_id,
         unit_title=unit_title,
         task_kind=str(task_state.get("kind") or "course"),
+        production_mode=str(task_state.get("production_mode") or "greenfield_full"),
     )
 
 
@@ -184,14 +203,33 @@ def _validate_thread_handle(
 
 def stage_status(root: Path, slug: str, presentation_id: str, unit_id: str) -> dict[str, Any]:
     require_gate(root, slug)
+    path = stage_state_path(root, slug, presentation_id, unit_id)
+    if not path.is_file():
+        state = load_state(root, slug)
+        presentation = get_presentation(state, presentation_id)
+        unit = get_content_unit(presentation, unit_id)
+        return {
+            "schema_version": 5,
+            "presentation_id": presentation_id,
+            "unit_id": unit_id,
+            "production_mode": state.get("production_mode"),
+            "stage_profile": state.get("stage_profile"),
+            "fixed_author_for_all_stages": True,
+            "sequence_status": "uninitialized",
+            "current_stage": None,
+            "thread_handle": None,
+            "stages": {},
+            "unit_status": unit.get("status", "uninitialized"),
+            "lesson_assignment_contract": assignment_contract_status(
+                _lesson_assignment(root, slug, presentation_id, unit_id)
+            ),
+            "path": relative_display(path, root),
+        }
     value = _load_stage_state(root, slug, presentation_id, unit_id)
     value["lesson_assignment_contract"] = assignment_contract_status(
         _lesson_assignment(root, slug, presentation_id, unit_id)
     )
-    return {
-        **value,
-        "path": relative_display(stage_state_path(root, slug, presentation_id, unit_id), root),
-    }
+    return {**value, "path": relative_display(path, root)}
 
 
 def start_stage_sequence(
@@ -203,11 +241,14 @@ def start_stage_sequence(
     thread_handle: str | None = None,
 ) -> dict[str, Any]:
     require_gate(root, slug)
+    if not stage_state_path(root, slug, presentation_id, unit_id).is_file():
+        from mpres.production import prepare_unit_workspace
+        prepare_unit_workspace(root, slug, presentation_id, unit_id)
     _require_lesson_assignment(root, slug, presentation_id, unit_id)
     task_state = load_state(root, slug)
     presentation = get_presentation(task_state, presentation_id)
     unit = get_content_unit(presentation, unit_id)
-    if presentation.get("status") not in {"authoring", "author_revision"}:
+    if presentation.get("status") != "authoring":
         raise MPresError(f"Cannot start lesson stages in {presentation.get('status')!r} status.")
     value = _load_stage_state(root, slug, presentation_id, unit_id)
     if value.get("sequence_status") not in {"awaiting_start", "reopened"}:
@@ -220,13 +261,13 @@ def start_stage_sequence(
     value["started_utc"] = value.get("started_utc") or utc_now()
     value["stages"][first]["status"] = "active"
     value["stages"][first]["activated_utc"] = utc_now()
-    unit.update({"status": "stage_active", "stage": first, "stage_status": "active"})
+    unit.update({"status": "running", "stage": first, "stage_status": "active"})
     save_state(root, slug, task_state)
     write_yaml_atomic(stage_state_path(root, slug, presentation_id, unit_id), value)
     append_log(
         root,
         slug,
-        actor="planner",
+        actor="critical-path-scheduler",
         kind="decision",
         presentation_id=presentation_id,
         unit_id=unit_id,
@@ -311,7 +352,7 @@ def submit_stage(
     task_state = load_state(root, slug)
     presentation = get_presentation(task_state, presentation_id)
     unit = get_content_unit(presentation, unit_id)
-    if presentation.get("status") not in {"authoring", "author_revision"}:
+    if presentation.get("status") != "authoring":
         raise MPresError(f"Lesson stages cannot advance in {presentation.get('status')!r} status.")
     value = _load_stage_state(root, slug, presentation_id, unit_id)
     order = _stage_order(value)
@@ -341,7 +382,7 @@ def submit_stage(
         value["current_stage"] = next_stage
         value["stages"][next_stage]["status"] = "active"
         value["stages"][next_stage]["activated_utc"] = utc_now()
-        unit.update({"status": "stage_active", "stage": next_stage, "stage_status": "active"})
+        unit.update({"status": "running", "stage": next_stage, "stage_status": "active"})
         next_action = f"continue_same_thread:{next_stage}"
     else:
         value["current_stage"] = None
@@ -363,13 +404,15 @@ def submit_stage(
         ),
         data={"artifact": relative_display(artifact, root), "thread_handle": value.get("thread_handle")},
     )
+    if next_action == "handoff_ready":
+        record_milestone(root, slug, "unit_handoff", presentation_id=presentation_id, unit_id=unit_id)
     return stage_status(root, slug, presentation_id, unit_id)
 
 
 def accept_stage(*args: Any, **kwargs: Any) -> dict[str, Any]:
     del args, kwargs
     raise MPresError(
-        "Stage acceptance was removed in v0.5.0. submit-stage automatically advances the same "
+        "Stage acceptance remains removed in v0.6.0. submit-stage automatically advances the same "
         "lesson-author thread after validating the durable stage artifact."
     )
 
@@ -409,7 +452,7 @@ def reopen_stage(
     value["current_stage"] = stage_id
     value["sequence_status"] = "active"
     value.pop("completed_utc", None)
-    unit.update({"status": "stage_active", "stage": stage_id, "stage_status": "active"})
+    unit.update({"status": "running", "stage": stage_id, "stage_status": "active"})
     save_state(root, slug, task_state)
     write_yaml_atomic(stage_state_path(root, slug, presentation_id, unit_id), value)
     append_log(
@@ -437,6 +480,6 @@ def all_stages_completed(root: Path, slug: str, presentation_id: str, unit_id: s
 
 
 def all_stages_accepted(root: Path, slug: str, presentation_id: str, unit_id: str) -> bool:
-    """Compatibility alias for older callers; v0.5.0 has no coordinator acceptance step."""
+    """Compatibility alias for older callers; v0.6.0 has no coordinator acceptance step."""
 
     return all_stages_completed(root, slug, presentation_id, unit_id)

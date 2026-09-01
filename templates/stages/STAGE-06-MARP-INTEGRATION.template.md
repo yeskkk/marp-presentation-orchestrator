@@ -4,11 +4,15 @@
 
 - `source/section.md`
 - `source/UNIT-MANIFEST.yaml`
-- `source/INTERACTION-MANIFEST.yaml`
-- `source/MCQ-AUDIT.yaml`
+- `source/INTERACTION-RECORD.yaml`（唯一可编辑的互动与 MCQ 真源）
+- `source/UNIT-DELTA.yaml`
+- `source/UNIT-CONTEXT-PACKET.yaml`
+- `source/LESSON-TIME-PLAN.yaml`
 - `source/GEOGEBRA-RESOURCES.yaml`
 - `source/SELF-CHECK.md`
 - 本地、获准资产
+
+`INTERACTION-MANIFEST.yaml` 与 `MCQ-AUDIT.yaml` 由程序从 `INTERACTION-RECORD.yaml` 生成，不得分别手工维护。
 
 ## 集成检查
 
