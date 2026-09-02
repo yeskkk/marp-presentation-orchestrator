@@ -76,7 +76,7 @@ Use deterministic event-driven scheduling. The priority order is:
 Rules:
 
 - A unit starts as `uninitialized`; do not create its workspace until an approved batch plan exists and the unit is queued.
-- At most one presentation is in review/revision/release and at most one following presentation may be actively authored.
+- At most one presentation is in review/revision/release and at most one following presentation may be actively authored. The following authoring lane remains open while the current deck is in authoring, review, deck revision, or release-ready state.
 - Do not launch speculative pre-freeze reviewers, future release jobs, or prospective hold threads.
 - Review workers are created only after a complete deck is frozen.
 - The deck revision author is created only after atomic review aggregation.

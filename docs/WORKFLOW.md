@@ -64,7 +64,7 @@ The scheduler maintains this priority:
 3. start the next ready presentation;
 4. prepare future metadata without model workers.
 
-The active window is one current presentation plus at most one next presentation in authoring. Only one presentation may be in review/revision/release. Reviewers are absent before freeze. The deck revision author is absent before aggregation. The runtime-free release job is absent before `release_ready`.
+The active window is one current presentation plus at most one next presentation in authoring. The independent next-authoring lane remains open while the current deck is in authoring, review, deck revision, or release-ready state, and it is refreshed automatically at those transitions. Only one presentation may be in review/revision/release. Reviewers are absent before freeze. The deck revision author is absent before aggregation. The runtime-free release job is absent before `release_ready`.
 
 Representative state progression:
 

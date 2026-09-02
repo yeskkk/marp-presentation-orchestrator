@@ -21,7 +21,7 @@ from mpres.interactions import (
 )
 from mpres.logs import append_log
 from mpres.milestones import record_milestone
-from mpres.scheduling import initialize_work_plan
+from mpres.scheduling import current_allows_next_authoring, initialize_work_plan
 from mpres.stages import all_stages_accepted, initialize_unit_stages, stage_state_path
 from mpres.state import REVIEW_CHANNELS, get_content_unit, get_presentation, save_state
 from mpres.tasks import require_gate
@@ -919,7 +919,7 @@ def activate_presentations(root: Path, slug: str, presentation_ids: list[str]) -
     from mpres.scheduling import _activation_limits, sync_work_plan
 
     _current_limit, next_limit = _activation_limits(root, slug, state=state)
-    if current.get("status") == "authoring":
+    if current_allows_next_authoring(current.get("status")):
         for item in remaining[1:]:
             if next_limit <= 0:
                 break
@@ -931,8 +931,9 @@ def activate_presentations(root: Path, slug: str, presentation_ids: list[str]) -
     outside = sorted(set(requested) - set(allowed))
     if outside:
         raise MPresError(
-            "Critical-path activation is limited to the current presentation and, while it is "
-            "still authoring, the earliest permitted next presentation: " + ", ".join(outside)
+            "Critical-path activation is limited to the current presentation and the earliest "
+            "permitted next authoring presentation while the current deck is in authoring, "
+            "review, revision, or release: " + ", ".join(outside)
         )
 
     # The current lane is invariant. Explicit activation may add the permitted next lane but may

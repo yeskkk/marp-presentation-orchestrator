@@ -1,4 +1,4 @@
-# Validation record — v0.6.1
+# Validation record — v0.6.3
 
 Validation date: 2026-09-02 UTC.
 
@@ -183,3 +183,12 @@ Verified in the clean v0.6.2 worktree:
 - `git diff --check` passed.
 
 The release archive is accepted only after a second clean extraction repeats the static checks, CLI smoke test, and complete test suite. The machine-readable verification report accompanies the archive.
+
+
+## v0.6.3 incremental validation
+
+- The scheduler uses one shared predicate for automatic rebalancing and explicit activation.
+- The next authoring lane remains available throughout current-deck authoring, review, revision, and release-ready states.
+- Entering full review automatically activates and lazily materializes exactly the earliest next authoring deck in `all` mode.
+- `each`, the initial `pilot` pause, and `next_presentation_authoring_wip_limit: 0` still prevent overlap.
+- Work-plan projection distinguishes the current review/revision/release lane from the concurrent next authoring lane.

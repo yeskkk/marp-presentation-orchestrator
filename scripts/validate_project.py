@@ -15,7 +15,7 @@ from typing import Any
 import yaml
 
 PLACEHOLDER_RE = re.compile(r"\[\[[A-Z0-9_]+\]\]")
-EXPECTED_VERSION = "0.6.2"
+EXPECTED_VERSION = "0.6.3"
 EXPECTED_MARP_VERSION = "4.5.0"
 
 
@@ -361,6 +361,27 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "PRESENTATION-WORK-PLAN priority order is inconsistent with scheduling.py",
         errors,
     )
+    _expect(
+        work_plan.get("policy", {}).get("next_authoring_overlap_current_statuses")
+        == [
+            "authoring",
+            "review_requested",
+            "reviewing",
+            "author_revision",
+            "release_ready",
+        ],
+        "PRESENTATION-WORK-PLAN must preserve the next lane through review/revision/release",
+        errors,
+    )
+    scheduling_source = (root / "src/mpres/scheduling.py").read_text(encoding="utf-8")
+    review_source = (root / "src/mpres/review.py").read_text(encoding="utf-8")
+    _expect(
+        "current_allows_next_authoring" in scheduling_source
+        and "refresh_active_presentation_window" in scheduling_source
+        and "refresh_active_presentation_window(root, slug, state)" in review_source,
+        "v0.6.3 current-plus-next transition refresh is missing",
+        errors,
+    )
 
     cli_source = (root / "src/mpres/cli.py").read_text(encoding="utf-8")
     for command in (
@@ -520,7 +541,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate v0.6.1 configs, templates, policies, CLI, source, and tests."
+        description="Validate v0.6.3 configs, templates, policies, CLI, source, and tests."
     )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--skip-tests", action="store_true")

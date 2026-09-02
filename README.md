@@ -1,6 +1,6 @@
-# Marp Presentation Orchestrator v0.6.2
+# Marp Presentation Orchestrator v0.6.3
 
-这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.1 是在 v0.6.0 控制平面上的第一个小步升级：把模型与推理强度移到用户可编辑的任务级配置，并修复 token 缺失值被错误汇总为零的问题。
+这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.3 以已交付的 v0.6.2 为基线，只修复 current＋next 关键路径流水线；任务级固定运行配置、token 可观测性以及机械 review/release 控制面均保持不变。
 
 正式耐久产物始终是：
 
@@ -13,6 +13,14 @@ PDF
 ```
 
 浏览器 HTML 仅用于 author/release 的机械布局检查，检查后立即删除；它不进入 reviewer bundle 或 deliverables。
+
+## v0.6.3 增量：修复 current＋next 流水线
+
+- 当前课件进入 `review_requested`、`reviewing`、`author_revision` 或 `release_ready` 后，下一份课件的 authoring lane 不再被关闭。
+- `all` 模式在当前课件冻结进入审核时自动激活并延迟创建最早的下一 authoring 课件；仍然最多只有一个 next lane。
+- `each`、首次 `pilot` 暂停以及显式的 next-WIP 零限制继续禁止提前启动下一份课件。
+- 自动重平衡与 `mpres production activate` 共享同一状态判定，避免再次出现策略与命令行为分叉。
+
 
 ## 1. v0.6.1 增量
 

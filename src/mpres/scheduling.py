@@ -8,6 +8,27 @@ from mpres.tasks import require_gate
 from mpres.util import MPresError, read_yaml, relative_display, task_path, utc_now, write_yaml_atomic
 
 
+NEXT_AUTHORING_OVERLAP_STATUSES = (
+    "authoring",
+    "review_requested",
+    "reviewing",
+    "author_revision",
+    "release_ready",
+)
+
+
+def current_allows_next_authoring(status: str | None) -> bool:
+    """Return whether the current deck may overlap one later authoring deck.
+
+    The current deck remains the critical-path deck throughout authoring, full
+    review, deck-level revision, and mechanical release. Moving it out of the
+    authoring state must therefore not close the independent next-authoring
+    lane. Unknown or terminal states fail closed.
+    """
+
+    return str(status or "") in NEXT_AUTHORING_OVERLAP_STATUSES
+
+
 def _work_plan_path(root: Path, slug: str) -> Path:
     return task_path(root, slug) / "PRESENTATION-WORK-PLAN.yaml"
 
@@ -48,6 +69,7 @@ def initialize_work_plan(root: Path, slug: str, presentations: list[dict[str, An
             "max_presentations_reviewing": 1,
             "max_current_authoring_presentations": 1,
             "max_next_authoring_presentations": 1,
+            "next_authoring_overlap_current_statuses": list(NEXT_AUTHORING_OVERLAP_STATUSES),
             "reviewers_before_freeze": False,
             "release_before_release_ready": False,
             "prospective_hold_threads": False,
@@ -108,7 +130,7 @@ def rebalance_active_presentations(
         # The workflow currently has one ordered current lane. Values above one are accepted in
         # policy for forward compatibility but do not create multiple competing "current" decks.
         del current_limit
-        if allow_next and current.get("status") == "authoring" and next_limit > 0:
+        if allow_next and current_allows_next_authoring(current.get("status")) and next_limit > 0:
             for item in remaining[1:]:
                 if item.get("status") == "authoring":
                     desired.append(str(item.get("id")))
@@ -125,6 +147,35 @@ def rebalance_active_presentations(
         "active_presentations": desired,
         "activated": sorted(desired_set - previous),
         "deactivated": sorted(previous - desired_set),
+    }
+
+
+def refresh_active_presentation_window(
+    root: Path,
+    slug: str,
+    state: dict[str, Any],
+    *,
+    allow_next: bool = True,
+) -> dict[str, Any]:
+    """Persist the bounded current-plus-next window after a lifecycle transition.
+
+    This is the transition hook used when the current deck enters review,
+    revision, or release. State is saved before lazy workspace materialization
+    because the materializer verifies the canonical active flag through the
+    normal task gate. Repeated calls are idempotent.
+    """
+
+    window = rebalance_active_presentations(root, slug, state, allow_next=allow_next)
+    save_state(root, slug, state)
+    materialized: list[dict[str, Any]] = []
+    if state.get("phase") == "working":
+        from mpres.production import materialize_active_author_coordinators
+
+        materialized = materialize_active_author_coordinators(root, slug, state=state)
+    sync_work_plan(root, slug, state=state)
+    return {
+        **window,
+        "materialized_author_coordinators": materialized,
     }
 
 
@@ -253,6 +304,13 @@ def critical_path_plan(root: Path, slug: str) -> dict[str, Any]:
         "action": action,
         "current_presentation": current.get("id") if current else None,
         "next_presentation": next_presentation.get("id") if next_presentation else None,
+        "next_authoring_active": bool(next_presentation and next_presentation.get("active")),
+        "next_authoring_permitted": bool(
+            current
+            and next_presentation
+            and current_allows_next_authoring(current.get("status"))
+            and _activation_limits(root, slug, state=state)[1] > 0
+        ),
         "reviewing_count": len(reviewing),
         "rules": plan.get("policy"),
     }

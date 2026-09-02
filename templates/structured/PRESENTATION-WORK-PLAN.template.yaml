@@ -8,6 +8,12 @@ policy:
   max_presentations_reviewing: 1
   max_current_authoring_presentations: 1
   max_next_authoring_presentations: 1
+  next_authoring_overlap_current_statuses:
+    - authoring
+    - review_requested
+    - reviewing
+    - author_revision
+    - release_ready
   reviewers_before_freeze: false
   release_before_release_ready: false
   prospective_hold_threads: false

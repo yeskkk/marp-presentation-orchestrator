@@ -27,6 +27,7 @@ from mpres.production import (
     prepare_revision_author_workspace,
 )
 from mpres.rendering import RENDER_PIPELINE, source_and_build_paths
+from mpres.scheduling import refresh_active_presentation_window
 from mpres.revision_routing import build_revision_routing, write_revision_work_queues
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state, save_state
 from mpres.tasks import require_gate
@@ -263,7 +264,7 @@ def request_review(
             "requested_utc": request["created_utc"],
         }
     }
-    save_state(root, slug, state)
+    active_window = refresh_active_presentation_window(root, slug, state)
     # The control-plane aggregation job and specialist assignments are created
     # only after the frozen snapshot exists. No coordinator model is launched.
     review_job = prepare_review_aggregation_job(root, slug, presentation_id)
@@ -290,7 +291,12 @@ def request_review(
             "Froze the complete deck, created five just-in-time specialist assignments, "
             "and registered a mechanical review-aggregation job."
         ),
-        data={"request": relative_display(request_root / "request.json", root), "review_plan": relative_display(review_plan, root)},
+        data={
+            "request": relative_display(request_root / "request.json", root),
+            "review_plan": relative_display(review_plan, root),
+            "active_presentations": active_window["active_presentations"],
+            "activated_next_authoring": active_window["activated"],
+        },
     )
     return request
 
@@ -479,7 +485,7 @@ def submit_channel_review(
         "findings": relative_display(canonical_findings, root),
         "finding_count": len(submitted),
     }
-    save_state(root, slug, state)
+    refresh_active_presentation_window(root, slug, state)
     append_log(
         root,
         slug,
@@ -630,7 +636,7 @@ def aggregate_round(
     round_state["aggregate"] = decision["aggregate_report"]
     presentation["status"] = "author_revision"
     presentation["active_round"] = None
-    save_state(root, slug, state)
+    refresh_active_presentation_window(root, slug, state)
     record_milestone(root, slug, "review_aggregated", presentation_id=presentation_id, data={"finding_count": len(ids)})
     record_milestone(root, slug, "revision_handoff", presentation_id=presentation_id, data={"role": "deck-revision-author"})
     append_log(
@@ -790,7 +796,7 @@ def complete_author_revision(
     write_json_atomic(ready_root / "release-readiness.json", approval)
     presentation["status"] = "release_ready"
     presentation["author_revision_completed_utc"] = approval["ready_utc"]
-    save_state(root, slug, state)
+    refresh_active_presentation_window(root, slug, state)
     release_job = prepare_release_job(root, slug, presentation_id)
     append_log(
         root,
@@ -825,7 +831,7 @@ def return_to_author(
         make_tree_writable(ready)
         ready.rename(archive)
     presentation["status"] = "author_revision"
-    save_state(root, slug, state)
+    refresh_active_presentation_window(root, slug, state)
     record = {"utc": utc_now(), "reason": reason.strip(), "archive": relative_display(archive, root)}
     append_log(
         root,

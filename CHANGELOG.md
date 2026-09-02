@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.3
+
+- Repaired the bounded current-plus-next pipeline: a current deck in review, deck revision, or release-ready state no longer closes the next authoring lane.
+- Added automatic window refresh at review/revision/release transitions, including lazy materialization of exactly one next author-coordinator workspace in `all` mode.
+- Kept `each`, the initial `pilot` pause, and zero next-WIP policies fail-closed.
+- Unified automatic rebalancing and explicit activation on one status predicate and exposed overlap state in the work-plan and critical-path projection.
+- Added focused scheduler and freeze-transition regression tests.
+
 ## 0.6.2
 
 - Removed the model-based `review-coordinator` and `release-coordinator` roles, Codex agent configurations, assignment templates, checkpoint paths, and runtime mappings.

@@ -1,9 +1,9 @@
-# Design notes — v0.6.1
+# Design notes — v0.6.3
 
 
 ## Why v0.6.1 is incremental
 
-v0.6.1 changes only runtime selection and token observability. It does not yet replace review/release coordinators, rebuild the scheduler, or migrate mutable state storage. Those changes are intentionally reserved for later independently testable 0.6.x milestones.
+v0.6.1 changed only runtime selection and token observability. v0.6.2 then removed model-based review/release coordinators, and v0.6.3 repairs the bounded current-plus-next scheduler. Transactional mutable-state storage, incident circuit breakers, and slide-subset diagnostics remain reserved for later independently testable 0.6.x milestones.
 
 ## Why v0.6.0 exists
 
@@ -58,3 +58,8 @@ The prior unpinned Marp installation changed its generated HTML DOM and invalida
 - Screenshots, model vision, original-PDF worker access, persistent HTML, and non-`TASK.md` hashes remain forbidden.
 - One daemon remains the only project-log writer.
 - Corrective releases never overwrite historical deliverables.
+
+
+## v0.6.3 — why the active window follows the current deck
+
+The current presentation remains the critical-path identity until it is finalized, but its authoring lane and the later deck's authoring lane are independent resources. Closing the latter merely because the former entered review serialized all decks. v0.6.3 therefore keeps the same bounded WIP—one current plus one next—but preserves the next authoring lane across review, revision, and release.
