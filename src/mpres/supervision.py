@@ -121,7 +121,7 @@ def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> d
         except MPresError as exc:
             token_collector = {"initialized": False, "fresh": False, "error": str(exc)}
         token_policy = read_yaml(task / "TOKEN-COLLECTOR-POLICY.yaml") or {}
-        if isinstance(token_policy, dict) and token_policy.get("required_before_first_coordinator") is True:
+        if isinstance(token_policy, dict) and token_policy.get("required_before_production") is True:
             if not token_collector.get("initialized"):
                 checks.append(
                     {
@@ -131,7 +131,7 @@ def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> d
                         "last_log": None,
                         "log_age_seconds": None,
                         "recommendation": "initialize_token_collector",
-                        "reason": "Token collector is required before coordinator work but is not initialized.",
+                        "reason": "Token collector is required before production but is not initialized.",
                     }
                 )
             elif not token_collector.get("fresh"):

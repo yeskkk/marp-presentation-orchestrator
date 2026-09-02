@@ -13,6 +13,12 @@ except ImportError:
 from mpres.logs import append_log
 from mpres.milestones import record_milestone
 from mpres.production_profiles import PRODUCTION_MODES, profile_for
+from mpres.runtime_profile import (
+    PROFILE_FILENAME,
+    assert_runtime_profile_unchanged,
+    load_runtime_profile,
+    snapshot_for_confirmation,
+)
 from mpres.state import SCHEMA_VERSION, load_state, save_state, state_file
 from mpres.util import (
     MPresError,
@@ -37,6 +43,7 @@ def _copy_policy_templates(
 ) -> None:
     profile = profile_for(production_mode, kind)
     templates = {
+        PROFILE_FILENAME: "policies/TASK-RUNTIME-PROFILE.template.yaml",
         "EXECUTION-POLICY.yaml": "policies/EXECUTION-POLICY.template.yaml",
         "REVIEW-PROFILE.yaml": "policies/REVIEW-PROFILE.template.yaml",
         "REVIEW-PROTOCOL.md": "policies/REVIEW-PROTOCOL.template.md",
@@ -252,8 +259,11 @@ def create_task(
         "updated_utc": now,
         "presented_task_sha256": None,
         "presented_utc": None,
+        "presented_runtime_profile": None,
         "confirmed_task_sha256": None,
         "confirmed_utc": None,
+        "confirmed_runtime_profile": None,
+        "runtime_profile_locked_utc": None,
         "confirmation_sequence": 0,
         "presentations": [],
         "last_delivery_sequence": 0,
@@ -283,6 +293,10 @@ def present_task(root: Path, slug: str) -> dict[str, Any]:
             "has first been proposed with `mpres policy propose`."
         )
     task_md = task_path(root, slug) / "TASK.md"
+    runtime_profile = load_runtime_profile(root, slug)
+    confirmed_runtime_profile = state.get("confirmed_runtime_profile")
+    if confirmed_runtime_profile is not None:
+        assert_runtime_profile_unchanged(root, slug, confirmed_runtime_profile)
     placeholders = text_placeholders(task_md)
     if placeholders:
         raise MPresError(
@@ -297,6 +311,7 @@ def present_task(root: Path, slug: str) -> dict[str, Any]:
     state["confirmation_kind"] = "policy_amendment" if pending_amendment else "initial"
     state["phase"] = "awaiting_user_confirmation"
     state["presented_task_sha256"] = digest
+    state["presented_runtime_profile"] = runtime_profile
     state["presented_task_snapshot"] = relative_display(snapshot, root)
     state["presented_utc"] = utc_now()
     state["confirmed_task_sha256"] = None
@@ -308,7 +323,14 @@ def present_task(root: Path, slug: str) -> dict[str, Any]:
         actor="planner",
         kind="decision",
         message="Presented the exact top-level TASK.md to the user; waiting for explicit approval.",
-        data={"task_sha256": digest, "path": relative_display(task_md, root)},
+        data={
+            "task_sha256": digest,
+            "path": relative_display(task_md, root),
+            "runtime_profile": runtime_profile,
+            "runtime_profile_path": relative_display(
+                task_path(root, slug) / PROFILE_FILENAME, root
+            ),
+        },
     )
     return state
 
@@ -328,6 +350,21 @@ def confirm_task(root: Path, slug: str) -> dict[str, Any]:
         raise MPresError("The stored presented TASK.md snapshot is missing or does not match.")
     confirmed = task_path(root, slug) / "state" / "TASK.confirmed.md"
     shutil.copy2(task_md, confirmed)
+    runtime_profile = snapshot_for_confirmation(root, slug)
+    if runtime_profile != state.get("presented_runtime_profile"):
+        raise MPresError(
+            f"{PROFILE_FILENAME} changed after the task was presented. Run `mpres task present` "
+            "again and obtain confirmation of the exact task-level runtime choices."
+        )
+    if state.get("confirmed_runtime_profile") is not None:
+        assert_runtime_profile_unchanged(
+            root,
+            slug,
+            state.get("confirmed_runtime_profile"),
+        )
+    else:
+        state["confirmed_runtime_profile"] = runtime_profile
+        state["runtime_profile_locked_utc"] = utc_now()
     state["confirmed_task_sha256"] = current
     state["confirmed_task_snapshot"] = relative_display(confirmed, root)
     state["confirmed_utc"] = utc_now()
@@ -390,6 +427,14 @@ def gate_status(root: Path, slug: str) -> tuple[bool, str, dict[str, Any]]:
         return False, "No confirmed TASK.md hash exists.", state
     if task_sha256(task_md) != confirmed:
         return False, "TASK.md differs from the confirmed version; confirmation is invalid.", state
+    try:
+        assert_runtime_profile_unchanged(
+            root,
+            slug,
+            state.get("confirmed_runtime_profile"),
+        )
+    except MPresError as exc:
+        return False, str(exc), state
     return True, "Confirmation gate passed.", state
 
 

@@ -5,6 +5,8 @@ description: Allocate role-compatible handles just in time, preserve reviewer in
 
 # Thread lifecycle
 
+Resolve each handle's model and reasoning effort from the confirmed task-local `TASK-RUNTIME-PROFILE.yaml`. Project configuration and agent TOML files do not select runtimes. Channel- or presentation-specific refinements are valid only when the user wrote them before confirmation; thread registration and assignment must match them exactly.
+
 Use `THREAD-REGISTRY.yaml` and deterministic capacity preflight. Reuse a compatible `idle_reusable` handle before spawning, keep one active assignment per handle, and preserve the configured unallocated capacity.
 
 Create model workers only when their gate opens:

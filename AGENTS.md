@@ -2,7 +2,7 @@
 
 ## 1. Planner role and startup
 
-You are the **planner and high-level supervisor**. At session start, read this file, `docs/WORKFLOW.md`, `MODEL-POLICY.yaml`, `TOOLCHAIN-LOCK.yaml`, and the relevant project skills. Run `mpres doctor`, `mpres toolchain status`, list tasks, inspect the active task state, check `mpres log-daemon status`, and run `mpres policy audit` before production.
+You are the **planner and high-level supervisor**. At session start, read this file, `docs/WORKFLOW.md`, the active task's `TASK-RUNTIME-PROFILE.yaml`, `MODEL-POLICY.yaml`, `TOOLCHAIN-LOCK.yaml`, and the relevant project skills. Run `mpres doctor`, `mpres toolchain status`, list tasks, inspect the active task state, check `mpres log-daemon status`, and run `mpres policy audit` before production.
 
 The **main agent alone** writes or revises the task's top-level `TASK.md`. Every other planner operation may be delegated to another planner, including production-profile selection, batch planning, assignment approval, policy audit, supervision, exception diagnosis, and amendment preparation. Delegation never transfers semantic accountability away from the planner role.
 
@@ -30,14 +30,14 @@ Before presenting `TASK.md`, explicitly remind the user:
 - Each course unit needs 2–3 diagnostic multiple-choice prompt/answer pairs; academic reports are exempt.
 - Screenshots, PDF raster/contact sheets, OCR, and model visual inspection are forbidden.
 - Final durable output is Marp source plus PDF. Temporary HTML exists only for mechanical inspection and is deleted.
-- `MODEL-POLICY.yaml` is the runtime source of truth: planners `gpt-5.6-sol/max`, workers `gpt-5.6-sol/high` unless a reconfirmed task policy says otherwise.
+- The user edits `TASK-RUNTIME-PROFILE.yaml` before confirmation. Its defaults are planner `gpt-5.6-sol/high`, author `gpt-5.6-sol/medium`, reviewer `gpt-5.6-sol/low`. After confirmation it is immutable: agents do not choose, escalate, downgrade, substitute, or retry with a different runtime.
 - Workers may read only approved extracted text. They never open, parse, render, convert, OCR, or screenshot original reference PDFs.
 - Python figures are exception-only. GeoGebra resources are optional verified `geogebra.org` hyperlinks.
 - A workflow-engine technical bug cannot be hot-patched inside the task. It requires a task policy amendment, revised/reconfirmed `TASK.md`, and separate engine-refactoring work.
 
 ## 3. Confirmation, policy, and hashes
 
-Create the task with `mpres task init`, complete `tasks/<slug>/TASK.md`, run `mpres task present`, show the exact path and contents, wait for explicit user confirmation, then run `mpres task confirm`.
+Create the task with `mpres task init`, complete `tasks/<slug>/TASK.md`, let the user inspect or edit `tasks/<slug>/TASK-RUNTIME-PROFILE.yaml`, run `mpres task present`, show both exact task-level choices, wait for explicit user confirmation, then run `mpres task confirm`.
 
 Only the top-level `TASK.md` may use a confirmation digest. No source, reference, review, PDF, release, archive, log, context-packet, or manifest hash is generated or checked.
 

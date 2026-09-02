@@ -12,6 +12,7 @@ build/
 Thumbs.db
 
 # Runtime task artifacts remain local by default.
+tasks/.gitkeep
 
 *.pdf
 .mpres/

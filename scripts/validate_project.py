@@ -15,7 +15,7 @@ from typing import Any
 import yaml
 
 PLACEHOLDER_RE = re.compile(r"\[\[[A-Z0-9_]+\]\]")
-EXPECTED_VERSION = "0.6.0"
+EXPECTED_VERSION = "0.6.1"
 EXPECTED_MARP_VERSION = "4.5.0"
 
 
@@ -109,45 +109,73 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
 
     model_policy = yaml.safe_load((root / "MODEL-POLICY.yaml").read_text(encoding="utf-8"))
     _expect(
-        model_policy.get("planner")
-        == {"model": "gpt-5.6-sol", "reasoning_effort": "max"},
-        "MODEL-POLICY.yaml planner runtime must be gpt-5.6-sol/max",
+        model_policy.get("selection_scope") == "task"
+        and model_policy.get("task_runtime_profile") == "TASK-RUNTIME-PROFILE.yaml"
+        and model_policy.get("agent_may_select_or_modify_runtime") is False,
+        "MODEL-POLICY.yaml must be validation-only and delegate selection to the task profile",
+        errors,
+    )
+
+    runtime_template = yaml.safe_load(
+        (root / "templates/policies/TASK-RUNTIME-PROFILE.template.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    _expect(
+        runtime_template.get("defaults")
+        == {
+            "planner": {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
+            "author": {"model": "gpt-5.6-sol", "reasoning_effort": "medium"},
+            "reviewer": {"model": "gpt-5.6-sol", "reasoning_effort": "low"},
+        },
+        "task runtime template defaults must be planner high, author medium, reviewer low",
         errors,
     )
     _expect(
-        model_policy.get("workers")
-        == {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
-        "MODEL-POLICY.yaml worker runtime must be gpt-5.6-sol/high",
+        runtime_template.get("selection_scope") == "task"
+        and runtime_template.get("immutable_after_task_confirmation") is True
+        and runtime_template.get("runtime_changes_during_task") == "forbidden",
+        "task runtime template must be task-scoped and immutable after confirmation",
+        errors,
+    )
+
+    collector_template = yaml.safe_load(
+        (root / "templates/policies/TOKEN-COLLECTOR-POLICY.template.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    _expect(
+        collector_template.get("required_before_production") is True
+        and collector_template.get("unknown_values_remain_null") is True,
+        "token collector must be a production gate and preserve unknown values as null",
         errors,
     )
 
     codex = tomllib.loads((root / ".codex/config.toml").read_text(encoding="utf-8"))
     _expect(
-        codex.get("model") == "gpt-5.6-sol"
-        and codex.get("model_reasoning_effort") == "max",
-        ".codex/config.toml planner runtime does not match MODEL-POLICY.yaml",
+        "model" not in codex and "model_reasoning_effort" not in codex,
+        ".codex/config.toml must not hard-code planner runtime",
         errors,
     )
     agents = codex.get("agents", {})
     _expect(
-        agents.get("default_subagent_model") == "gpt-5.6-sol"
-        and agents.get("default_subagent_reasoning_effort") == "high",
-        ".codex/config.toml worker defaults do not match MODEL-POLICY.yaml",
+        "default_subagent_model" not in agents
+        and "default_subagent_reasoning_effort" not in agents,
+        ".codex/config.toml must not hard-code subagent runtime",
         errors,
     )
 
     for path in sorted((root / ".codex/agents").glob("*.toml")):
         value = tomllib.loads(path.read_text(encoding="utf-8"))
-        expected_effort = "max" if path.stem == "delegated-planner" else "high"
         _expect(
-            value.get("model") == "gpt-5.6-sol"
-            and value.get("model_reasoning_effort") == expected_effort,
-            f"runtime mismatch in {path.relative_to(root)}; expected gpt-5.6-sol/{expected_effort}",
+            "model" not in value and "model_reasoning_effort" not in value,
+            f"runtime must be task-local rather than hard-coded in {path.relative_to(root)}",
             errors,
         )
 
     required = [
-        # Core v0.6.0 control plane.
+        # Core v0.6.0 control plane plus the v0.6.1 runtime/token increment.
+        "src/mpres/runtime_profile.py",
         "src/mpres/production_profiles.py",
         "src/mpres/scheduling.py",
         "src/mpres/assignments.py",
@@ -168,6 +196,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         ".agents/skills/context-packet-compilation/SKILL.md",
         ".agents/skills/workflow-engine-maintenance/SKILL.md",
         ".agents/skills/deck-revision-authoring/SKILL.md",
+        ".agents/skills/role-runtime-profiling/SKILL.md",
         # Canonical structured records.
         "templates/structured/PRODUCTION-PROFILE.template.yaml",
         "templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml",
@@ -181,6 +210,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "templates/structured/PERFORMANCE-BUDGET.template.yaml",
         "templates/structured/MILESTONE-CHECKPOINT.template.json",
         "templates/structured/TOOLCHAIN-LOCK.template.yaml",
+        "templates/policies/TASK-RUNTIME-PROFILE.template.yaml",
         # Profile-specific stages and assignments.
         "templates/stages/STAGE-M01-BASELINE-AUDIT.template.md",
         "templates/stages/STAGE-M02-DELTA-DESIGN-PATCH.template.md",
@@ -466,7 +496,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate v0.6.0 configs, templates, policies, CLI, source, and tests."
+        description="Validate v0.6.1 configs, templates, policies, CLI, source, and tests."
     )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--skip-tests", action="store_true")

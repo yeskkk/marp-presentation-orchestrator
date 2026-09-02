@@ -2,16 +2,13 @@ schema_version: 3
 task_kind: "[[TASK_KIND_CODE]]"
 production_mode: "[[PRODUCTION_MODE]]"
 stage_profile: "[[AUTHORING_STAGE_PROFILE]]"
-model_policy_source: MODEL-POLICY.yaml
-planner_runtime:
-  model: gpt-5.6-sol
-  reasoning_effort: max
-worker_runtime:
-  model: gpt-5.6-sol
-  reasoning_effort: high
-reasoning_effort_note: >-
-  Planner work defaults to max because planners own semantic scope and assignment content.
-  Execution and review workers default to high; a reconfirmed task may raise selected roles to max.
+runtime_profile_source: TASK-RUNTIME-PROFILE.yaml
+runtime_profile_user_editable_until_task_confirmation: true
+runtime_profile_immutable_after_task_confirmation: true
+runtime_changes_during_task: forbidden
+runtime_selection_note: >-
+  The user chooses all model and reasoning settings in the task-local runtime profile before
+  confirming TASK.md. Agents may resolve those fixed entries but may not change them dynamically.
 planner_delegation:
   main_agent_exclusive: [write_or_revise_TASK_md]
   all_other_planner_operations_may_be_delegated: true

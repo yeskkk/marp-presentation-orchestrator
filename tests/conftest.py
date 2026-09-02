@@ -25,6 +25,7 @@ from mpres.stages import (
     submit_stage,
 )
 from mpres.tasks import confirm_task, create_task, present_task
+from mpres.tokens import initialize_collector
 from mpres.util import read_yaml, utc_now, write_yaml_atomic
 
 
@@ -194,6 +195,14 @@ def make_confirmed_task(
         handle.write("\n\n" + "完整规划、听众、策略、资料、角色和验收说明。" * 180)
     present_task(root, slug)
     confirm_task(root, slug)
+    sessions_root = root / ".test-codex-sessions"
+    sessions_root.mkdir(exist_ok=True)
+    initialize_collector(
+        root,
+        slug,
+        sessions_root=sessions_root,
+        root_thread_id=f"root-{slug}",
+    )
     return slug, task
 
 

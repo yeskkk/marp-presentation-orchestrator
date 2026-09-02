@@ -302,6 +302,8 @@ def build_parser() -> argparse.ArgumentParser:
     thread_register.add_argument("--role", required=True)
     thread_register.add_argument("--actual-model", required=True)
     thread_register.add_argument("--actual-reasoning-effort", required=True)
+    thread_register.add_argument("--channel")
+    thread_register.add_argument("--presentation")
     thread_assign = thread_sub.add_parser("assign")
     thread_assign.add_argument("slug")
     thread_assign.add_argument("--handle", required=True)
@@ -774,6 +776,8 @@ def main(argv: list[str] | None = None) -> int:
                     role=args.role,
                     actual_model=args.actual_model,
                     actual_reasoning_effort=args.actual_reasoning_effort,
+                    channel=args.channel,
+                    presentation_id=args.presentation,
                 )
             elif args.thread_command == "assign":
                 result = assign_thread(

@@ -59,15 +59,22 @@ math: mathjax
     )
 
 
-def test_global_runtime_policy_and_reserved_thread_capacity(project_root: Path) -> None:
+def test_task_runtime_policy_and_reserved_thread_capacity(project_root: Path) -> None:
     slug, _ = make_confirmed_task(project_root, slug="runtime-task")
-    assert expected_runtime(project_root, "planner") == {
-        "model": "gpt-5.6-sol",
-        "reasoning_effort": "max",
-    }
-    assert expected_runtime(project_root, "lesson-author") == {
+    planner = expected_runtime(project_root, slug, "planner")
+    assert {key: planner[key] for key in ("model", "reasoning_effort")} == {
         "model": "gpt-5.6-sol",
         "reasoning_effort": "high",
+    }
+    author = expected_runtime(project_root, slug, "lesson-author")
+    assert {key: author[key] for key in ("model", "reasoning_effort")} == {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "medium",
+    }
+    reviewer = expected_runtime(project_root, slug, "specialist-reviewer")
+    assert {key: reviewer[key] for key in ("model", "reasoning_effort")} == {
+        "model": "gpt-5.6-sol",
+        "reasoning_effort": "low",
     }
     with pytest.raises(MPresError, match="Runtime mismatch"):
         register_thread(
@@ -77,7 +84,7 @@ def test_global_runtime_policy_and_reserved_thread_capacity(project_root: Path) 
             runtime_name="lesson",
             role="lesson-author",
             actual_model="gpt-5.6-sol",
-            actual_reasoning_effort="medium",
+            actual_reasoning_effort="high",
         )
     assert capacity_preflight(project_root, slug, requested=14)["ok"] is True
     blocked = capacity_preflight(project_root, slug, requested=15)
@@ -97,7 +104,7 @@ def test_author_launch_plan_is_current_not_an_attempt_journal(project_root: Path
     plan = author_launch_plan(project_root, slug, "p01", save=True)
     assert plan["journal_policy"] == "none; current plan only"
     assert plan["units"][0]["action"] == "start_or_reuse_lesson_author"
-    assert plan["runtime"]["reasoning_effort"] == "high"
+    assert plan["runtime"]["reasoning_effort"] == "medium"
     assert (task / "state" / "author-launch-plan-p01.json").is_file()
     assert not list(task.rglob("attempt-*"))
 
@@ -309,13 +316,15 @@ def test_main_agent_is_exclusive_only_for_task_md(project_root: Path) -> None:
     import tomllib
 
     policy = read_yaml(project_root / "MODEL-POLICY.yaml")
-    assert policy["planner"]["reasoning_effort"] == "max"
+    assert policy["selection_scope"] == "task"
+    assert policy["agent_may_select_or_modify_runtime"] is False
     delegated = tomllib.loads(
         (project_root / ".codex" / "agents" / "delegated-planner.toml").read_text(
             encoding="utf-8"
         )
     )
-    assert delegated["model_reasoning_effort"] == "max"
+    assert "model" not in delegated
+    assert "model_reasoning_effort" not in delegated
     assert "main agent alone writes or revises the top-level TASK.md" in delegated[
         "developer_instructions"
     ]

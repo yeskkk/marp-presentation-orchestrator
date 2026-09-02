@@ -1,4 +1,10 @@
-# Workflow and state machine — v0.6.0
+# Workflow and state machine — v0.6.1
+
+## v0.6.1 pre-production runtime and telemetry gate
+
+Task initialization creates `TASK-RUNTIME-PROFILE.yaml`. The user may edit its planner, author, reviewer, role, channel, and presentation entries before confirmation. `task present` records the normalized profile shown to the user; `task confirm` stores it in canonical task state. Any later difference fails the confirmation gate. Agents never alter runtime selection.
+
+After confirmation, initialize the token collector before `production init`. Unknown counters remain null and never become synthetic zeros.
 
 ## 1. Control plane versus semantic work
 

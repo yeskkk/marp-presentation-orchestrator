@@ -1,4 +1,9 @@
-# Design notes — v0.6.0
+# Design notes — v0.6.1
+
+
+## Why v0.6.1 is incremental
+
+v0.6.1 changes only runtime selection and token observability. It does not yet replace review/release coordinators, rebuild the scheduler, or migrate mutable state storage. Those changes are intentionally reserved for later independently testable 0.6.x milestones.
 
 ## Why v0.6.0 exists
 
@@ -46,7 +51,7 @@ The prior unpinned Marp installation changed its generated HTML DOM and invalida
 
 ## What remains intentionally unchanged
 
-- Planners use `gpt-5.6-sol/max`; workers use `gpt-5.6-sol/high` by default.
+- Runtime selection is task-local and user-authored. Defaults are planner `gpt-5.6-sol/high`, author `gpt-5.6-sol/medium`, and reviewer `gpt-5.6-sol/low`; confirmed choices never change during production.
 - Five review channels remain independent.
 - Review aggregation is atomic.
 - There is no reviewer recheck after author revision.

@@ -6,6 +6,7 @@ import json
 import tomllib
 
 from mpres.production_profiles import load_production_profile
+from mpres.runtime_profile import PROFILE_FILENAME, load_runtime_profile
 from mpres.state import REVIEW_CHANNELS, REVIEW_ROUNDS, load_state, save_state
 from mpres.tasks import gate_status, require_gate
 from mpres.util import MPresError, read_yaml, task_path, utc_now, write_yaml_atomic
@@ -32,7 +33,7 @@ def _expect(condition: bool, message: str, errors: list[str]) -> None:
 
 
 def policy_audit(root: Path, slug: str) -> dict[str, Any]:
-    """Audit task policy against the v0.6.0 execution contract.
+    """Audit task policy against the v0.6.1 execution contract.
 
     This audit intentionally treats an engine bug as a policy event rather than permission to
     hot-patch the framework inside a live task.
@@ -74,6 +75,12 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     _expect(review_policy.get("post_review_verification") == "none", "Post-review reviewer verification must be none.", errors)
     _expect(review_policy.get("deck_revision_author_completed_revision_is_sufficient_for_release") is True, "Completed deck-revision-author work must be sufficient for release.", errors)
 
+    try:
+        runtime_profile = load_runtime_profile(root, slug)
+    except MPresError as exc:
+        errors.append(str(exc))
+        runtime_profile = {}
+
     model_policy_path = root / "MODEL-POLICY.yaml"
     try:
         model_policy = read_yaml(model_policy_path)
@@ -82,13 +89,36 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     if not isinstance(model_policy, dict):
         errors.append("MODEL-POLICY.yaml is missing or invalid.")
         model_policy = {}
-    planner_policy = model_policy.get("planner", {}) if isinstance(model_policy, dict) else {}
-    worker_policy = model_policy.get("workers", {}) if isinstance(model_policy, dict) else {}
-    _expect(planner_policy == {"model": "gpt-5.6-sol", "reasoning_effort": "max"}, "Global planner model policy must be gpt-5.6-sol/max.", errors)
-    _expect(worker_policy == {"model": "gpt-5.6-sol", "reasoning_effort": "high"}, "Global worker model policy must be gpt-5.6-sol/high.", errors)
-    _expect(execution.get("model_policy_source") == "MODEL-POLICY.yaml", "EXECUTION-POLICY.yaml must reference MODEL-POLICY.yaml.", errors)
-    _expect(execution.get("planner_runtime") == planner_policy, "Task planner_runtime must match the global planner model policy.", errors)
-    _expect(execution.get("worker_runtime") == worker_policy, "Task worker_runtime must match the global worker model policy.", errors)
+    _expect(
+        model_policy.get("selection_scope") == "task",
+        "MODEL-POLICY.yaml must be validation-only and delegate runtime selection to the task.",
+        errors,
+    )
+    _expect(
+        model_policy.get("task_runtime_profile") == PROFILE_FILENAME,
+        f"MODEL-POLICY.yaml must name {PROFILE_FILENAME} as the task runtime source.",
+        errors,
+    )
+    _expect(
+        model_policy.get("agent_may_select_or_modify_runtime") is False,
+        "Project policy must forbid agents from selecting or modifying runtime choices.",
+        errors,
+    )
+    _expect(
+        execution.get("runtime_profile_source") == PROFILE_FILENAME,
+        f"EXECUTION-POLICY.yaml must reference {PROFILE_FILENAME}.",
+        errors,
+    )
+    _expect(
+        execution.get("runtime_changes_during_task") == "forbidden",
+        "EXECUTION-POLICY.yaml must forbid runtime changes during production.",
+        errors,
+    )
+    _expect(
+        bool(runtime_profile),
+        f"{PROFILE_FILENAME} must be present and valid.",
+        errors,
+    )
 
     delegation = execution.get("planner_delegation", {}) if isinstance(execution, dict) else {}
     _expect(delegation.get("main_agent_exclusive") == ["write_or_revise_TASK_md"], "Only writing or revising TASK.md may be exclusive to the main agent.", errors)
@@ -135,6 +165,19 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     token_policy = execution.get("token_accounting", {}) if isinstance(execution, dict) else {}
     _expect(token_policy.get("collection_mode") == "workflow_milestones", "Token accounting must run at workflow milestones.", errors)
     _expect(token_policy.get("periodic_model_polling") == "forbidden", "Periodic model polling for token accounting is forbidden.", errors)
+    collector_policy = read_yaml(task / "TOKEN-COLLECTOR-POLICY.yaml") or {}
+    _expect(
+        isinstance(collector_policy, dict)
+        and collector_policy.get("required_before_production") is True,
+        "Token collector initialization must be required before production.",
+        errors,
+    )
+    _expect(
+        isinstance(collector_policy, dict)
+        and collector_policy.get("unknown_values_remain_null") is True,
+        "Unknown token counters must remain null rather than being reported as zero.",
+        errors,
+    )
 
     interaction = execution.get("interaction", {}) if isinstance(execution, dict) else {}
     course = interaction.get("course_multiple_choice_per_unit", {}) if isinstance(interaction, dict) else {}
@@ -173,9 +216,18 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     except (OSError, tomllib.TOMLDecodeError):
         errors.append(f"Codex config is missing or invalid: {root_config_path}")
         root_config = {}
-    _expect(root_config.get("model") == "gpt-5.6-sol" and root_config.get("model_reasoning_effort") == "max", "Planner Codex config must use gpt-5.6-sol/max.", errors)
+    _expect(
+        "model" not in root_config and "model_reasoning_effort" not in root_config,
+        "Project Codex config must not hard-code planner model or reasoning effort.",
+        errors,
+    )
     agents_config = root_config.get("agents", {}) if isinstance(root_config, dict) else {}
-    _expect(agents_config.get("default_subagent_model") == "gpt-5.6-sol" and agents_config.get("default_subagent_reasoning_effort") == "high", "Default subagent Codex config must use gpt-5.6-sol/high.", errors)
+    _expect(
+        "default_subagent_model" not in agents_config
+        and "default_subagent_reasoning_effort" not in agents_config,
+        "Project Codex config must not hard-code a default subagent runtime.",
+        errors,
+    )
     required_agent_configs = {
         "delegated-planner",
         "author-coordinator",
@@ -196,12 +248,9 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
         except (OSError, tomllib.TOMLDecodeError):
             errors.append(f"Codex agent config is missing or invalid: {config_path}")
             continue
-        expected_effort = "max" if config_path.stem == "delegated-planner" else "high"
-        label = "Planner" if expected_effort == "max" else "Worker"
         _expect(
-            config.get("model") == "gpt-5.6-sol"
-            and config.get("model_reasoning_effort") == expected_effort,
-            f"{label} Codex config must use gpt-5.6-sol/{expected_effort}: {config_path}",
+            "model" not in config and "model_reasoning_effort" not in config,
+            f"Agent config must obtain runtime from {PROFILE_FILENAME}, not hard-code it: {config_path}",
             errors,
         )
 

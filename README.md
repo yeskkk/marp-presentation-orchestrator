@@ -1,6 +1,6 @@
-# Marp Presentation Orchestrator v0.6.0
+# Marp Presentation Orchestrator v0.6.1
 
-这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.0 的重点不是降低作者或 reviewer 的推理强度，而是把状态机、调度、任务展开、格式验证和机械检查从模型调用中移到 Python 控制平面，并为“从零创作、成熟课件迁移、局部修订”使用不同的生产流程。
+这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.1 是在 v0.6.0 控制平面上的第一个小步升级：把模型与推理强度移到用户可编辑的任务级配置，并修复 token 缺失值被错误汇总为零的问题。
 
 正式耐久产物始终是：
 
@@ -14,7 +14,15 @@ PDF
 
 浏览器 HTML 仅用于 author/release 的机械布局检查，检查后立即删除；它不进入 reviewer bundle 或 deliverables。
 
-## 1. v0.6.0 的主要变化
+## 1. v0.6.1 增量
+
+- 新建任务级 `TASK-RUNTIME-PROFILE.yaml`，默认 planner/author/reviewer 分别为 `sol high`、`sol medium`、`sol low`。
+- 允许用户在确认前进行更细角色、review 通道或 presentation 配置；确认后全程只读。
+- 删除项目级 Codex 与 agent 配置中的具体 model/effort 选择。
+- token collector 成为 production 初始化硬门。
+- 缺失 token 值保持 `null`，汇总增加 known subtotal、unknown count 和 coverage，绝不把 unavailable 显示成零。
+
+## 1.1 v0.6.0 的主要变化
 
 - 增加四种 production profile，不再让成熟课件迁移重复走绿地六阶段。
 - `legacy_migration` 固定使用三阶段，但仍默认每节课分配一名固定 lesson author。
@@ -30,16 +38,15 @@ PDF
 
 ## 2. 模型与 planner 委派政策
 
-`MODEL-POLICY.yaml` 是唯一运行时真源：
+每个任务在初始化时生成：
 
-```yaml
-planner:
-  model: gpt-5.6-sol
-  reasoning_effort: max
-workers:
-  model: gpt-5.6-sol
-  reasoning_effort: high
+```text
+tasks/<slug>/TASK-RUNTIME-PROFILE.yaml
 ```
+
+默认值是 planner `gpt-5.6-sol/high`、author `gpt-5.6-sol/medium`、reviewer `gpt-5.6-sol/low`。用户可以在确认 `TASK.md` 前按具体角色、review 通道或 presentation 修改；agent 不得自行选择，也不得在任务运行时动态升级、降级、替换或重写。`mpres task present` 展示其规范化内容，`mpres task confirm` 把完整配置存入 canonical task state；不增加除 `TASK.md` 以外的 hash。
+
+`MODEL-POLICY.yaml` 只描述项目支持的配置模式，不再保存具体任务的运行时选择；`.codex/config.toml` 和各 agent TOML 也不再写死 model/effort。
 
 主 planner 独占的工作只有：
 

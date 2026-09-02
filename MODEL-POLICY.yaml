@@ -1,11 +1,11 @@
-schema_version: 2
-planner:
-  model: gpt-5.6-sol
-  reasoning_effort: max
-workers:
-  model: gpt-5.6-sol
-  reasoning_effort: high
+schema_version: 3
+purpose: runtime-capability-validation-only
+selection_scope: task
+task_runtime_profile: TASK-RUNTIME-PROFILE.yaml
+agent_may_select_or_modify_runtime: false
+reasoning_effort_values: [low, medium, high, max]
+model_identifier_policy: non_empty_user_selected_runtime_id
 notes:
-  - The main agent and delegated planners use max because planner work owns semantic scope, assignment content, policy changes, and cross-role decisions.
-  - Only writing or revising the top-level TASK.md is exclusive to the main agent; all other planner work may be delegated.
-  - Execution, revision, release, and review workers use high unless a reconfirmed task policy raises a selected role to max.
+  - Runtime defaults and any refinements live only in each task's TASK-RUNTIME-PROFILE.yaml.
+  - The user may edit that file before confirming TASK.md.
+  - The confirmed task snapshot is immutable; agents never escalate, downgrade, substitute, or retry with a different runtime.

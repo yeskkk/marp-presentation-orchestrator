@@ -421,12 +421,26 @@ def audit_task(root: Path, slug: str) -> dict[str, Any]:
                 continue
             role = str(handle.get("role") or "")
             try:
-                expected = expected_runtime(root, role)
+                expected = expected_runtime(
+                    root,
+                    slug,
+                    role,
+                    channel=(str(handle.get("channel")) if handle.get("channel") else None),
+                    presentation_id=(
+                        str(handle.get("presentation_id"))
+                        if handle.get("presentation_id")
+                        else None
+                    ),
+                )
             except Exception as exc:
                 add("error", "thread-lifecycle", f"Cannot determine runtime policy for {role}: {exc}")
                 continue
             if handle.get("actual_model") != expected["model"] or handle.get("actual_reasoning_effort") != expected["reasoning_effort"]:
-                add("error", "thread-lifecycle", f"Thread {handle.get('handle_id')} does not match global runtime policy.")
+                add(
+                    "error",
+                    "thread-lifecycle",
+                    f"Thread {handle.get('handle_id')} does not match the confirmed task runtime profile.",
+                )
             if handle.get("state") == "active" and str(handle.get("presentation_id")) in finalized_ids:
                 add("error", "thread-lifecycle", f"Thread {handle.get('handle_id')} remains active for a finalized presentation.")
     except Exception as exc:

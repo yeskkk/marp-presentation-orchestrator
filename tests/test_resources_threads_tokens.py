@@ -98,7 +98,7 @@ def test_thread_that_authored_deck_cannot_review_it(project_root: Path) -> None:
         runtime_name="author",
         role="lesson-author",
         actual_model="gpt-5.6-sol",
-        actual_reasoning_effort="high",
+        actual_reasoning_effort="medium",
     )
     assign_thread(
         project_root,

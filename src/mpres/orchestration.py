@@ -12,8 +12,21 @@ from mpres.threads import capacity_preflight, expected_runtime, list_threads
 from mpres.util import MPresError, relative_display, task_path, utc_now, write_json_atomic
 
 
-def _idle_handles(root: Path, slug: str, role: str) -> list[dict[str, Any]]:
-    expected = expected_runtime(root, role)
+def _idle_handles(
+    root: Path,
+    slug: str,
+    role: str,
+    *,
+    channel: str | None = None,
+    presentation_id: str | None = None,
+) -> list[dict[str, Any]]:
+    expected = expected_runtime(
+        root,
+        slug,
+        role,
+        channel=channel,
+        presentation_id=presentation_id,
+    )
     registry = list_threads(root, slug)
     return [
         item
@@ -84,7 +97,7 @@ def author_launch_plan(root: Path, slug: str, presentation_id: str, *, save: boo
     needing_handle = [
         row for row in units if row["action"] == "start_or_reuse_lesson_author" and not row.get("thread_handle")
     ]
-    reusable = _idle_handles(root, slug, "lesson-author")
+    reusable = _idle_handles(root, slug, "lesson-author", presentation_id=presentation_id)
     new_handles = max(0, len(needing_handle) - len(reusable))
     capacity = capacity_preflight(root, slug, requested=new_handles)
     result = {
@@ -94,7 +107,12 @@ def author_launch_plan(root: Path, slug: str, presentation_id: str, *, save: boo
         "task_slug": slug,
         "presentation_id": presentation_id,
         "status": presentation.get("status"),
-        "runtime": expected_runtime(root, "lesson-author"),
+        "runtime": expected_runtime(
+            root,
+            slug,
+            "lesson-author",
+            presentation_id=presentation_id,
+        ),
         "reusable_handle_ids": [str(item.get("handle_id")) for item in reusable],
         "new_handles_needed": new_handles,
         "capacity": capacity,
@@ -141,8 +159,24 @@ def review_launch_plan(root: Path, slug: str, presentation_id: str, *, save: boo
             }
         )
     pending = [row for row in channels if row["action"] == "start_or_reuse_independent_reviewer"]
-    reusable = _idle_handles(root, slug, "specialist-reviewer")
-    new_handles = max(0, len(pending) - len(reusable))
+    reusable_by_channel = {
+        row["channel"]: _idle_handles(
+            root,
+            slug,
+            "specialist-reviewer",
+            channel=row["channel"],
+            presentation_id=presentation_id,
+        )
+        for row in pending
+    }
+    reusable_ids = sorted(
+        {
+            str(item.get("handle_id"))
+            for items in reusable_by_channel.values()
+            for item in items
+        }
+    )
+    new_handles = sum(1 for row in pending if not reusable_by_channel[row["channel"]])
     capacity = capacity_preflight(root, slug, requested=new_handles)
     result = {
         "schema_version": 1,
@@ -151,8 +185,23 @@ def review_launch_plan(root: Path, slug: str, presentation_id: str, *, save: boo
         "task_slug": slug,
         "presentation_id": presentation_id,
         "status": presentation.get("status"),
-        "runtime": expected_runtime(root, "specialist-reviewer"),
-        "reusable_handle_ids": [str(item.get("handle_id")) for item in reusable],
+        "runtime": expected_runtime(
+            root,
+            slug,
+            "specialist-reviewer",
+            presentation_id=presentation_id,
+        ),
+        "runtime_by_channel": {
+            row["channel"]: expected_runtime(
+                root,
+                slug,
+                "specialist-reviewer",
+                channel=row["channel"],
+                presentation_id=presentation_id,
+            )
+            for row in channels
+        },
+        "reusable_handle_ids": reusable_ids,
         "new_handles_needed": new_handles,
         "capacity": capacity,
         "channels": channels,

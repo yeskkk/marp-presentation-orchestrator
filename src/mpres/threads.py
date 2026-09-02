@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 from typing import Any
 
+import tomllib
+
+from mpres.runtime_profile import load_runtime_profile, resolve_runtime
 from mpres.tasks import require_gate
 from mpres.util import MPresError, read_yaml, task_path, utc_now, write_yaml_atomic
 
@@ -29,24 +31,29 @@ def _find(registry: dict[str, Any], handle_id: str) -> dict[str, Any]:
     raise MPresError(f"Unknown thread handle: {handle_id}")
 
 
-def _model_policy(root: Path) -> dict[str, Any]:
-    value = read_yaml(root / "MODEL-POLICY.yaml")
-    if not isinstance(value, dict):
-        raise MPresError("MODEL-POLICY.yaml must contain a mapping.")
-    return value
+def expected_runtime(
+    root: Path,
+    slug: str,
+    role: str,
+    *,
+    channel: str | None = None,
+    presentation_id: str | None = None,
+) -> dict[str, str]:
+    """Resolve the user-authored, task-local runtime without changing it.
 
+    Runtime selection is deliberately not inferred from project configuration,
+    difficulty, retries, or confidence.  All refinements must already exist in
+    ``TASK-RUNTIME-PROFILE.yaml`` before task confirmation.
+    """
 
-def expected_runtime(root: Path, role: str) -> dict[str, str]:
-    policy = _model_policy(root)
-    key = "planner" if role in {"planner", "delegated-planner"} else "workers"
-    row = policy.get(key)
-    if not isinstance(row, dict):
-        raise MPresError(f"MODEL-POLICY.yaml lacks the {key} runtime policy.")
-    model = str(row.get("model") or "").strip()
-    reasoning = str(row.get("reasoning_effort") or "").strip()
-    if not model or not reasoning:
-        raise MPresError(f"MODEL-POLICY.yaml contains an incomplete {key} runtime policy.")
-    return {"model": model, "reasoning_effort": reasoning}
+    require_gate(root, slug)
+    profile = load_runtime_profile(root, slug)
+    return resolve_runtime(
+        profile,
+        role,
+        channel=channel,
+        presentation_id=presentation_id,
+    )
 
 
 def _thread_limit(root: Path) -> int:
@@ -96,8 +103,23 @@ def capacity_preflight(root: Path, slug: str, *, requested: int = 1) -> dict[str
     }
 
 
-def _require_runtime_match(root: Path, role: str, model: str, reasoning_effort: str) -> None:
-    expected = expected_runtime(root, role)
+def _require_runtime_match(
+    root: Path,
+    slug: str,
+    role: str,
+    model: str,
+    reasoning_effort: str,
+    *,
+    channel: str | None = None,
+    presentation_id: str | None = None,
+) -> None:
+    expected = expected_runtime(
+        root,
+        slug,
+        role,
+        channel=channel,
+        presentation_id=presentation_id,
+    )
     if model != expected["model"] or reasoning_effort != expected["reasoning_effort"]:
         raise MPresError(
             f"Runtime mismatch for {role}: expected {expected['model']}/{expected['reasoning_effort']}, "
@@ -114,12 +136,22 @@ def register_thread(
     role: str,
     actual_model: str,
     actual_reasoning_effort: str,
+    channel: str | None = None,
+    presentation_id: str | None = None,
     state: str = "idle_reusable",
 ) -> dict[str, Any]:
     require_gate(root, slug)
     if state not in THREAD_STATES:
         raise MPresError(f"Invalid thread state: {state}")
-    _require_runtime_match(root, role, actual_model, actual_reasoning_effort)
+    _require_runtime_match(
+        root,
+        slug,
+        role,
+        actual_model,
+        actual_reasoning_effort,
+        channel=channel,
+        presentation_id=presentation_id,
+    )
     capacity = capacity_preflight(root, slug, requested=1)
     if not capacity["ok"]:
         raise MPresError(str(capacity["reason"]))
@@ -133,6 +165,9 @@ def register_thread(
         "actual_model": actual_model,
         "actual_reasoning_effort": actual_reasoning_effort,
         "runtime_policy_verified": True,
+        "runtime_profile_path": f"tasks/{slug}/TASK-RUNTIME-PROFILE.yaml",
+        "runtime_registration_channel": channel,
+        "runtime_registration_presentation_id": presentation_id,
         "state": state,
         "current_assignment": None,
         "presentation_id": None,
@@ -169,14 +204,17 @@ def assign_thread(
     row = _find(registry, handle_id)
     if row.get("state") not in {"idle_reusable"}:
         raise MPresError(f"Thread {handle_id} is not idle and reusable.")
+    if role == "specialist-reviewer" and presentation_id in row.get("authored_presentations", []):
+        raise MPresError("A thread that authored a presentation may not review it.")
     _require_runtime_match(
         root,
+        slug,
         role,
         str(row.get("actual_model") or ""),
         str(row.get("actual_reasoning_effort") or ""),
+        channel=channel,
+        presentation_id=presentation_id,
     )
-    if role == "specialist-reviewer" and presentation_id in row.get("authored_presentations", []):
-        raise MPresError("A thread that authored a presentation may not review it.")
     if role == "specialist-reviewer":
         for other in registry["handles"]:
             if not isinstance(other, dict) or other is row:

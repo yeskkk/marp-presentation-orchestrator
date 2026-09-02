@@ -7,4 +7,4 @@ description: Import exact token counters at workflow milestones without model po
 
 Collect only exact counters exposed by session metadata; never estimate missing values or read prompt/response contents. Attribute imported counters by assignment epoch, role, presentation, unit, review channel, stage profile, and thread handle.
 
-Generate summaries at meaningful milestones—assignment start/handoff, freeze, review completion, revision completion, and release—not by periodic model polling. Record unavailable counters as unavailable. Cached input remains distinct from uncached input.
+Initialize the collector after task confirmation and before production initialization. Generate summaries at meaningful milestones—assignment start/handoff, freeze, review completion, revision completion, and release—not by periodic model polling. Record unavailable counters as `null`; never coerce them to zero. Every summary reports complete-record coverage, field coverage, known subtotals, and unknown-record counts. Cached input remains distinct from uncached input.

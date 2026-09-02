@@ -135,6 +135,35 @@ def _read(root: Path, slug: str) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _field_summary(rows: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    materialized = list(rows)
+    totals: dict[str, int | None] = {}
+    known_totals: dict[str, int] = {}
+    unknown_records: dict[str, int] = {}
+    field_coverage: dict[str, float] = {}
+    for name in FIELDS:
+        known = [int(row[name]) for row in materialized if row.get(name) is not None]
+        unknown = len(materialized) - len(known)
+        known_totals[name] = sum(known)
+        unknown_records[name] = unknown
+        totals[name] = sum(known) if unknown == 0 else None
+        field_coverage[name] = len(known) / len(materialized) if materialized else 1.0
+    complete_records = sum(
+        1 for row in materialized if all(row.get(name) is not None for name in FIELDS)
+    )
+    coverage = complete_records / len(materialized) if materialized else 1.0
+    return {
+        "records": len(materialized),
+        "complete_records": complete_records,
+        "coverage": coverage,
+        "status": "complete" if complete_records == len(materialized) else "partial_or_unavailable",
+        "totals": totals,
+        "known_totals": known_totals,
+        "unknown_records": unknown_records,
+        "field_coverage": field_coverage,
+    }
+
+
 def _aggregate(rows: Iterable[dict[str, Any]], keys: tuple[str, ...]) -> list[dict[str, Any]]:
     groups: dict[tuple[Any, ...], dict[str, Any]] = {}
     for row in rows:
@@ -142,19 +171,37 @@ def _aggregate(rows: Iterable[dict[str, Any]], keys: tuple[str, ...]) -> list[di
         if key not in groups:
             groups[key] = {
                 **{name: row.get(name) or "" for name in keys},
-                "model_calls": 0,
                 "first_timestamp": row.get("timestamp") or row.get("recorded_utc"),
                 "last_timestamp": row.get("timestamp") or row.get("recorded_utc"),
-                **{name: 0 for name in FIELDS},
+                "_rows": [],
             }
         group = groups[key]
-        group["model_calls"] += 1
+        group["_rows"].append(row)
         timestamp = row.get("timestamp") or row.get("recorded_utc") or ""
         group["first_timestamp"] = min(group["first_timestamp"] or timestamp, timestamp)
         group["last_timestamp"] = max(group["last_timestamp"] or timestamp, timestamp)
-        for name in FIELDS:
-            group[name] += int(row.get(name, 0) or 0)
-    return sorted(groups.values(), key=lambda item: tuple(str(item.get(name, "")) for name in keys))
+    result: list[dict[str, Any]] = []
+    for group in groups.values():
+        summary = _field_summary(group.pop("_rows"))
+        result.append(
+            {
+                **group,
+                "model_calls": summary["records"],
+                "complete_records": summary["complete_records"],
+                "coverage": summary["coverage"],
+                "status": summary["status"],
+                **summary["totals"],
+                **{
+                    f"{name}_known_sum": summary["known_totals"][name]
+                    for name in FIELDS
+                },
+                **{
+                    f"{name}_unknown_records": summary["unknown_records"][name]
+                    for name in FIELDS
+                },
+            }
+        )
+    return sorted(result, key=lambda item: tuple(str(item.get(name, "")) for name in keys))
 
 
 def token_report(root: Path, slug: str, *, group_by: str = "presentation_id") -> dict[str, Any]:
@@ -163,6 +210,7 @@ def token_report(root: Path, slug: str, *, group_by: str = "presentation_id") ->
     if group_by not in allowed:
         raise MPresError(f"group-by must be one of {sorted(allowed)}")
     rows = _read(root, slug)
+    overall = _field_summary(rows)
     grouped = _aggregate(rows, (group_by,))
     groups: list[dict[str, Any]] = []
     for row in grouped:
@@ -171,16 +219,34 @@ def token_report(root: Path, slug: str, *, group_by: str = "presentation_id") ->
                 group_by: row[group_by],
                 "records": row["model_calls"],
                 "totals": {field: row[field] for field in FIELDS},
+                "known_totals": {
+                    field: row[f"{field}_known_sum"] for field in FIELDS
+                },
+                "unknown_records": {
+                    field: row[f"{field}_unknown_records"] for field in FIELDS
+                },
+                "complete_records": row["complete_records"],
+                "coverage": row["coverage"],
+                "status": row["status"],
             }
         )
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_utc": utc_now(),
         "task_slug": slug,
         "group_by": group_by,
         "record_count": len(rows),
+        "complete_record_count": overall["complete_records"],
+        "coverage": overall["coverage"],
+        "status": overall["status"],
+        "totals": overall["totals"],
+        "known_totals": overall["known_totals"],
+        "unknown_records": overall["unknown_records"],
+        "field_coverage": overall["field_coverage"],
         "groups": groups,
-        "measurement_policy": "exact exported counters only; no estimates",
+        "measurement_policy": (
+            "exact exported counters only; no estimates; missing values remain null and make coverage partial"
+        ),
     }
 
 
@@ -344,9 +410,18 @@ def _token_rows(meta: dict[str, Any], task_started_at: datetime, overrides: dict
                 if not usage:
                     continue
                 call_index += 1
-                values = {name: int(usage.get(name, 0) or 0) for name in FIELDS}
-                if values["total_tokens"] == 0:
-                    values["total_tokens"] = values["input_tokens"] + values["output_tokens"]
+                values = {
+                    name: _optional_int(usage.get(name), name)
+                    for name in FIELDS
+                }
+                if (
+                    values["total_tokens"] is None
+                    and values["input_tokens"] is not None
+                    and values["output_tokens"] is not None
+                ):
+                    values["total_tokens"] = (
+                        int(values["input_tokens"]) + int(values["output_tokens"])
+                    )
                 rows.append(
                     {
                         "schema_version": 2,
@@ -406,18 +481,24 @@ def collect_tokens(root: Path, slug: str) -> dict[str, Any]:
         _aggregate(rows, ("thread_id", "role", "presentation_id", "unit_id", "channel", "stage")),
     )
     _write_csv(output / "usage-by-role.csv", _aggregate(rows, ("role", "presentation_id", "stage")))
-    totals = {field: sum(int(row.get(field, 0) or 0) for row in rows) for field in FIELDS}
+    summary = _field_summary(rows)
     now = datetime.now(UTC)
     recent = [row for row in rows if (parse_utc(row["timestamp"]) or now) >= now - timedelta(hours=1)]
     latest = {
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_utc": now.isoformat().replace("+00:00", "Z"),
         "task_slug": slug,
         "root_thread_id": config["root_thread_id"],
         "selected_threads": len(threads),
         "model_calls": len(rows),
         "recent_60m_model_calls": len(recent),
-        "totals": totals,
+        "complete_record_count": summary["complete_records"],
+        "coverage": summary["coverage"],
+        "status": summary["status"],
+        "totals": summary["totals"],
+        "known_totals": summary["known_totals"],
+        "unknown_records": summary["unknown_records"],
+        "field_coverage": summary["field_coverage"],
         "counter_source": "Codex event_msg.token_count.info.last_token_usage",
         "content_payloads_extracted": False,
     }
@@ -443,4 +524,21 @@ def collector_status(root: Path, slug: str) -> dict[str, Any]:
         "fresh": age is not None and age <= warning_seconds,
         "freshness_warning_seconds": warning_seconds,
         "content_payloads_extracted": False,
+        "ready_for_production": config is not None,
     }
+
+
+def require_collector_initialized(root: Path, slug: str) -> dict[str, Any]:
+    """Fail closed before production when the task policy requires exact counters."""
+
+    require_gate(root, slug)
+    policy = read_yaml(task_path(root, slug) / "TOKEN-COLLECTOR-POLICY.yaml") or {}
+    required = isinstance(policy, dict) and policy.get("required_before_production") is True
+    enabled = not isinstance(policy, dict) or policy.get("enabled") is not False
+    status = collector_status(root, slug)
+    if enabled and required and not status.get("initialized"):
+        raise MPresError(
+            "Token collector must be initialized before production. Run `mpres token "
+            "collector-init` after task confirmation; unavailable counters may not be reported as zero."
+        )
+    return status

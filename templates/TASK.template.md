@@ -7,7 +7,7 @@
 > **Delivery mode:** `[[STOP_MODE]]`  
 > **Production mode:** `[[PRODUCTION_MODE]]`  
 > **Authoring stage profile:** `[[AUTHORING_STAGE_PROFILE]]`  
-> **Default runtime policy:** planner `gpt-5.6-sol/max`; workers `gpt-5.6-sol/high`  
+> **Task runtime profile:** user-editable `TASK-RUNTIME-PROFILE.yaml`; defaults are planner `gpt-5.6-sol/high`, author `gpt-5.6-sol/medium`, reviewer `gpt-5.6-sol/low`  
 > **Plan status:** awaiting explicit user confirmation of this exact `TASK.md`
 
 ## 1. 任务名称、简介与范围
@@ -34,7 +34,7 @@
 4. 审核禁止截图、PDF 栅格化、联系表和模型视觉；只使用 Marp 源、结构化记录、构建日志和 PDF 页面几何/文本层。
 5. 项目只交付 Marp 源和 PDF。author/release 可生成临时 Marp HTML 做机械溢出自检，但检查后必须删除，且 reviewer 不检查该 HTML。
 6. 除本文件确认门外，不生成或检查哈希。
-7. planner 默认 `gpt-5.6-sol/max`；所有 worker 默认 `gpt-5.6-sol/high`。极难研究报告可由用户明确把特定 worker 提高到 `max`。
+7. 用户在确认任务前自行检查和修改 `TASK-RUNTIME-PROFILE.yaml`。默认 planner 为 `gpt-5.6-sol/high`、author 为 `gpt-5.6-sol/medium`、reviewer 为 `gpt-5.6-sol/low`。可以按角色、review 通道或 presentation 细分，但 agent 不得自行决定，也不得在任务运行时动态改动。
 8. worker 只能读取 `downloads/text/` 中的抽取文本。任何原 PDF 即使物理存在也禁止打开、解析、渲染、转换、OCR、截图或交给视觉模型。
 9. Python 作图默认关闭；GeoGebra 仅可做有界站内搜索并以普通超链接引用。
 10. planner 对 assignment 的语义内容负责。planner 可以审批一份结构化 batch plan，由程序机械展开每个 unit 的精确 assignment；这种展开仍视为 planner 编写。**只有撰写或修订顶层 `TASK.md` 必须由主 planner（main agent）亲自完成；其它 planner 工作均可委派给其它 planner。**
@@ -107,6 +107,7 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 机器策略：
 
 - `EXECUTION-POLICY.yaml`
+- `TASK-RUNTIME-PROFILE.yaml`
 - `REVIEW-PROFILE.yaml`
 - `REFERENCE-ACCESS-POLICY.yaml`
 - `POLICY-PRECEDENCE.yaml`

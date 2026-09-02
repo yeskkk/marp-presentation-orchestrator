@@ -1,6 +1,14 @@
-# Validation record — v0.6.0
+# Validation record — v0.6.1
 
-Validation date: 2026-09-01 UTC.
+Validation date: 2026-09-02 UTC.
+
+## v0.6.1 incremental gates
+
+- Every new task contains `TASK-RUNTIME-PROFILE.yaml`; its template defaults are planner `gpt-5.6-sol/high`, author `gpt-5.6-sol/medium`, and reviewer `gpt-5.6-sol/low`.
+- The presented runtime profile is part of the confirmation snapshot, but no additional hash is created. Any post-confirmation edit invalidates the task gate.
+- Project Codex and agent TOML files contain no concrete model or reasoning choice.
+- Production initialization fails until the exact token collector is initialized.
+- Token reports preserve unknown values as null and expose known subtotals, unknown counts, and coverage.
 
 ## Policy represented by this release
 
@@ -55,7 +63,7 @@ python -m pytest -q
 Final result:
 
 ```text
-42 passed
+47 passed
 ```
 
 The tests cover, among other things:
@@ -77,8 +85,7 @@ The tests cover, among other things:
 9. canonical interaction records and generated compatibility views;
 10. source, density, course-consistency, mathematical-typesetting, HTML
     overflow, PDF structure, and text-layer inspection;
-11. project logging, thread lifecycle, checkpoints, supervision, and exact
-    milestone token accounting;
+11. project logging, thread lifecycle, checkpoints, supervision, task-local immutable runtime selection, collector startup gating, and null-safe exact milestone token accounting;
 12. targeted and full corrective maintenance without overwriting prior
     releases; and
 13. task confirmation, assignment contracts, reference safety, asset policy,
@@ -102,12 +109,11 @@ PYTHONPATH=src python -m mpres engine --help
 
 `validate_project.py` also:
 
-- checks project version `0.6.0` in Python and Node metadata;
+- checks project version `0.6.1` in Python and Node metadata;
 - parses all TOML, JSON, JSON Schema, and YAML files, rejecting duplicate YAML
   keys;
-- checks main/delegated planner and worker model policies in global and role
-  configuration;
-- verifies the required v0.6.0 control-plane modules, roles, skills, canonical
+- checks that runtime selection is task-local, that project and role TOML files do not hard-code model/effort, and that the default planner/author/reviewer profile is high/medium/low;
+- verifies the required v0.6.0 control-plane modules plus the v0.6.1 runtime-profile and token-accounting additions, roles, skills, canonical
   records, migration stages, and assignment templates;
 - rejects obsolete duplicate legacy/interaction templates, old-version tests,
   stage-specific assignment templates, numbered worker roles,

@@ -26,6 +26,7 @@ from mpres.stages import all_stages_accepted, initialize_unit_stages, stage_stat
 from mpres.state import REVIEW_CHANNELS, get_content_unit, get_presentation, save_state
 from mpres.tasks import require_gate
 from mpres.time_planning import aggregate_lesson_time_plans, validate_lesson_time_plan
+from mpres.tokens import require_collector_initialized
 from mpres.toolchain import require_recent_smoke
 from mpres.util import (
     MPresError,
@@ -426,6 +427,7 @@ def initialize_production(
             + "; ".join(policy_report.get("errors", [])[:8])
         )
     require_recent_smoke(root)
+    require_collector_initialized(root, slug)
     if state.get("presentations"):
         raise MPresError("Production units have already been initialized for this task.")
     if state.get("phase") != "confirmed":
