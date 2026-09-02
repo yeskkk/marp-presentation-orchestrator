@@ -64,7 +64,7 @@ The scheduler maintains this priority:
 3. start the next ready presentation;
 4. prepare future metadata without model workers.
 
-The active window is one current presentation plus at most one next presentation in authoring. Only one presentation may be in review/revision/release. Reviewers are absent before freeze. The deck revision author is absent before aggregation. The release coordinator is absent before `release_ready`.
+The active window is one current presentation plus at most one next presentation in authoring. Only one presentation may be in review/revision/release. Reviewers are absent before freeze. The deck revision author is absent before aggregation. The runtime-free release job is absent before `release_ready`.
 
 Representative state progression:
 
@@ -134,15 +134,15 @@ After freeze, the control plane creates one `REVIEW-PLAN.yaml` and exactly five 
 
 Every reviewer reads the entire frozen source/deck. There is no delta-only or sampling mode. Review assignments and workspaces are not prepared before freeze.
 
-The review coordinator validates all five handoffs before atomically replacing the shared finding registry. A failed channel or invalid schema leaves the old registry unchanged. Limited pre-aggregation resubmission may repair only location/evidence/note metadata.
+The Python control plane validates all five handoffs, generates the aggregate report, and commits the shared finding registry without a coordinator model. A failed channel or invalid schema leaves the old registry unchanged. Limited pre-aggregation resubmission may repair only location/evidence/note metadata.
 
 ## 10. Deck-level revision and release
 
 Atomic aggregation creates one deck revision author, not five lesson-revision queues. It receives the frozen deck, all findings, review plan, author context packet, and deterministic unit/slide routing. Every finding targets this same author. Original lesson authors remain closed.
 
-The deck revision author responds to every finding, edits the entire deck, runs deterministic gates, and records its handoff. Reviewers never inspect the revised deck. Once revision is complete, the system enters `release_ready` and creates the release coordinator just in time.
+The deck revision author responds to every finding, edits the entire deck, runs deterministic gates, and records its handoff. Reviewers never inspect the revised deck. Once revision is complete, the system enters `release_ready` and registers the mechanical release job just in time.
 
-The release coordinator performs deterministic checks and packaging only. It may not judge content or finding resolution.
+The mechanical release job performs deterministic checks and packaging only, with `model_runtime: null`. It may not judge content or finding resolution.
 
 ## 11. Toolchain and inspection
 
@@ -188,3 +188,7 @@ Planner fallback supervision is every twenty minutes or a delivery event, but ev
 - `all`: complete all decks before pausing.
 
 Delivery mode affects user pauses, not scheduling discipline or speculative worker creation.
+
+## v0.6.2 mechanical control jobs
+
+Review aggregation and release are explicit Python control-plane jobs with `model_runtime: null`. The repository contains neither coordinator agent configuration nor coordinator assignment template. Specialist reviewers and the deck revision author remain model roles governed by the confirmed task runtime profile.

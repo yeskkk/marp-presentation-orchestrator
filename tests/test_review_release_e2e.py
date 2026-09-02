@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from mpres.audit import audit_task
+from mpres.control_jobs import release_workspace, review_aggregation_root
 from mpres.rendering import render_presentation
 from mpres.review import (
     aggregate_round,
@@ -18,8 +19,6 @@ from mpres.state import REVIEW_CHANNELS, load_state
 from mpres.util import utc_now
 
 from .conftest import (
-    approve_release_coordinator,
-    approve_review_coordinator,
     approve_revision_author,
     initialize_one_deck,
     install_fake_marp,
@@ -47,7 +46,6 @@ def test_single_review_author_owned_revision_and_direct_release(project_root: Pa
     source = prepare_author_source(project_root, slug, task)
     assert render_presentation(project_root, slug, "p01", stage="author", timeout=60)["success"]
     assert request_review(project_root, slug, "p01")["round"] == "full"
-    approve_review_coordinator(project_root, slug, task)
 
     for i, channel in enumerate(REVIEW_CHANNELS, start=1):
         channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel
@@ -92,6 +90,11 @@ def test_single_review_author_owned_revision_and_direct_release(project_root: Pa
     )
     decision = aggregate_round(
         project_root, slug, "p01", round_name="full", aggregate_path=aggregate
+    )
+    assert decision["aggregation_job_receipt"] == str(
+        (review_aggregation_root(project_root, slug, "p01") / "receipt.json").relative_to(
+            project_root
+        )
     )
     assert decision["post_revision_review"] == "none"
     assert (task / "reviews" / "p01" / "REVISION-ROUTING.yaml").is_file()
@@ -156,10 +159,14 @@ def test_single_review_author_owned_revision_and_direct_release(project_root: Pa
     )
     assert ready["finding_resolution_checked"] is False
     assert ready["post_revision_reviewer_verification"] is False
+    release_job = release_workspace(project_root, slug, "p01") / "job.yaml"
+    assert release_job.is_file()
+    assert yaml.safe_load(release_job.read_text(encoding="utf-8"))["model_runtime"] is None
+    assert not (task / "workers" / "release-coordinator").exists()
 
-    approve_release_coordinator(project_root, slug, task)
     assert render_presentation(project_root, slug, "p01", stage="release", timeout=60)["success"]
     release = finalize_release(project_root, slug, "p01")
+    assert (project_root / release["release_job_receipt"]).is_file()
     assert (project_root / release["pdf"]).is_file()
     assert load_state(project_root, slug)["phase"] == "complete"
     audit = audit_task(project_root, slug)
@@ -231,7 +238,6 @@ def test_review_resubmission_is_narrow_and_aggregation_is_atomic(project_root: P
     prepare_author_source(project_root, slug, task)
     render_presentation(project_root, slug, "p01", stage="author", timeout=60)
     request_review(project_root, slug, "p01")
-    approve_review_coordinator(project_root, slug, task)
 
     def submit(channel: str, row: dict[str, object]) -> dict[str, object]:
         channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel

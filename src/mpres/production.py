@@ -31,6 +31,7 @@ from mpres.toolchain import require_recent_smoke
 from mpres.util import (
     MPresError,
     copy_source_tree,
+    make_tree_writable,
     read_yaml,
     relative_display,
     safe_id,
@@ -47,9 +48,7 @@ ROLES = {
     "author-coordinator",
     "lesson-author",
     "deck-revision-author",
-    "review-coordinator",
     "specialist-reviewer",
-    "release-coordinator",
 }
 
 
@@ -127,14 +126,8 @@ def _role_override(role: str) -> str:
             "Own the complete post-review revision from the frozen deck, five-channel findings, and "
             "AUTHOR-CONTEXT-PACKET; do not recall original lesson authors."
         ),
-        "review-coordinator": (
-            "Coordinate exactly five independent reviewers after freeze; every reviewer reads the full deck."
-        ),
         "specialist-reviewer": (
             "Read the entire frozen deck in one specialist channel; do not edit source or inspect later revisions."
-        ),
-        "release-coordinator": (
-            "Start only in release_ready; perform deterministic release and never make content judgments."
         ),
     }
     return (
@@ -165,8 +158,6 @@ def _templates(root: Path) -> dict[str, str]:
         "author": "templates/assignments/TASK-author-coordinator.template.md",
         "lesson": "templates/assignments/TASK-lesson-author.template.md",
         "revision": "templates/assignments/TASK-deck-revision-author.template.md",
-        "review": "templates/assignments/TASK-review-coordinator.template.md",
-        "release": "templates/assignments/TASK-release-coordinator.template.md",
         "header": "templates/presentation-header.template.md",
         "section": "templates/section.template.md",
     }
@@ -774,45 +765,6 @@ def prepare_unit_workspace(
     }
 
 
-def prepare_review_coordinator_workspace(
-    root: Path, slug: str, presentation_id: str
-) -> Path:
-    state = require_gate(root, slug)
-    presentation = get_presentation(state, presentation_id)
-    task = task_path(root, slug)
-    role_root = _ensure_role_root(task, "review-coordinator", "review-coordinator")
-    _ensure_role_root(task, "specialist-reviewers", "specialist-reviewer")
-    assignment = role_root / "assignments" / presentation_id / "TASK-REVIEW-COORDINATOR.md"
-    if assignment.exists():
-        return assignment
-    assignment.parent.mkdir(parents=True, exist_ok=True)
-    review_root = task / "reviews" / presentation_id
-    assignment.write_text(
-        _replace(
-            _templates(root)["review"],
-            {
-                "[[PRESENTATION_ID]]": presentation_id,
-                "[[PRESENTATION_TITLE]]": str(presentation.get("title")),
-                "[[REVIEW_ROOT]]": relative_display(review_root, root),
-                "[[FINDINGS_REGISTRY_PATH]]": relative_display(review_root / "findings.yaml", root),
-                "[[TASK_MD_PATH]]": relative_display(task / "TASK.md", root),
-            },
-        ),
-        encoding="utf-8",
-        newline="\n",
-    )
-    scaffold_assignment_contract(
-        root,
-        assignment,
-        assignment_id=f"{presentation_id}:review-coordinator",
-        role="review-coordinator",
-        presentation_id=presentation_id,
-        requested_by="freeze-gate",
-        need="Coordinate one full-deck five-channel review after the deck has been frozen.",
-    )
-    return assignment
-
-
 def prepare_revision_author_workspace(
     root: Path,
     slug: str,
@@ -833,6 +785,10 @@ def prepare_revision_author_workspace(
         directory.mkdir(parents=True, exist_ok=True)
     if not (source / "presentation.md").is_file():
         copy_source_tree(frozen_source, source)
+        # Frozen review sources are deliberately read-only.  The deck revision
+        # author receives a writable copy; this must happen before context and
+        # queue files are generated inside the workspace.
+        make_tree_writable(source)
     from mpres.context_packets import enrich_revision_context_packet
 
     context = source / "AUTHOR-CONTEXT-PACKET.yaml"
@@ -868,52 +824,10 @@ def prepare_revision_author_workspace(
             assignment_id=f"{presentation_id}:deck-revision-author",
             role="deck-revision-author",
             presentation_id=presentation_id,
-            requested_by="review-coordinator",
+            requested_by="review-aggregation-job",
             need="Revise the complete deck from five-channel findings using the durable author context packet.",
         )
     return assignment, source
-
-
-def prepare_release_coordinator_workspace(
-    root: Path, slug: str, presentation_id: str
-) -> Path:
-    state = require_gate(root, slug)
-    presentation = get_presentation(state, presentation_id)
-    if presentation.get("status") != "release_ready":
-        raise MPresError("Release workspace may be created only in release_ready status.")
-    task = task_path(root, slug)
-    role_root = _ensure_role_root(task, "release-coordinator", "release-coordinator")
-    assignment = role_root / "assignments" / presentation_id / "TASK-RELEASE-COORDINATOR.md"
-    if assignment.exists():
-        return assignment
-    assignment.parent.mkdir(parents=True, exist_ok=True)
-    ready = role_root / "release-ready" / presentation_id
-    assignment.write_text(
-        _replace(
-            _templates(root)["release"],
-            {
-                "[[PRESENTATION_ID]]": presentation_id,
-                "[[PRESENTATION_TITLE]]": str(presentation.get("title")),
-                "[[AUTHOR_RESPONSES_PATH]]": relative_display(ready / "AUTHOR-RESPONSES.yaml", root),
-                "[[MODIFICATION_CHECKLIST_PATH]]": relative_display(ready / "AUTHOR-MODIFICATION-CHECKLIST.yaml", root),
-                "[[APPROVED_SOURCE_PATH]]": relative_display(ready / "source", root),
-                "[[RELEASE_BUILD_PATH]]": relative_display(ready / "build", root),
-                "[[DELIVERABLE_PATH]]": relative_display(task / "deliverables" / presentation_id, root),
-            },
-        ),
-        encoding="utf-8",
-        newline="\n",
-    )
-    scaffold_assignment_contract(
-        root,
-        assignment,
-        assignment_id=f"{presentation_id}:release-coordinator",
-        role="release-coordinator",
-        presentation_id=presentation_id,
-        requested_by="release-ready-gate",
-        need="Perform deterministic build, inspection, packaging, and delivery from release-ready source.",
-    )
-    return assignment
 
 
 def assignment_path(
@@ -937,10 +851,6 @@ def assignment_path(
         return task / "workers" / "lesson-authors" / presentation_id / unit_id / "TASK-LESSON-AUTHOR.md"
     if role == "deck-revision-author":
         return task / "workers" / role / "assignments" / presentation_id / "TASK-DECK-REVISION-AUTHOR.md"
-    if role == "review-coordinator":
-        return task / "workers" / role / "assignments" / presentation_id / "TASK-REVIEW-COORDINATOR.md"
-    if role == "release-coordinator":
-        return task / "workers" / role / "assignments" / presentation_id / "TASK-RELEASE-COORDINATOR.md"
     if role == "specialist-reviewer":
         if not round_name or not channel:
             raise MPresError("specialist-reviewer assignment requires --round and --channel.")

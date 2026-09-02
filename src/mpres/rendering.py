@@ -9,6 +9,7 @@ from typing import Any
 from mpres.assets import validate_assets
 from mpres.assignments import assignment_contract_status
 from mpres.course_consistency import validate_course_consistency
+from mpres.control_jobs import RELEASE_ACTOR, release_workspace, require_release_job
 from mpres.density import validate_slide_density
 from mpres.html_layout import inspect_marp_html_layout
 from mpres.logs import append_log
@@ -48,7 +49,7 @@ def source_and_build_paths(
         role = "deck-revision-author" if presentation.get("status") == "author_revision" else "author-coordinator"
         base = task / "workers" / role / "drafts" / presentation_id
     elif stage == "release":
-        base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
+        base = release_workspace(root, slug, presentation_id)
     elif stage == "maintenance":
         state = load_state(root, slug)
         presentation = get_presentation(state, presentation_id)
@@ -195,7 +196,7 @@ def render_presentation(
     elif stage == "release":
         if presentation.get("status") != "release_ready":
             raise MPresError("Release rendering requires release_ready status.")
-        role = "release-coordinator"
+        role = RELEASE_ACTOR
     elif stage == "maintenance":
         maintenance = presentation.get("maintenance")
         if not isinstance(maintenance, dict) or maintenance.get("status") not in {"open", "author_revision"}:
@@ -209,6 +210,9 @@ def render_presentation(
         assignment = assignment_contract_status(assignment_path)
         if not assignment.get("approved") or text_placeholders(assignment_path):
             raise MPresError("The planner-written maintenance assignment is incomplete or unapproved.")
+    elif stage == "release":
+        require_release_job(root, slug, presentation_id)
+        expected_source, build = source_and_build_paths(root, slug, presentation_id, stage)
     else:
         assignment = check_assignment(root, slug, role, presentation_id)
         if not assignment.get("ready"):

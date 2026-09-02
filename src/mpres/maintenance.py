@@ -493,7 +493,7 @@ def aggregate_maintenance_review(
     append_log(
         root,
         slug,
-        actor="review-coordinator",
+        actor="maintenance-review-aggregation-job",
         kind="maintenance",
         presentation_id=presentation_id,
         message=f"Atomically aggregated full corrective review r{maintenance['revision']:04d} and returned it to the author.",
@@ -660,7 +660,7 @@ def publish_maintenance(root: Path, slug: str, presentation_id: str) -> dict[str
     append_log(
         root,
         slug,
-        actor="release-coordinator",
+        actor="maintenance-release-job",
         kind="maintenance",
         presentation_id=presentation_id,
         message=f"Published corrective revision r{revision:04d} without overwriting the historical release.",

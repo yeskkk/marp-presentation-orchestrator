@@ -757,19 +757,6 @@ def complete_specialist_assignments(root: Path, slug: str, task: Path) -> None:
         planner_write_and_approve(root, slug, assignment)
 
 
-def approve_review_coordinator(root: Path, slug: str, task: Path) -> None:
-    planner_write_and_approve(
-        root,
-        slug,
-        task
-        / "workers"
-        / "review-coordinator"
-        / "assignments"
-        / "p01"
-        / "TASK-REVIEW-COORDINATOR.md",
-    )
-
-
 def approve_revision_author(root: Path, slug: str, task: Path) -> Path:
     planner_write_and_approve(
         root,
@@ -782,19 +769,6 @@ def approve_revision_author(root: Path, slug: str, task: Path) -> Path:
         / "TASK-DECK-REVISION-AUTHOR.md",
     )
     return task / "workers" / "deck-revision-author" / "drafts" / "p01" / "source"
-
-
-def approve_release_coordinator(root: Path, slug: str, task: Path) -> None:
-    planner_write_and_approve(
-        root,
-        slug,
-        task
-        / "workers"
-        / "release-coordinator"
-        / "assignments"
-        / "p01"
-        / "TASK-RELEASE-COORDINATOR.md",
-    )
 
 
 def release_zero_finding_deck(
@@ -817,7 +791,6 @@ def release_zero_finding_deck(
     source = prepare_author_source(root, slug, task)
     render_presentation(root, slug, "p01", stage="author", timeout=60)
     request_review(root, slug, "p01")
-    approve_review_coordinator(root, slug, task)
     for channel in REVIEW_CHANNELS:
         channel_root = task / "workers" / "specialist-reviewers" / "p01" / "full" / channel
         planner_write_and_approve(root, slug, channel_root / "TASK-SPECIALIST-REVIEWER.md")
@@ -874,7 +847,6 @@ def release_zero_finding_deck(
     )
     render_presentation(root, slug, "p01", stage="author", timeout=60)
     complete_author_revision(root, slug, "p01", checklist_file=checklist)
-    approve_release_coordinator(root, slug, task)
     render_presentation(root, slug, "p01", stage="release", timeout=60)
     release = finalize_release(root, slug, "p01")
     return slug, task, release

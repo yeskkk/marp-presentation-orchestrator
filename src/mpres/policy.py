@@ -133,7 +133,7 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     _expect(authoring.get("speculative_prefreeze_worker_launch") == "forbidden", "Speculative pre-freeze worker launch must be forbidden.", errors)
 
     release = execution.get("release", {}) if isinstance(execution, dict) else {}
-    _expect(release.get("launch_only_in_release_ready") is True, "Release coordinator may launch only in release_ready.", errors)
+    _expect(release.get("launch_only_in_release_ready") is True, "The mechanical release job may be registered only in release_ready.", errors)
     _expect(release.get("prospective_hold_threads") == "forbidden", "Prospective release hold threads are forbidden.", errors)
     critical = execution.get("critical_path", {}) if isinstance(execution, dict) else {}
     _expect(critical.get("priority_order") == [
@@ -233,14 +233,21 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
         "author-coordinator",
         "lesson-author",
         "deck-revision-author",
-        "review-coordinator",
         "specialist-reviewer",
-        "release-coordinator",
     }
     present_agent_configs = {path.stem for path in (root / ".codex" / "agents").glob("*.toml")}
     missing_agent_configs = sorted(required_agent_configs - present_agent_configs)
     if missing_agent_configs:
         errors.append("Missing Codex agent configs: " + ", ".join(missing_agent_configs))
+    forbidden_agent_configs = {
+        "review-coordinator",
+        "release-coordinator",
+    } & present_agent_configs
+    if forbidden_agent_configs:
+        errors.append(
+            "Model coordinator configs are forbidden in v0.6.2+: "
+            + ", ".join(sorted(forbidden_agent_configs))
+        )
     for config_path in sorted((root / ".codex" / "agents").glob("*.toml")):
         try:
             with config_path.open("rb") as handle:

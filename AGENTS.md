@@ -77,10 +77,10 @@ Rules:
 
 - A unit starts as `uninitialized`; do not create its workspace until an approved batch plan exists and the unit is queued.
 - At most one presentation is in review/revision/release and at most one following presentation may be actively authored.
-- Do not launch speculative pre-freeze reviewers, future release coordinators, or prospective hold threads.
+- Do not launch speculative pre-freeze reviewers, future release jobs, or prospective hold threads.
 - Review workers are created only after a complete deck is frozen.
 - The deck revision author is created only after atomic review aggregation.
-- The release coordinator is created only after `release_ready`.
+- The runtime-free release job is registered only after `release_ready`; it never consumes a model thread.
 - `delivery_mode: all` removes user pauses; it does not authorize eager creation of every future worker.
 - Ready work waiting beyond the configured threshold is a scheduling warning and should displace noncritical metadata work.
 
@@ -133,11 +133,11 @@ Use incremental checks while authoring and full checks at freeze and release. Ca
 
 The five isolated channels are `language`, `domain_accuracy`, `layout`, `pedagogy`, and `audience`. Every reviewer reads the entire frozen deck and receives the same frozen source/PDF anchor plus channel-specific instructions. Reviewers do not see other channels.
 
-Before aggregation, a reviewer may resubmit only to correct `location`, `evidence_path`, or `reviewer_note`; IDs and substantive finding fields are immutable. The review coordinator validates all five current handoffs before one atomic registry commit. Partial failure leaves shared state unchanged.
+Before aggregation, a reviewer may resubmit only to correct `location`, `evidence_path`, or `reviewer_note`; IDs and substantive finding fields are immutable. The Python control plane validates all five current handoffs before one registry commit and generates the aggregate mechanically. Partial failure leaves shared state unchanged.
 
 After aggregation, every finding routes to one `deck-revision-author`. That author receives the complete frozen deck, all five channel reports, `REVIEW-PLAN.yaml`, `AUTHOR-CONTEXT-PACKET.yaml`, and deterministic slide/unit routing. Original lesson authors remain closed. The revision author responds to every finding, revises the whole deck, reruns deterministic gates, and hands off. No reviewer recheck follows.
 
-The release coordinator performs deterministic release only after `release_ready`. It does not judge whether findings were substantively resolved, add content, or alter semantics.
+The Python release job performs deterministic release only after `release_ready`. It has no model runtime and does not judge whether findings were substantively resolved, add content, or alter semantics.
 
 ## 11. Logging, milestones, supervision, and threads
 
@@ -162,3 +162,7 @@ A finalized deck may enter `targeted_patch` or `full_corrective_review` maintena
 - `all`: pause after all decks.
 
 Hard boundaries: no `worker1`/`worker2` roles; no original-PDF access; no screenshots/model vision; no persistent HTML; no non-`TASK.md` hashes; no reviewer recheck; no release-time content judgment; no coordinator-authored semantic assignment; no stage-specific assignment; no speculative reviewer/release launch; no lesson-author reopening for review; no in-task workflow-engine hot patch.
+
+## v0.6.2 mechanical control jobs
+
+`review-coordinator` and `release-coordinator` are deleted model roles. The Python control plane registers runtime-free review-aggregation and release jobs, validates their inputs, generates outputs, and writes receipts. Never allocate a model thread to either operation.

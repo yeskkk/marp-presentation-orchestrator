@@ -1,0 +1,15 @@
+schema_version: 1
+job: release
+implementation: python-control-plane
+model_runtime: null
+presentation_id: "[[PRESENTATION_ID]]"
+status: release_ready
+required_actions:
+  - render_release_source
+  - validate_release_reports
+  - copy_pdf_and_source_to_deliverables
+  - write_release_receipt
+outputs:
+  delivery: null
+  release_record: null
+  receipt: null

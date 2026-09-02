@@ -290,8 +290,8 @@ def test_legacy_migration_uses_three_stages_with_lazy_fixed_lesson_author(
     )
     lesson_root = task / "workers" / "lesson-authors"
     assert not lesson_root.exists(), "lesson workspaces must remain lazy at metadata init"
-    assert not (task / "workers" / "review-coordinator").exists()
-    assert not (task / "workers" / "release-coordinator").exists()
+    assert not (task / "control-plane" / "review-aggregation").exists()
+    assert not (task / "control-plane" / "release").exists()
 
     assignment = approve_batch_and_queue_unit(project_root, slug, task)
     assert assignment.is_file()
@@ -346,10 +346,10 @@ def test_review_revision_and_release_roles_are_created_just_in_time(
 
     slug, task = initialize_one_deck(project_root, slug="jit-roles-task")
     prepare_author_source(project_root, slug, task)
-    assert not (task / "workers" / "review-coordinator").exists()
+    assert not (task / "control-plane" / "review-aggregation").exists()
     assert not (task / "workers" / "specialist-reviewers").exists()
     assert not (task / "workers" / "deck-revision-author").exists()
-    assert not (task / "workers" / "release-coordinator").exists()
+    assert not (task / "control-plane" / "release").exists()
 
     assert render_presentation(
         project_root, slug, "p01", stage="author", timeout=60
@@ -371,9 +371,9 @@ def test_review_revision_and_release_roles_are_created_just_in_time(
             / "TASK-SPECIALIST-REVIEWER.md"
         )
         assert assignment.is_file()
-    assert (task / "workers" / "review-coordinator").is_dir()
+    assert (task / "control-plane" / "review-aggregation" / "p01" / "job.yaml").is_file()
     assert not (task / "workers" / "deck-revision-author").exists()
-    assert not (task / "workers" / "release-coordinator").exists()
+    assert not (task / "control-plane" / "release").exists()
 
 
 def test_engine_incident_forces_policy_amendment_without_hot_patch(
@@ -460,7 +460,7 @@ def test_future_deck_workspaces_are_lazy_and_critical_path_activation_is_ordered
     assert not (author_root / "p03").exists()
     assert not (task / "workers" / "specialist-reviewers").exists()
     assert not (task / "workers" / "deck-revision-author").exists()
-    assert not (task / "workers" / "release-coordinator").exists()
+    assert not (task / "control-plane" / "release").exists()
 
     activated = activate_presentations(project_root, slug, ["p02"])
     assert activated["active_presentations"] == ["p01", "p02"]
@@ -505,7 +505,7 @@ def test_freeze_materializes_five_full_deck_reviewers_but_not_revision_or_releas
         text = assignment.read_text(encoding="utf-8").lower()
         assert "entire" in text and "frozen deck" in text
     assert not (task / "workers" / "deck-revision-author").exists()
-    assert not (task / "workers" / "release-coordinator").exists()
+    assert not (task / "control-plane" / "release").exists()
 
 
 def test_engine_bug_pauses_task_and_requires_reconfirmed_policy_amendment(

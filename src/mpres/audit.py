@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from mpres.control_jobs import release_workspace, review_aggregation_root
 from mpres.geogebra import validate_presentation_geogebra_registry
 from mpres.policy import policy_audit
 from mpres.production import assignment_path, check_assignment
@@ -235,16 +236,18 @@ def audit_task(root: Path, slug: str) -> dict[str, Any]:
         revision_started = status in {"author_revision", "release_ready", "finalized"}
         release_started = status in {"release_ready", "finalized"}
 
-        review_coordinator_exists = _assignment_exists(root, slug, "review-coordinator", pid)
+        review_job = review_aggregation_root(root, slug, pid) / "job.yaml"
         if review_started:
-            if not review_coordinator_exists:
-                add("error", pid, "Review coordinator was not materialized after deck freeze.")
-            elif not check_assignment(root, slug, "review-coordinator", pid).get("ready"):
-                add("warning", pid, "Required review-coordinator assignment remains incomplete or unapproved.")
+            if not review_job.is_file():
+                add("error", pid, "Mechanical review-aggregation job was not registered after deck freeze.")
+            if revision_started and not (
+                review_aggregation_root(root, slug, pid) / "receipt.json"
+            ).is_file():
+                add("error", pid, "Completed review lacks its mechanical aggregation receipt.")
             _audit_review_plan(task, pid, add)
         else:
-            if review_coordinator_exists:
-                add("error", pid, "Review coordinator was created before the deck was frozen.")
+            if review_job.exists():
+                add("error", pid, "Review-aggregation job was created before the deck was frozen.")
             if (task / "reviews" / pid / "REVIEW-PLAN.yaml").exists():
                 add("error", pid, "REVIEW-PLAN.yaml was created before the deck was frozen.")
 
@@ -281,14 +284,16 @@ def audit_task(root: Path, slug: str) -> dict[str, Any]:
         elif revision_exists:
             add("error", pid, "Deck revision author was created before the five-channel review aggregated.")
 
-        release_exists = _assignment_exists(root, slug, "release-coordinator", pid)
+        release_job = release_workspace(root, slug, pid) / "job.yaml"
         if release_started:
-            if not release_exists:
-                add("error", pid, "Release coordinator was not materialized in release_ready.")
-            elif not check_assignment(root, slug, "release-coordinator", pid).get("ready"):
-                add("warning", pid, "Required release-coordinator assignment remains incomplete or unapproved.")
-        elif release_exists:
-            add("error", pid, "Release coordinator was created before release_ready.")
+            if not release_job.is_file():
+                add("error", pid, "Mechanical release job was not registered in release_ready.")
+            if status == "finalized" and not (
+                release_workspace(root, slug, pid) / "receipt.json"
+            ).is_file():
+                add("error", pid, "Finalized presentation lacks its mechanical release receipt.")
+        elif release_job.exists():
+            add("error", pid, "Release job was created before release_ready.")
 
         for unit in presentation.get("content_units", []):
             unit_id = str(unit.get("id"))

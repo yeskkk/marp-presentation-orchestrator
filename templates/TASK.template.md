@@ -132,8 +132,8 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 - lesson-author：一个固定 content unit、一份 planner-approved assignment、一个连续 thread，依次完成所选 profile 的全部阶段；写 context packet 后可关闭，不负责 post-review revision。
 - deck-revision-author：在唯一一轮审核后读取冻结稿、五通道 findings 与 `AUTHOR-CONTEXT-PACKET.yaml`，独立完成整份 deck 的回应、修订、自检和交接。
 - specialist-reviewer：唯一一轮中的一个通道；五名 reviewer 都必须完整阅读整份冻结 deck，不看其他通道或后续修订。
-- review-coordinator：验证 planner assignments、监督五通道并聚合，不写 assignment、不改 findings。
-- release-coordinator：只在 `release_ready` 后启动，检查 deck-revision-author 的回应覆盖和机械门并直接发布；不判断 finding 是否修好，也不预先占用 thread。
+- review aggregation：由 Python 控制面验证五个 reviewer handoff、生成 aggregate 和 findings registry；不启动模型线程。
+- release job：由 Python 控制面在 `release_ready` 后运行机械构建、检查、打包和发布；不启动模型线程，也不判断 finding 是否修好。
 
 纯技术 workflow-engine bug 也不得在任务中热修。必须建立 task policy amendment、修订并重新确认 `TASK.md`；引擎重构作为独立工作处理。
 

@@ -8,6 +8,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from mpres.state import get_presentation, load_state
 from mpres.util import MPresError, read_yaml, relative_display, task_path, write_json_atomic
+from mpres.control_jobs import release_workspace
 
 ALLOWED_HOSTS = {"geogebra.org", "www.geogebra.org"}
 RESOURCE_PATH_RE = re.compile(r"^/m/[A-Za-z0-9_-]+/?$")
@@ -444,7 +445,7 @@ def validate_task_geogebra(
         )
         base = task / "workers" / role / "drafts" / presentation_id
     elif stage == "release":
-        base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
+        base = release_workspace(root, slug, presentation_id)
     else:
         raise MPresError("GeoGebra validation stage must be author or release.")
     source = base / "source"

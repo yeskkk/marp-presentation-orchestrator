@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.2
+
+- Removed the model-based `review-coordinator` and `release-coordinator` roles, Codex agent configurations, assignment templates, checkpoint paths, and runtime mappings.
+- Added runtime-free Python review-aggregation and release jobs under each task's `control-plane/` directory.
+- Made the full-review aggregate deterministic from five validated reviewer receipts and recorded mechanical job receipts.
+- Moved release rendering and packaging to the mechanical release workspace and removed planner approval from mechanical operations.
+- Updated audit, supervision, policies, templates, skills, documentation, and end-to-end tests for the mechanical control plane.
+- Ensured frozen review source becomes writable only in the deck revision author's copied workspace.
+
 ## 0.6.1
 
 This is the first independently testable step toward v0.7.0.

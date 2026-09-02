@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from mpres.control_jobs import RELEASE_ACTOR, REVIEW_AGGREGATION_ACTOR, release_workspace, review_aggregation_root
 from mpres.logs import append_log, log_file, read_log_tail
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state
 from mpres.tasks import require_gate
@@ -43,15 +44,15 @@ def _signal(log: dict[str, Any] | None, watched: Path) -> tuple[int | None, bool
     return age, newer
 
 
-def _coordinator(status: str) -> str:
+def _active_owner(status: str) -> str:
     if status == "authoring":
         return "author-coordinator"
     if status == "author_revision":
         return "deck-revision-author"
     if status in {"review_requested", "reviewing"}:
-        return "review-coordinator"
+        return REVIEW_AGGREGATION_ACTOR
     if status == "release_ready":
-        return "release-coordinator"
+        return RELEASE_ACTOR
     return "planner"
 
 
@@ -80,31 +81,33 @@ def _planner(root: Path, slug: str, state: dict[str, Any], *, record: bool) -> d
             if not presentation.get("active") or presentation.get("status") == "finalized":
                 continue
             pid = presentation["id"]
-            actor = _coordinator(str(presentation.get("status")))
+            actor = _active_owner(str(presentation.get("status")))
             log = _last_log(log_file(root, slug, actor), pid, actor)
             watched = task / "workers" / actor
             if actor in {"author-coordinator", "deck-revision-author"}:
                 watched = watched / "drafts" / pid
-            elif actor == "review-coordinator":
-                watched = task / "reviews" / pid
+            elif actor == REVIEW_AGGREGATION_ACTOR:
+                watched = review_aggregation_root(root, slug, pid)
+            elif actor == RELEASE_ACTOR:
+                watched = release_workspace(root, slug, pid)
             else:
-                watched = watched / "release-ready" / pid
+                watched = watched
             age, newer = _signal(log, watched)
             if log is None:
-                recommendation = "inspect_or_spawn_coordinator"
+                recommendation = "inspect_or_start_active_owner"
                 reason = f"No {actor} log exists."
             elif newer and age is not None and age > interval:
                 recommendation = "silent_but_durable_progress"
                 reason = "Files changed after the last log; request a checkpoint rather than restart."
             elif age is not None and age > interval * 2:
                 recommendation = "probably_stalled_restart_from_checkpoint"
-                reason = f"No durable coordinator activity for {age} seconds."
+                reason = f"No durable active-owner activity for {age} seconds."
             elif age is not None and age > interval:
-                recommendation = "inspect_and_steer_coordinator"
-                reason = f"Coordinator log is {age} seconds old."
+                recommendation = "inspect_active_owner"
+                reason = f"Active-owner log is {age} seconds old."
             else:
                 recommendation = "healthy"
-                reason = "Coordinator has recent durable activity."
+                reason = "The active owner has recent durable activity."
             checks.append({
                 "presentation_id": pid,
                 "status": presentation.get("status"),
@@ -245,13 +248,13 @@ def supervise_once(
     if scope == "author":
         result, actor = _author(root, slug, state, presentation_id), "author-coordinator"
     elif scope == "review":
-        result, actor = _review(root, slug, state, presentation_id), "review-coordinator"
+        result, actor = _review(root, slug, state, presentation_id), REVIEW_AGGREGATION_ACTOR
     else:
         raise MPresError("Scope must be planner, author, or review.")
     if record:
         path = task_path(root, slug) / "state" / f"supervision-{scope}-{presentation_id}.json"
         write_json_atomic(path, result)
-        append_log(root, slug, actor=actor, kind="check", presentation_id=presentation_id, message=f"Performed {scope} coordinator supervision.", data={"report": relative_display(path, root), "requires_attention": result["requires_attention"]})
+        append_log(root, slug, actor=actor, kind="check", presentation_id=presentation_id, message=f"Performed {scope} workflow supervision.", data={"report": relative_display(path, root), "requires_attention": result["requires_attention"]})
     return result
 
 

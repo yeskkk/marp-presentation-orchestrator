@@ -7,13 +7,23 @@ from pathlib import Path
 from typing import Any
 
 from mpres.assignments import scaffold_assignment_contract
+from mpres.control_jobs import (
+    RELEASE_ACTOR,
+    REVIEW_AGGREGATION_ACTOR,
+    complete_release_job,
+    complete_review_aggregation_job,
+    mechanical_aggregate_markdown,
+    prepare_release_job,
+    prepare_review_aggregation_job,
+    release_workspace,
+    require_release_job,
+    require_review_aggregation_job,
+)
 from mpres.logs import append_log
 from mpres.milestones import record_milestone
 from mpres.production import (
     assignment_path,
     check_assignment,
-    prepare_release_coordinator_workspace,
-    prepare_review_coordinator_workspace,
     prepare_revision_author_workspace,
 )
 from mpres.rendering import RENDER_PIPELINE, source_and_build_paths
@@ -157,7 +167,7 @@ def _scaffold_specialist_assignments(
             presentation_id=presentation_id,
             round_name=REVIEW_ROUND,
             channel=channel,
-            requested_by="review-coordinator",
+            requested_by="review-aggregation-job",
             need=(
                 f"A planner must own the exact {channel} assignment for the sole full-deck review; "
                 "the reviewer must read the complete frozen deck."
@@ -173,15 +183,6 @@ def _scaffold_specialist_assignments(
             encoding="utf-8",
             newline="\n",
         )
-    aggregate = (
-        root / "templates" / "review" / "review-aggregate.template.md"
-    ).read_text(encoding="utf-8")
-    aggregate = aggregate.replace("[[PRESENTATION_ID]]", presentation_id).replace(
-        "[[ROUND]]", REVIEW_ROUND
-    )
-    aggregate_path = _review_root(root, slug, presentation_id) / REVIEW_ROUND / "aggregate.md"
-    aggregate_path.parent.mkdir(parents=True, exist_ok=True)
-    aggregate_path.write_text(aggregate, encoding="utf-8", newline="\n")
 
 
 def request_review(
@@ -263,9 +264,20 @@ def request_review(
         }
     }
     save_state(root, slug, state)
-    # Review workers and assignments are created only after the frozen snapshot exists.
-    prepare_review_coordinator_workspace(root, slug, presentation_id)
+    # The control-plane aggregation job and specialist assignments are created
+    # only after the frozen snapshot exists. No coordinator model is launched.
+    review_job = prepare_review_aggregation_job(root, slug, presentation_id)
     _scaffold_specialist_assignments(root, slug, presentation_id, request_root)
+    append_log(
+        root,
+        slug,
+        actor=REVIEW_AGGREGATION_ACTOR,
+        kind="progress",
+        presentation_id=presentation_id,
+        round_name=REVIEW_ROUND,
+        message="Registered the runtime-free review-aggregation job and began waiting for five reviewer receipts.",
+        data={"job": relative_display(review_job, root)},
+    )
     record_milestone(root, slug, "deck_frozen", presentation_id=presentation_id, data={"review_plan": relative_display(review_plan, root)})
     append_log(
         root,
@@ -274,7 +286,10 @@ def request_review(
         kind="review",
         presentation_id=presentation_id,
         round_name=REVIEW_ROUND,
-        message="Froze the complete deck and created the just-in-time five-channel full-deck review.",
+        message=(
+            "Froze the complete deck, created five just-in-time specialist assignments, "
+            "and registered a mechanical review-aggregation job."
+        ),
         data={"request": relative_display(request_root / "request.json", root), "review_plan": relative_display(review_plan, root)},
     )
     return request
@@ -488,7 +503,7 @@ def aggregate_round(
     presentation_id: str,
     *,
     round_name: str,
-    aggregate_path: Path,
+    aggregate_path: Path | None = None,
 ) -> dict[str, Any]:
     require_gate(root, slug)
     if round_name != REVIEW_ROUND:
@@ -497,21 +512,12 @@ def aggregate_round(
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") not in {"review_requested", "reviewing"}:
         raise MPresError(f"Cannot aggregate in {presentation.get('status')!r} status.")
-    coordinator_assignment = check_assignment(root, slug, "review-coordinator", presentation_id)
-    if not coordinator_assignment.get("ready"):
-        raise MPresError("review-coordinator assignment is incomplete or not planner-approved.")
+    require_review_aggregation_job(root, slug, presentation_id)
     round_state = presentation["rounds"][REVIEW_ROUND]
     channels = round_state.get("channels", {})
     missing = [channel for channel in REVIEW_CHANNELS if channel not in channels]
     if missing:
         raise MPresError("Cannot aggregate before all channels submit: " + ", ".join(missing))
-    aggregate_path = aggregate_path.resolve()
-    if not aggregate_path.is_file() or text_placeholders(aggregate_path):
-        raise MPresError("Aggregate report is missing or incomplete.")
-    aggregate_text = aggregate_path.read_text(encoding="utf-8")
-    if len(aggregate_text.strip()) < 350:
-        raise MPresError("Aggregate report is too short.")
-
     collected: list[dict[str, Any]] = []
     source_submissions: dict[str, str] = {}
     ids: set[str] = set()
@@ -541,6 +547,11 @@ def aggregate_round(
     review_plan = _review_root(root, slug, presentation_id) / "REVIEW-PLAN.yaml"
     routing = build_revision_routing(root, slug, presentation_id, findings=collected, request_source=request_source)
 
+    aggregate_text = mechanical_aggregate_markdown(
+        presentation_id,
+        source_submissions=source_submissions,
+        findings=collected,
+    )
     canonical = _review_root(root, slug, presentation_id) / REVIEW_ROUND / "aggregate.md"
     registry_value = {
         "schema_version": 5,
@@ -603,6 +614,17 @@ def aggregate_round(
         "original_lesson_authors_reopened": False,
     }
     write_json_atomic(canonical.parent / "decision.json", decision)
+    job_receipt = complete_review_aggregation_job(
+        root,
+        slug,
+        presentation_id,
+        aggregate_report=canonical,
+        findings_registry=_findings_path(root, slug, presentation_id),
+        decision=canonical.parent / "decision.json",
+        finding_count=len(ids),
+    )
+    decision["aggregation_job_receipt"] = relative_display(job_receipt, root)
+    write_json_atomic(canonical.parent / "decision.json", decision)
     round_state["status"] = "completed"
     round_state["completed_utc"] = decision["completed_utc"]
     round_state["aggregate"] = decision["aggregate_report"]
@@ -614,12 +636,19 @@ def aggregate_round(
     append_log(
         root,
         slug,
-        actor="review-coordinator",
+        actor=REVIEW_AGGREGATION_ACTOR,
         kind="review",
         presentation_id=presentation_id,
         round_name=REVIEW_ROUND,
-        message=(f"Atomically collected five full-deck channel handoffs with {len(ids)} finding(s) and handed the frozen deck to one deck-revision-author; original lesson authors remain closed."),
-        data={"routing": routing_result["routing"], "revision_queue": routing_result["revision_queue"]},
+        message=(
+            f"Mechanically collected five full-deck channel handoffs with {len(ids)} finding(s) "
+            "and handed the frozen deck to one deck-revision-author; no coordinator model ran."
+        ),
+        data={
+            "routing": routing_result["routing"],
+            "revision_queue": routing_result["revision_queue"],
+            "job_receipt": relative_display(job_receipt, root),
+        },
     )
     return decision
 
@@ -729,7 +758,7 @@ def complete_author_revision(
         raise MPresError("The successful revision render predates the response/checklist; rerender after revision.")
 
     task = task_path(root, slug)
-    ready_root = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
+    ready_root = release_workspace(root, slug, presentation_id)
     if ready_root.exists():
         make_tree_writable(ready_root)
         shutil.rmtree(ready_root)
@@ -762,7 +791,16 @@ def complete_author_revision(
     presentation["status"] = "release_ready"
     presentation["author_revision_completed_utc"] = approval["ready_utc"]
     save_state(root, slug, state)
-    prepare_release_coordinator_workspace(root, slug, presentation_id)
+    release_job = prepare_release_job(root, slug, presentation_id)
+    append_log(
+        root,
+        slug,
+        actor=RELEASE_ACTOR,
+        kind="progress",
+        presentation_id=presentation_id,
+        message="Registered the runtime-free release job from the deck revision author's validated handoff.",
+        data={"job": relative_display(release_job, root)},
+    )
     record_milestone(root, slug, "release_ready", presentation_id=presentation_id, data={"revision_role": "deck-revision-author"})
     append_log(
         root, slug, actor="deck-revision-author", kind="handoff", presentation_id=presentation_id,
@@ -781,7 +819,7 @@ def return_to_author(
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") != "release_ready":
         raise MPresError("Only a release-ready presentation can return to the deck revision author.")
-    ready = task_path(root, slug) / "workers" / "release-coordinator" / "release-ready" / presentation_id
+    ready = release_workspace(root, slug, presentation_id)
     archive = ready.parent / f"{presentation_id}-returned-{utc_now().replace(':', '')}"
     if ready.exists():
         make_tree_writable(ready)
@@ -792,7 +830,7 @@ def return_to_author(
     append_log(
         root,
         slug,
-        actor="release-coordinator",
+        actor=RELEASE_ACTOR,
         kind="warning",
         presentation_id=presentation_id,
         message="Returned release-ready source to the deck revision author because a semantic source change became necessary.",
@@ -808,7 +846,8 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
     if presentation.get("status") != "release_ready":
         raise MPresError("Finalization requires release_ready status.")
     task = task_path(root, slug)
-    ready = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
+    require_release_job(root, slug, presentation_id)
+    ready = release_workspace(root, slug, presentation_id)
     report = read_json(ready / "build" / "render-report-release.json")
     if report.get("success") is not True or report.get("pipeline") != RENDER_PIPELINE:
         raise MPresError("A successful release-stage Marp render is required.")
@@ -897,6 +936,15 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
         "finding_resolution_checked": False,
     }
     write_json_atomic(deliverable / "release.json", release)
+    job_receipt = complete_release_job(
+        root,
+        slug,
+        presentation_id,
+        release_record=deliverable / "release.json",
+        deliverable=deliverable,
+    )
+    release["release_job_receipt"] = relative_display(job_receipt, root)
+    write_json_atomic(deliverable / "release.json", release)
     presentation["status"] = "finalized"
     presentation["active"] = False
     if isinstance(maintenance_cycle, dict):
@@ -940,7 +988,7 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
     append_log(
         root,
         slug,
-        actor="release-coordinator",
+        actor=RELEASE_ACTOR,
         kind="delivery",
         presentation_id=presentation_id,
         message="Published the Marp PDF and source after deck-revision-author work and mechanical release.",

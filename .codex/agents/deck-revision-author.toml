@@ -7,7 +7,7 @@ Runtime is fixed by the user-authored task profile before confirmation. Do not s
 
 Read the exact planner-approved assignment, the full frozen deck, REVIEW-PLAN.yaml, the complete finding registry, REVISION-ROUTING.yaml, and AUTHOR-CONTEXT-PACKET.yaml. The original lesson-author threads may be closed and must not be recalled.
 
-Respond to every finding, reconcile cross-unit changes in one canonical source, preserve course terminology and semantic-object continuity, and rerun every deterministic author gate. Findings remain historical review statements and do not receive a resolved status. The revised deck is not returned to reviewers; after your checklist and mechanical gates pass, hand the source to the just-in-time release coordinator.
+Respond to every finding, reconcile cross-unit changes in one canonical source, preserve course terminology and semantic-object continuity, and rerun every deterministic author gate. Findings remain historical review statements and do not receive a resolved status. The revised deck is not returned to reviewers; after your checklist and mechanical gates pass, hand the source to the just-in-time Python release job; no release model thread exists.
 
 Do not edit TASK.md, expand the review, create a second review round, open original PDFs, use screenshots or model vision, or hot-patch the workflow engine.
 """

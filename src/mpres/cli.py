@@ -140,9 +140,7 @@ def _checkpoint_coordinates(parser: argparse.ArgumentParser) -> None:
         choices=[
             "author-coordinator",
             "lesson-author",
-            "review-coordinator",
             "deck-revision-author",
-            "release-coordinator",
         ],
         required=True,
     )
@@ -482,7 +480,14 @@ def build_parser() -> argparse.ArgumentParser:
     ra.add_argument("slug")
     ra.add_argument("--presentation", required=True)
     ra.add_argument("--round", choices=REVIEW_ROUNDS, default="full")
-    ra.add_argument("--report", type=Path, required=True)
+    ra.add_argument(
+        "--report",
+        type=Path,
+        help=(
+            "Deprecated compatibility input. v0.6.2 generates the aggregate mechanically "
+            "from the five validated channel receipts."
+        ),
+    )
     respond = review_sub.add_parser("respond")
     respond.add_argument("slug")
     respond.add_argument("--presentation", required=True)

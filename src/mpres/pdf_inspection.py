@@ -10,6 +10,7 @@ from pypdf import PdfReader
 from mpres.marp_source import parse_deck
 from mpres.state import get_presentation, load_state
 from mpres.util import MPresError, read_yaml, relative_display, task_path, write_json_atomic
+from mpres.control_jobs import release_workspace
 
 INTERNAL_TERMS = (
     "worker1",
@@ -188,7 +189,7 @@ def inspect_task_pdf(
         )
         base = task / "workers" / role / "drafts" / presentation_id
     elif stage == "release":
-        base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
+        base = release_workspace(root, slug, presentation_id)
     else:
         raise MPresError("PDF inspection stage must be author or release.")
     source = base / "source"

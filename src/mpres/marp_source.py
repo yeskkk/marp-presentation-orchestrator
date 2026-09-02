@@ -11,6 +11,7 @@ from mpres.geogebra import validate_presentation_geogebra_registry
 from mpres.interactions import MCQ_RATIONALES, validate_presentation_interactions
 from mpres.state import get_presentation, load_state
 from mpres.util import MPresError, read_yaml, relative_display, task_path, write_json_atomic
+from mpres.control_jobs import release_workspace
 
 SLIDE_ID_RE = re.compile(r"<!--\s*slide-id\s*:\s*([^>]+?)\s*-->", re.IGNORECASE)
 CLASS_RE = re.compile(r"<!--\s*_class\s*:\s*([^>]+?)\s*-->", re.IGNORECASE)
@@ -922,7 +923,7 @@ def lint_task_source(
         )
         base = task / "workers" / role / "drafts" / presentation_id
     elif stage == "release":
-        base = task / "workers" / "release-coordinator" / "release-ready" / presentation_id
+        base = release_workspace(root, slug, presentation_id)
     else:
         raise MPresError("Source-lint stage must be author or release.")
     policy = read_yaml(task / "EXECUTION-POLICY.yaml") or {}

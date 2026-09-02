@@ -16,11 +16,9 @@ ROLE_FAMILIES = {
     "author-coordinator": "author",
     "lesson-author": "author",
     "deck-revision-author": "author",
-    "release-coordinator": "author",
     "maintenance-author": "author",
     "reviewer": "reviewer",
     "specialist-reviewer": "reviewer",
-    "review-coordinator": "reviewer",
 }
 ALLOWED_TOP_LEVEL_KEYS = {
     "schema_version",

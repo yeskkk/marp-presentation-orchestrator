@@ -1,4 +1,4 @@
-# Marp Presentation Orchestrator v0.6.1
+# Marp Presentation Orchestrator v0.6.2
 
 这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.1 是在 v0.6.0 控制平面上的第一个小步升级：把模型与推理强度移到用户可编辑的任务级配置，并修复 token 缺失值被错误汇总为零的问题。
 
@@ -29,7 +29,7 @@ PDF
 - planner 可审批一份 batch plan，由程序展开各 unit assignment；这种 assignment 仍算 planner 编写。
 - 只有顶层 `TASK.md` 必须由主 planner（main agent）亲自撰写或修订，其余 planner 工作均可委派给 delegated planner。
 - unit workspace 延迟创建，调度只维护“当前课件＋至多一个下一课件”的关键路径窗口。
-- reviewer 只在整份 deck 冻结后创建；release coordinator 只在 `release_ready` 后创建。
+- reviewer 只在整份 deck 冻结后创建；review 聚合与 release 均由无模型运行时的 Python control-plane job 完成。
 - lesson author handoff 后即可关闭；五通道审核后由一个 deck revision author 修订整份课件。
 - 五名 reviewer 仍分别完整阅读整份冻结课件，不采用抽样或只看改动页。
 - Marp CLI 精确锁定为 4.5.0，并在 production 前运行三页 smoke test。
@@ -113,7 +113,7 @@ v0.6.0 的调度顺序是：
 - 当前课件之外，最多允许一个下一课件 active authoring；
 - 冻结前不生成 reviewer assignment 或 reviewer workspace；
 - review 聚合前不生成 deck revision author；
-- `release_ready` 前不生成 release coordinator；
+- `release_ready` 前不注册 mechanical release job；
 - 禁止 prospective hold thread；
 - `delivery_mode: all` 只表示不逐份等待用户，不表示可以提前展开全部工作。
 
@@ -132,7 +132,7 @@ five isolated full-deck reviewers
         ↓ atomic aggregation
 one deck revision author
         ↓ complete response + revised deck
-release coordinator
+Python mechanical release job
         ↓
 Marp source + PDF
 ```
@@ -161,7 +161,7 @@ Marp source + PDF
 
 读取完整冻结稿、五通道 findings、`REVIEW-PLAN.yaml`、`AUTHOR-CONTEXT-PACKET.yaml` 和 `REVISION-ROUTING.yaml`，统一修订整份 deck。所有 finding 都路由给它，而不是返回原 lesson authors。
 
-### Release coordinator
+### Mechanical release job
 
 只在 `release_ready` 后启动，执行机械门、构建和打包；不判断 finding 是否在语义上“修好”，不改教学内容。
 
@@ -381,4 +381,8 @@ python -m ruff check .
 - speculative reviewer/release worker；
 - lesson author 在 review 后重新打开；
 - 任务内 workflow-engine hot patch；
-- 由 release coordinator 作内容判断。
+- 由 mechanical release job 作内容判断。
+
+## v0.6.2 mechanical review and release control
+
+`review-coordinator` and `release-coordinator` are no longer model roles. Their Codex agent configurations and assignment templates have been removed. Freeze registers `control-plane/review-aggregation/<presentation>/job.yaml`; after five validated reviewer receipts, Python generates the aggregate and job receipt. Revision completion registers `control-plane/release/<presentation>/job.yaml`; release rendering, inspection, packaging, and receipt generation run without a model thread.

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from mpres.control_jobs import release_workspace
 from mpres.state import get_presentation, load_state
 from mpres.tasks import require_gate
 from mpres.util import MPresError, read_yaml, relative_display, task_path, write_json_atomic
@@ -195,14 +196,7 @@ def validate_course_consistency(
             )
             build = task / "workers" / role / "drafts" / presentation_id / "build"
         else:
-            build = (
-                task
-                / "workers"
-                / "release-coordinator"
-                / "release-ready"
-                / presentation_id
-                / "build"
-            )
+            build = release_workspace(root, slug, presentation_id) / "build"
         build.mkdir(parents=True, exist_ok=True)
         write_json_atomic(build / f"course-consistency-{target_stage}.json", report)
     return report

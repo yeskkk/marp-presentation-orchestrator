@@ -354,8 +354,6 @@ def _identity(meta: dict[str, Any], overrides: dict[str, Any]) -> dict[str, str]
         "lesson-author",
         "author-coordinator",
         "deck-revision-author",
-        "review-coordinator",
-        "release-coordinator",
         "specialist-reviewer",
         "delegated-planner",
     }:

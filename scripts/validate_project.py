@@ -15,7 +15,7 @@ from typing import Any
 import yaml
 
 PLACEHOLDER_RE = re.compile(r"\[\[[A-Z0-9_]+\]\]")
-EXPECTED_VERSION = "0.6.1"
+EXPECTED_VERSION = "0.6.2"
 EXPECTED_MARP_VERSION = "4.5.0"
 
 
@@ -177,6 +177,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         # Core v0.6.0 control plane plus the v0.6.1 runtime/token increment.
         "src/mpres/runtime_profile.py",
         "src/mpres/production_profiles.py",
+        "src/mpres/control_jobs.py",
         "src/mpres/scheduling.py",
         "src/mpres/assignments.py",
         "src/mpres/context_packets.py",
@@ -199,6 +200,8 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         ".agents/skills/role-runtime-profiling/SKILL.md",
         # Canonical structured records.
         "templates/structured/PRODUCTION-PROFILE.template.yaml",
+        "templates/structured/REVIEW-AGGREGATION-JOB.template.yaml",
+        "templates/structured/RELEASE-JOB.template.yaml",
         "templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml",
         "templates/structured/PRESENTATION-WORK-PLAN.template.yaml",
         "templates/structured/UNIT-DELTA.template.yaml",
@@ -230,6 +233,10 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     _require_paths(root, required, errors)
 
     forbidden_paths = [
+        ".codex/agents/review-coordinator.toml",
+        ".codex/agents/release-coordinator.toml",
+        "templates/assignments/TASK-review-coordinator.template.md",
+        "templates/assignments/TASK-release-coordinator.template.md",
         "templates/structured/LEGACY-MARP-AUDIT.template.md",
         "templates/structured/LEGACY-REUSE-MAP.template.md",
         "templates/structured/UNIT-INTERACTION-MANIFEST.template.yaml",
@@ -238,7 +245,24 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     ]
     for relative in forbidden_paths:
         if (root / relative).exists():
-            errors.append(f"obsolete v0.5.0 path must be removed: {relative}")
+            errors.append(f"obsolete or forbidden path must be removed: {relative}")
+
+    production_source = (root / "src/mpres/production.py").read_text(encoding="utf-8")
+    runtime_source = (root / "src/mpres/runtime_profile.py").read_text(encoding="utf-8")
+    for role in ("review-coordinator", "release-coordinator"):
+        _expect(
+            f'"{role}"' not in production_source and f'"{role}"' not in runtime_source,
+            f"{role} must not remain an executable model role",
+            errors,
+        )
+    control_source = (root / "src/mpres/control_jobs.py").read_text(encoding="utf-8")
+    _expect(
+        'model_runtime": None' in control_source
+        and "prepare_review_aggregation_job" in control_source
+        and "prepare_release_job" in control_source,
+        "review aggregation and release must be runtime-free control-plane jobs",
+        errors,
+    )
 
     # Exact direct dependency plus explicit repository lock is the selected npm policy.
     if (root / "package-lock.json").exists():

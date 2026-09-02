@@ -168,3 +168,18 @@ PYTHONPATH=src python -m mpres --help
 No archive checksum or source-manifest digest is generated, in accordance with
 the policy that only the task's top-level `TASK.md` receives a confirmation
 digest.
+
+## v0.6.2 incremental validation
+
+Scope: remove the model-based `review-coordinator` and `release-coordinator` and replace their work with runtime-free Python control-plane jobs.
+
+Verified in the clean v0.6.2 worktree:
+
+- the complete repository test collection contains 50 tests and completed with exit code 0;
+- the three new v0.6.2 mechanical-control tests passed independently;
+- all five v0.6.1 runtime/token tests remained unchanged and passed;
+- `python -m py_compile src/mpres/*.py scripts/validate_project.py` passed;
+- `PYTHONPATH=src python scripts/validate_project.py --skip-tests` passed;
+- `git diff --check` passed.
+
+The release archive is accepted only after a second clean extraction repeats the static checks, CLI smoke test, and complete test suite. The machine-readable verification report accompanies the archive.

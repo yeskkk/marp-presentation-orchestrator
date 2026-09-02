@@ -14,7 +14,7 @@ Create model workers only when their gate opens:
 - lesson author after an approved batch plan is queued for that unit;
 - reviewers only after full-deck freeze;
 - deck revision author only after atomic review aggregation;
-- release coordinator only in `release_ready`.
+- mechanical release job only in `release_ready`; it never consumes a thread.
 
 One handle that authored any part of a deck may not review it. The five review channels require five distinct independent handles. A lesson author may close immediately after durable handoff and is not retained for later findings. Post-review revision uses one separate deck revision author and the compiled context packet.
 

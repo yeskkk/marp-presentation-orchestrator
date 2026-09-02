@@ -6,6 +6,6 @@ Reviewers receive the same frozen source and PDF plus their own exact assignment
 
 A finding records stable ID, exact location, issue, learner impact, acceptance criteria, and verification method. It does not carry a resolved status. Before aggregation, a reviewer may correct only location, evidence path, or reviewer note while preserving substantive fields.
 
-The review coordinator validates all five current handoffs and commits them atomically. One deck-revision-author then receives the frozen deck, complete registry, review plan, routing, and author context packet. It responds to every finding, revises the whole deck, completes its checklist, and reruns deterministic gates. No reviewer recheck follows. Mechanical release begins only after this handoff creates `release_ready`.
+The Python control plane validates all five current handoffs, mechanically generates the aggregate, and commits the canonical outputs without a coordinator model. One deck-revision-author then receives the frozen deck, complete registry, review plan, routing, and author context packet. It responds to every finding, revises the whole deck, completes its checklist, and reruns deterministic gates. No reviewer recheck follows. Mechanical release begins only after this handoff creates `release_ready`.
 
 Screenshots, page rasterization/contact sheets, model vision, and original-reference-PDF access are forbidden.
