@@ -1,4 +1,4 @@
-# Workflow and state machine — v0.6.5
+# Workflow and state machine — v0.6.6
 
 ## v0.6.1 pre-production runtime and telemetry gate
 
@@ -202,3 +202,25 @@ Task state and the thread registry are canonical SQLite documents inside each ta
 Incident recording remains available while blocked. Normal operations stop on an open circuit.
 `workaround-approve` accepts only the exact plan captured with TASK reconfirmation;
 `workaround-apply` records operator verification and closes the circuit.
+
+## v0.6.6 user-reported defect diagnosis
+
+```text
+user report + slide IDs/pages
+        ↓
+mpres diagnostic open
+        ↓
+bounded read-only evidence (target + neighbors + selected records + gate excerpts)
+        ↓
+planner approves TASK-DIAGNOSTIC-REVIEWER.md
+        ↓
+diagnostic-reviewer writes DIAGNOSTIC-RESULT.yaml only
+        ↓
+mpres diagnostic submit validates evidence boundary
+        ↓
+PATCH-SCOPE.yaml (proposal only)
+        ↓
+planner-authorized patch/maintenance OR explicitly larger diagnostic case
+```
+
+The fast path does not alter presentation lifecycle state and may inspect an authoring draft, frozen review source, revision candidate, active maintenance source, or current published revision. It may run while an engine circuit is open because it is read-only; it cannot bypass the circuit to perform production changes. Cases are task-transaction serialized so concurrent automatic case IDs cannot collide.

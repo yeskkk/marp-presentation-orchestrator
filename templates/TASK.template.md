@@ -39,6 +39,7 @@
 9. Python 作图默认关闭；GeoGebra 仅可做有界站内搜索并以普通超链接引用。
 10. planner 对 assignment 的语义内容负责。planner 可以审批一份结构化 batch plan，由程序机械展开每个 unit 的精确 assignment；这种展开仍视为 planner 编写。**只有撰写或修订顶层 `TASK.md` 必须由主 planner（main agent）亲自完成；其它 planner 工作均可委派给其它 planner。**
 11. 同一 workflow-engine incident 必须复用稳定 ID 自动累计。默认第二次确定性复现即打开任务生产熔断；只能执行此前与 TASK 一同展示并由用户重新确认的精确、可逆 operational workaround，agent 不得临场选择或修改。
+12. 用户指出具体页面问题时，先用有界的目标页＋邻页只读诊断 case；diagnostic reviewer 不得看完整 deck、改稿、打开 PDF、自行扩大范围或动态改变运行配置。诊断生成的 patch scope 只是一项待 planner 授权的建议。
 
 ## 3. 目标听众
 
@@ -133,6 +134,7 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 - lesson-author：一个固定 content unit、一份 planner-approved assignment、一个连续 thread，依次完成所选 profile 的全部阶段；写 context packet 后可关闭，不负责 post-review revision。
 - deck-revision-author：在唯一一轮审核后读取冻结稿、五通道 findings 与 `AUTHOR-CONTEXT-PACKET.yaml`，独立完成整份 deck 的回应、修订、自检和交接。
 - specialist-reviewer：唯一一轮中的一个通道；五名 reviewer 都必须完整阅读整份冻结 deck，不看其他通道或后续修订。
+- diagnostic-reviewer：只读取用户问题页、邻页、相关结构化记录和已有机械门禁摘录，提交 evidence-backed diagnosis；不得改稿、自行扩大上下文或改变运行配置。
 - review aggregation：由 Python 控制面验证五个 reviewer handoff、生成 aggregate 和 findings registry；不启动模型线程。
 - release job：由 Python 控制面在 `release_ready` 后运行机械构建、检查、打包和发布；不启动模型线程，也不判断 finding 是否修好。
 

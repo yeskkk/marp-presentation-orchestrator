@@ -16,7 +16,7 @@ from typing import Any
 import yaml
 
 PLACEHOLDER_RE = re.compile(r"\[\[[A-Z0-9_]+\]\]")
-EXPECTED_VERSION = "0.6.5"
+EXPECTED_VERSION = "0.6.6"
 EXPECTED_MARP_VERSION = "4.5.0"
 
 
@@ -189,9 +189,11 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "src/mpres/review.py",
         "src/mpres/revision_routing.py",
         "src/mpres/maintenance.py",
+        "src/mpres/diagnostics.py",
         # New roles.
         ".codex/agents/delegated-planner.toml",
         ".codex/agents/deck-revision-author.toml",
+        ".codex/agents/diagnostic-reviewer.toml",
         # New skills.
         ".agents/skills/courseware-production-profiling/SKILL.md",
         ".agents/skills/legacy-presentation-migration/SKILL.md",
@@ -202,6 +204,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         ".agents/skills/role-runtime-profiling/SKILL.md",
         ".agents/skills/transactional-workflow-state/SKILL.md",
         ".agents/skills/operational-incident-mitigation/SKILL.md",
+        ".agents/skills/presentation-defect-triage/SKILL.md",
         # Canonical structured records.
         "templates/structured/PRODUCTION-PROFILE.template.yaml",
         "templates/structured/REVIEW-AGGREGATION-JOB.template.yaml",
@@ -217,19 +220,25 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "templates/structured/INCIDENT-INDEX.template.yaml",
         "templates/structured/INCIDENT-OCCURRENCE.template.yaml",
         "templates/structured/OPERATIONAL-WORKAROUND.template.yaml",
+        "templates/structured/DIAGNOSTIC-CASE.template.yaml",
+        "templates/structured/DIAGNOSTIC-RESULT.template.yaml",
+        "templates/structured/PATCH-SCOPE.template.yaml",
         "templates/structured/PERFORMANCE-BUDGET.template.yaml",
         "templates/structured/MILESTONE-CHECKPOINT.template.json",
         "templates/structured/TOOLCHAIN-LOCK.template.yaml",
         "templates/policies/TASK-RUNTIME-PROFILE.template.yaml",
         "docs/MIGRATION-v0.6.3-to-v0.6.4.md",
         "docs/MIGRATION-v0.6.4-to-v0.6.5.md",
+        "docs/MIGRATION-v0.6.5-to-v0.6.6.md",
         "tests/test_v064_transactional_state.py",
         "tests/test_v065_incident_circuit.py",
+        "tests/test_v066_slide_subset_diagnostics.py",
         # Profile-specific stages and assignments.
         "templates/stages/STAGE-M01-BASELINE-AUDIT.template.md",
         "templates/stages/STAGE-M02-DELTA-DESIGN-PATCH.template.md",
         "templates/stages/STAGE-M03-INTEGRATION-SEMANTIC-CHECK.template.md",
         "templates/assignments/TASK-deck-revision-author.template.md",
+        "templates/assignments/TASK-diagnostic-reviewer.template.md",
         # Retained inspection and maintenance gates.
         ".agents/skills/mathematical-typesetting-inspection/SKILL.md",
         ".agents/skills/presentation-corrective-maintenance/SKILL.md",
@@ -476,6 +485,35 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         errors,
     )
 
+    diagnostic_source = (root / "src/mpres/diagnostics.py").read_text(encoding="utf-8")
+    diagnostic_assignment = (root / "templates/assignments/TASK-diagnostic-reviewer.template.md").read_text(encoding="utf-8")
+    _expect(
+        '"diagnostic-reviewer": "reviewer"' in runtime_source
+        and 'agent_may_change": False' in diagnostic_source,
+        "diagnostic reviewer must use the fixed reviewer-family task runtime",
+        errors,
+    )
+    _expect(
+        "MAX_TARGET_SLIDES = 8" in diagnostic_source
+        and "MAX_NEIGHBOR_RADIUS = 2" in diagnostic_source
+        and "MAX_INCLUDED_SLIDES = 20" in diagnostic_source
+        and "source_modified" in diagnostic_source
+        and "automatic_source_edit" in diagnostic_source,
+        "bounded read-only diagnostic limits or no-edit controls are missing",
+        errors,
+    )
+    _expect(
+        "no PDF opening" in diagnostic_assignment
+        or "Do not render or open any PDF" in diagnostic_assignment,
+        "diagnostic assignment must explicitly forbid PDF access",
+        errors,
+    )
+    _expect(
+        '"diagnostic"' in logs_source,
+        "diagnostic events must be accepted by the project log schema",
+        errors,
+    )
+
     cli_source = (root / "src/mpres/cli.py").read_text(encoding="utf-8")
     for command in (
         "log-daemon",
@@ -483,6 +521,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "production",
         "toolchain",
         "engine",
+        "diagnostic",
     ):
         _expect(
             f'commands.add_parser("{command}")' in cli_source
@@ -618,6 +657,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
         [sys.executable, "-m", "mpres", "stage", "--help"],
         [sys.executable, "-m", "mpres", "review", "--help"],
         [sys.executable, "-m", "mpres", "maintenance", "--help"],
+        [sys.executable, "-m", "mpres", "diagnostic", "--help"],
         [sys.executable, "-m", "mpres", "toolchain", "--help"],
         [sys.executable, "-m", "mpres", "engine", "--help"],
     ]
@@ -639,7 +679,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate v0.6.5 configs, templates, policies, CLI, source, and tests."
+        description="Validate v0.6.6 configs, templates, policies, CLI, source, and tests."
     )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--skip-tests", action="store_true")

@@ -179,3 +179,7 @@ Hard boundaries: no `worker1`/`worker2` roles; no original-PDF access; no screen
 
 Repeated deterministic incidents use a stable ID and block production at the configured threshold.
 Agents may not invent or alter the exact reversible workaround approved with TASK reconfirmation.
+
+## v0.6.6 bounded diagnostic path
+
+When a user identifies a concrete slide or page problem, use `mpres diagnostic open` to create the smallest useful target-plus-neighbor evidence packet. A diagnostic reviewer reads only that packet, uses the immutable task runtime profile, never opens or renders PDFs, never uses screenshots/OCR/model vision, never edits canonical source, and never widens scope independently. `PATCH-SCOPE.yaml` is advisory until a planner authorizes a separate author or maintenance assignment; every later patch still runs local and full-deck gates.

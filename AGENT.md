@@ -20,3 +20,7 @@ Treat `state/mutable-state.sqlite3` as the canonical mutable store for task stat
 
 Never change an incident ID to evade recurrence counting. Once a circuit opens, only document,
 reconfirm, approve, and operator-verify the exact structured workaround; never improvise it.
+
+## v0.6.6 bounded diagnostic path
+
+When a user identifies a concrete slide or page problem, use `mpres diagnostic open` to create the smallest useful target-plus-neighbor evidence packet. A diagnostic reviewer reads only that packet, uses the immutable task runtime profile, never opens or renders PDFs, never uses screenshots/OCR/model vision, never edits canonical source, and never widens scope independently. `PATCH-SCOPE.yaml` is advisory until a planner authorizes a separate author or maintenance assignment; every later patch still runs local and full-deck gates.

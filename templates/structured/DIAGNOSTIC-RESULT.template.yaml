@@ -1,0 +1,28 @@
+schema_version: 1
+case_id: "[[CASE_ID]]"
+presentation_id: "[[PRESENTATION_ID]]"
+diagnostic_status: complete
+summary: "[[SUBSTANTIVE_DIAGNOSTIC_SUMMARY]]"
+root_cause_hypotheses:
+  - hypothesis: "[[EVIDENCE_SUPPORTED_ROOT_CAUSE_HYPOTHESIS]]"
+    evidence:
+      - slide_id: "[[TARGET_SLIDE_ID]]"
+        observation: "[[EXACT_OBSERVATION_FROM_THE_BOUNDED_EVIDENCE]]"
+confidence: "[[CONFIDENCE_LOW_MEDIUM_OR_HIGH]]"
+affected_slide_ids:
+  - "[[TARGET_SLIDE_ID]]"
+scope_expansion_required: false
+recommended_action: "[[RECOMMENDED_ACTION]]"
+patch_scope:
+  slide_ids:
+    - "[[TARGET_SLIDE_ID]]"
+  files:
+    - presentation.md
+  permitted_changes:
+    - "[[EXACT_CHANGE_THAT_A_LATER_AUTHORIZED_AUTHOR_MAY_MAKE]]"
+  forbidden_changes:
+    - "[[NEARBY_CONTENT_OR_STRUCTURE_THAT_MUST_NOT_CHANGE]]"
+  regression_checks:
+    - "[[LOCAL_AND_FULL_DECK_CHECK_TO_RUN_AFTER_A_LATER_PATCH]]"
+source_modified: false
+remaining_uncertainty: "[[REMAINING_UNCERTAINTY_OR_NONE]]"

@@ -1,0 +1,30 @@
+schema_version: 1
+case_id: "[[CASE_ID]]"
+task_slug: "[[TASK_SLUG]]"
+presentation_id: "[[PRESENTATION_ID]]"
+classification: presentation_defect
+status: awaiting_diagnosis
+opened_utc: "[[UTC]]"
+user_report: "[[USER_REPORT]]"
+source_anchor:
+  kind: "[[SOURCE_KIND]]"
+  presentation_status_when_opened: "[[PRESENTATION_STATUS]]"
+  canonical_source: "[[CANONICAL_SOURCE]]"
+  copied_evidence_only: true
+  hashes_generated: false
+scope:
+  target_slide_ids: []
+  reported_pages: []
+  neighbor_radius: 1
+  included_slide_ids: []
+  included_pages: []
+runtime:
+  runtime_source: TASK-RUNTIME-PROFILE.yaml
+  selected_by: user_before_task_confirmation
+  agent_may_change: false
+permissions:
+  canonical_source_edit: forbidden
+  automatic_patch: false
+  automatic_scope_expansion: false
+  pdf_opening_or_rendering: forbidden
+  screenshots_ocr_model_vision: forbidden

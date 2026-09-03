@@ -1,6 +1,6 @@
-# Marp Presentation Orchestrator v0.6.5
+# Marp Presentation Orchestrator v0.6.6
 
-这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.5 以已交付的 v0.6.4 为基线，只处理 workflow-engine incident 的自动复现统计、确定性重复故障熔断和用户预批准的可逆 operational workaround；v0.6.4 的事务化状态边界保持不变。
+这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.6 以已交付的 v0.6.5 为基线，只增加用户报告具体页面问题时的有界、只读诊断快速路径；既有任务级固定运行配置、机械 review/release、current＋next 调度、事务状态与 incident circuit 均保持不变。
 
 正式耐久产物始终是：
 
@@ -13,6 +13,24 @@ PDF
 ```
 
 浏览器 HTML 仅用于 author/release 的机械布局检查，检查后立即删除；它不进入 reviewer bundle 或 deliverables。
+
+
+## v0.6.6 增量：问题页只读诊断
+
+- 用户指出具体 slide ID 或页码后，`mpres diagnostic open` 只抽取目标页、至多两圈邻页、相关结构化记录和已有机械门禁摘录；默认邻页半径为 1。
+- 快速路径最多接受 8 个目标，证据包最多 20 页；超出范围时必须拆分 case 或进入完整 corrective review。
+- `diagnostic-reviewer` 属于 reviewer runtime family，使用用户在任务确认前写入的固定配置；agent 不得因问题难易动态换模型或推理强度。
+- 诊断 worker 只读 evidence，只能写 `DIAGNOSTIC-RESULT.yaml`；禁止编辑 canonical source、打开/渲染 PDF、截图、OCR、模型视觉或自行扩大上下文。
+- `mpres diagnostic submit` 机械验证 slide-ID 证据和边界，并生成仅供 planner 授权的 `PATCH-SCOPE.yaml`；诊断本身绝不自动改稿。
+- 若证据不足，结果只能请求一个明确扩大范围的新 case 或完整 corrective review。任何后续 patch 仍需改动页＋邻页检查以及完整 deck gate。
+
+```bash
+mpres diagnostic open <slug> --presentation p01 \
+  --report "用户指出这一页把条件和结论混在了一起。" \
+  --slide p01-u01-q1 --neighbor-radius 1
+mpres diagnostic status <slug> --presentation p01
+mpres diagnostic submit <slug> --presentation p01 --case-id d0001
+```
 
 
 ## v0.6.5 增量：重复故障熔断
@@ -367,6 +385,7 @@ mpres production critical-path <slug>
 mpres stage --help
 mpres review --help
 mpres maintenance --help
+mpres diagnostic --help
 
 # 技术故障
 mpres engine incident <slug> --id marp-dom-regression \

@@ -20,6 +20,7 @@ from mpres.doctor import doctor_report
 from mpres.geogebra import validate_task_geogebra
 from mpres.course_consistency import validate_course_consistency
 from mpres.density import validate_slide_density
+from mpres.diagnostics import diagnostic_status, open_diagnostic_case, submit_diagnostic_result
 from mpres.engine_incidents import (
     apply_operational_workaround,
     approve_operational_workaround,
@@ -436,6 +437,26 @@ def build_parser() -> argparse.ArgumentParser:
     icourse.add_argument("slug")
     icourse.add_argument("--presentation", required=True)
     icourse.add_argument("--stage", choices=["author", "release"], required=True)
+
+    diagnostic = commands.add_parser("diagnostic")
+    diagnostic_sub = diagnostic.add_subparsers(dest="diagnostic_command", required=True)
+    dopen = diagnostic_sub.add_parser("open")
+    dopen.add_argument("slug")
+    dopen.add_argument("--presentation", required=True)
+    dopen.add_argument("--report", required=True)
+    dopen.add_argument("--slide", action="append", default=[])
+    dopen.add_argument("--page", action="append", type=int, default=[])
+    dopen.add_argument("--neighbor-radius", type=int, default=1)
+    dopen.add_argument("--case-id")
+    dsubmit = diagnostic_sub.add_parser("submit")
+    dsubmit.add_argument("slug")
+    dsubmit.add_argument("--presentation", required=True)
+    dsubmit.add_argument("--case-id", required=True)
+    dsubmit.add_argument("--result", type=Path)
+    dstatus = diagnostic_sub.add_parser("status")
+    dstatus.add_argument("slug")
+    dstatus.add_argument("--presentation", required=True)
+    dstatus.add_argument("--case-id")
 
     maintenance = commands.add_parser("maintenance")
     maintenance_sub = maintenance.add_subparsers(dest="maintenance_command", required=True)
@@ -974,6 +995,36 @@ def main(argv: list[str] | None = None) -> int:
                     )
             _json(result)
             return 0 if result.get("success") else 1
+
+        if args.command == "diagnostic":
+            if args.diagnostic_command == "open":
+                result = open_diagnostic_case(
+                    root,
+                    args.slug,
+                    args.presentation,
+                    user_report=args.report,
+                    slide_ids=args.slide,
+                    page_numbers=args.page,
+                    neighbor_radius=args.neighbor_radius,
+                    case_id=args.case_id,
+                )
+            elif args.diagnostic_command == "submit":
+                result = submit_diagnostic_result(
+                    root,
+                    args.slug,
+                    args.presentation,
+                    args.case_id,
+                    result_path=args.result,
+                )
+            else:
+                result = diagnostic_status(
+                    root,
+                    args.slug,
+                    args.presentation,
+                    case_id=args.case_id,
+                )
+            _json(result)
+            return 0
 
         if args.command == "maintenance":
             if args.maintenance_command == "open":

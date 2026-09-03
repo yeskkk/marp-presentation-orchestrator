@@ -20,5 +20,10 @@ defaults:
 
 # Optional user-authored refinements. These are resolved deterministically.
 role_overrides: {}
+# Example chosen by the user before confirmation:
+# role_overrides:
+#   diagnostic-reviewer:
+#     model: luna
+#     reasoning_effort: medium
 reviewer_channel_overrides: {}
 presentation_overrides: {}

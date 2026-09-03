@@ -1,9 +1,9 @@
-# Design notes — v0.6.5
+# Design notes — v0.6.6
 
 
 ## Why v0.6.1 is incremental
 
-v0.6.1 changed only runtime selection and token observability. v0.6.2 removed model-based review/release coordinators, v0.6.3 repaired the bounded current-plus-next scheduler, and v0.6.4 makes task state and the thread registry transactional. v0.6.5 adds incident recurrence and circuit breaking; slide-subset diagnostics remain reserved for a later independently testable milestone.
+v0.6.1 changed only runtime selection and token observability. v0.6.2 removed model-based review/release coordinators, v0.6.3 repaired the bounded current-plus-next scheduler, and v0.6.4 makes task state and the thread registry transactional. v0.6.5 adds incident recurrence and circuit breaking. v0.6.6 adds a separately testable bounded, read-only slide-subset diagnostic path.
 
 ## Why v0.6.0 exists
 
@@ -80,3 +80,11 @@ A write-once incident could not show the same deterministic failure across decks
 owns a transactional occurrence list; the second deterministic occurrence opens a production
 circuit. Recovery is declarative: exact plan snapshot, user reconfirmation, operator execution, and
 verification attestation.
+
+## v0.6.6 — bounded read-only diagnosis
+
+A user-reported presentation defect is not sent immediately to a full-deck author or reviewer. The control plane resolves the current canonical source state, selects named slide IDs or 1-based pages, adds a small neighbor radius, and writes a self-contained evidence packet. It includes only the selected Marp source, filtered canonical records, and filtered existing machine-readable gate output. It never opens, renders, copies, or rasterizes a PDF.
+
+The diagnostic reviewer is a normal reviewer-family runtime chosen by the user before task confirmation. It has write access only to its structured result. Evidence citations and proposed patch slide IDs must remain inside the packet. Insufficient evidence produces an explicit request for a larger case or full corrective review rather than dynamic context expansion or runtime escalation.
+
+A completed diagnosis is advisory. The control plane emits a proposed `PATCH-SCOPE.yaml`, but only a later planner-authorized author or maintenance contract can modify canonical source. This separation keeps diagnosis cheap and auditable without weakening normal release gates.

@@ -355,17 +355,22 @@ def _identity(meta: dict[str, Any], overrides: dict[str, Any]) -> dict[str, str]
         "author-coordinator",
         "deck-revision-author",
         "specialist-reviewer",
+        "diagnostic-reviewer",
         "delegated-planner",
     }:
         role = declared
         if role == "delegated-planner":
             stage = "planning-supervision"
+        elif role == "diagnostic-reviewer":
+            stage = "diagnosis"
         elif "review" in role:
             stage = "review"
         elif "author" in role:
             stage = "authoring"
         else:
             stage = "release"
+    elif "diagnostic" in path:
+        role, stage = "diagnostic-reviewer", "diagnosis"
     elif "review" in path:
         role, stage = "specialist-reviewer", "review"
     elif "lesson" in path or "author" in path:

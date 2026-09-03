@@ -1,12 +1,22 @@
 # Changelog
 
+## 0.6.6
+
+- Added a bounded, read-only diagnostic path for user-reported slide IDs or page numbers.
+- Added target-plus-neighbor evidence packets with selected structured records and filtered existing gate evidence; PDFs are never opened, rendered, copied, or shown to a model.
+- Added the fixed-runtime `diagnostic-reviewer` role, planner-approved assignment, validated diagnostic result, and advisory patch-scope record.
+- Added `mpres diagnostic open|submit|status`, a dedicated skill/agent/templates, migration guidance, logging support, token attribution, and focused regression tests.
+- Kept source edits and scope expansion outside the diagnostic worker; later patches still require planner authorization and full-deck gates.
+
+Not included yet: assignment idempotency or canonical YAML handoff hardening.
+
 ## 0.6.5
 
 - Added stable-ID occurrence counting and a deterministic recurrence circuit breaker.
 - Added exact TASK-confirmed operational workaround approval and operator-verified application.
 - Added incident status/index views, policy/audit checks, CLI commands, skills, templates, migration guidance, and focused tests.
 
-Not included yet: slide-subset diagnostics, assignment idempotency, or canonical YAML handoff hardening.
+Not included yet in v0.6.5: slide-subset diagnostics, assignment idempotency, or canonical YAML handoff hardening.
 
 
 ## 0.6.4

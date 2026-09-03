@@ -1,4 +1,4 @@
-# Validation record — v0.6.5
+# Validation record — v0.6.6
 
 Validation date: 2026-09-02 UTC.
 
@@ -222,3 +222,7 @@ The release archive must repeat the same 71-test per-file suite after clean extr
 
 Focused tests cover first-occurrence compatibility, concurrent counting, suspected occurrences,
 exact confirmation, post-presentation tamper rejection, gate-wide blocking, and verified closure.
+
+## v0.6.6 incremental validation
+
+The release gate additionally verifies: bounded target/neighbor extraction; slide-ID and page resolution; target and evidence caps; read-only evidence and result directories; no PDF artifacts in cases; fixed reviewer-family runtime; planner assignment approval; rejection of out-of-packet evidence or patch scope; explicit low-confidence scope expansion; published-source preservation; diagnostic CLI help; diagnostic log kind; and full v0.6.5 regression compatibility.

@@ -42,3 +42,7 @@ Task state and thread lifecycle are canonical SQLite documents. Use control-plan
 Use `mpres engine status` to monitor automatic recurrence counts. A repeated deterministic engine
 incident blocks production until an exact user-preapproved workaround is applied and verified.
 Never change an incident ID to evade recurrence counting.
+
+## v0.6.6 bounded diagnostic path
+
+When the user identifies specific slides/pages, open a target-plus-neighbor read-only diagnostic case before broad revision. The diagnostic reviewer uses the immutable task profile, reads only the generated evidence packet, writes only the structured result, and may not open PDFs, use screenshots/OCR/model vision, edit source, or expand scope. A generated patch scope remains advisory until a planner issues a separate author/maintenance assignment; full deck gates remain mandatory.

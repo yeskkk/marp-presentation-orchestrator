@@ -237,6 +237,7 @@ def register_thread(
         "channel": None,
         "authored_presentations": [],
         "reviewed_presentations": [],
+        "diagnosed_presentations": [],
         "handoff_validated": False,
         "close_requested": False,
         "close_result": None,
@@ -266,8 +267,8 @@ def assign_thread(
     row = _find(registry, handle_id)
     if row.get("state") not in {"idle_reusable"}:
         raise MPresError(f"Thread {handle_id} is not idle and reusable.")
-    if role == "specialist-reviewer" and presentation_id in row.get("authored_presentations", []):
-        raise MPresError("A thread that authored a presentation may not review it.")
+    if role in {"specialist-reviewer", "diagnostic-reviewer"} and presentation_id in row.get("authored_presentations", []):
+        raise MPresError("A thread that authored a presentation may not review or diagnose it independently.")
     _require_runtime_match(
         root,
         slug,
@@ -336,6 +337,10 @@ def validate_handoff(
         reviewed = set(row.get("reviewed_presentations", []))
         reviewed.add(presentation_id)
         row["reviewed_presentations"] = sorted(reviewed)
+    if row.get("role") == "diagnostic-reviewer" and presentation_id:
+        diagnosed = set(row.get("diagnosed_presentations", []))
+        diagnosed.add(presentation_id)
+        row["diagnosed_presentations"] = sorted(diagnosed)
     row["updated_utc"] = utc_now()
     _save(root, slug, registry)
     return row

@@ -19,6 +19,7 @@ ROLE_FAMILIES = {
     "maintenance-author": "author",
     "reviewer": "reviewer",
     "specialist-reviewer": "reviewer",
+    "diagnostic-reviewer": "reviewer",
 }
 ALLOWED_TOP_LEVEL_KEYS = {
     "schema_version",

@@ -23,6 +23,7 @@ VALID_KINDS = {
     "delivery",
     "checkpoint",
     "maintenance",
+    "diagnostic",
 }
 
 

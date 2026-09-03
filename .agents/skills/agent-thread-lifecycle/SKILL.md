@@ -23,3 +23,7 @@ After handoff, attempt a real runtime close/remove. If capacity remains allocate
 ## v0.6.4 transactional registry
 
 `THREAD-REGISTRY.yaml` is a projection of canonical document `thread-registry` in the task-local SQLite store. Register, assign, handoff, and release operations must use the built-in reentrant task transaction. Capacity checks and the corresponding registry update belong to the same transaction. Never coordinate concurrent thread operations by editing YAML or exposing a lock file.
+
+## v0.6.6 diagnostic handles
+
+Create a `diagnostic-reviewer` handle only after its bounded case and planner-approved assignment exist. It uses the fixed reviewer-family runtime and may not diagnose a presentation it authored. Record diagnosed presentations at handoff, then release the handle; do not retain it speculatively for a later enlarged case.
