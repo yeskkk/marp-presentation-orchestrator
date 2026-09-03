@@ -20,7 +20,12 @@ from mpres.doctor import doctor_report
 from mpres.geogebra import validate_task_geogebra
 from mpres.course_consistency import validate_course_consistency
 from mpres.density import validate_slide_density
-from mpres.engine_incidents import record_engine_incident
+from mpres.engine_incidents import (
+    apply_operational_workaround,
+    approve_operational_workaround,
+    engine_incident_status,
+    record_engine_incident,
+)
 from mpres.html_layout import inspect_task_html_layout
 from mpres.log_daemon import daemon_status, start_log_daemon, stop_log_daemon
 from mpres.logs import append_log, log_file, read_log_tail
@@ -571,6 +576,20 @@ def build_parser() -> argparse.ArgumentParser:
     incident.add_argument("--symptom", required=True)
     incident.add_argument("--reproduction", action="append", required=True)
     incident.add_argument("--blocked-operation", required=True)
+    incident.add_argument("--presentation")
+    incident.add_argument("--evidence", action="append")
+    incident.add_argument("--suspected", action="store_true")
+    engine_status = engine_sub.add_parser("status")
+    engine_status.add_argument("slug")
+    engine_status.add_argument("--id")
+    workaround_approve = engine_sub.add_parser("workaround-approve")
+    workaround_approve.add_argument("slug")
+    workaround_approve.add_argument("--incident", required=True)
+    workaround_apply = engine_sub.add_parser("workaround-apply")
+    workaround_apply.add_argument("slug")
+    workaround_apply.add_argument("--incident", required=True)
+    workaround_apply.add_argument("--verification-note", required=True)
+    workaround_apply.add_argument("--evidence", action="append")
 
     audit = commands.add_parser("audit")
     audit.add_argument("slug")
@@ -1118,14 +1137,22 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "engine":
-            _json(record_engine_incident(
-                root,
-                args.slug,
-                incident_id=args.id,
-                symptom=args.symptom,
-                reproduction=args.reproduction,
-                blocked_operation=args.blocked_operation,
-            ))
+            if args.engine_command == "incident":
+                _json(record_engine_incident(
+                    root, args.slug, incident_id=args.id, symptom=args.symptom,
+                    reproduction=args.reproduction, blocked_operation=args.blocked_operation,
+                    presentation_id=args.presentation, evidence=args.evidence,
+                    deterministic=not args.suspected,
+                ))
+            elif args.engine_command == "status":
+                _json(engine_incident_status(root, args.slug, incident_id=args.id))
+            elif args.engine_command == "workaround-approve":
+                _json(approve_operational_workaround(root, args.slug, incident_id=args.incident))
+            else:
+                _json(apply_operational_workaround(
+                    root, args.slug, incident_id=args.incident,
+                    verification_note=args.verification_note, evidence=args.evidence,
+                ))
             return 0
 
         if args.command == "audit":

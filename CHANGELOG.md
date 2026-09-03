@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.5
+
+- Added stable-ID occurrence counting and a deterministic recurrence circuit breaker.
+- Added exact TASK-confirmed operational workaround approval and operator-verified application.
+- Added incident status/index views, policy/audit checks, CLI commands, skills, templates, migration guidance, and focused tests.
+
+Not included yet: slide-subset diagnostics, assignment idempotency, or canonical YAML handoff hardening.
+
 
 ## 0.6.4
 

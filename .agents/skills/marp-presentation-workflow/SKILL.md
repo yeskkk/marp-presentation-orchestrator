@@ -36,3 +36,9 @@ A suspected workflow-engine bug is not an in-task hotfix opportunity. Record `EN
 ## v0.6.4 mutable-state gate
 
 Task state and thread lifecycle are canonical SQLite documents. Use control-plane commands, not direct projection edits. Before production, `mpres task transaction-status <slug>` and the policy audit must show both documents, current projections, and `sqlite-begin-immediate` writer serialization. A stale snapshot is a conflict requiring a full command retry against current state, never a force-write.
+
+## v0.6.5 deterministic incident circuit
+
+Use `mpres engine status` to monitor automatic recurrence counts. A repeated deterministic engine
+incident blocks production until an exact user-preapproved workaround is applied and verified.
+Never change an incident ID to evade recurrence counting.

@@ -174,3 +174,8 @@ Hard boundaries: no `worker1`/`worker2` roles; no original-PDF access; no screen
 ## v0.6.2 mechanical control jobs
 
 `review-coordinator` and `release-coordinator` are deleted model roles. The Python control plane registers runtime-free review-aggregation and release jobs, validates their inputs, generates outputs, and writes receipts. Never allocate a model thread to either operation.
+
+## v0.6.5 incident circuit
+
+Repeated deterministic incidents use a stable ID and block production at the configured threshold.
+Agents may not invent or alter the exact reversible workaround approved with TASK reconfirmation.

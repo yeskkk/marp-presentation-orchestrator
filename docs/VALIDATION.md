@@ -1,4 +1,4 @@
-# Validation record — v0.6.4
+# Validation record — v0.6.5
 
 Validation date: 2026-09-02 UTC.
 
@@ -217,3 +217,8 @@ Worktree acceptance result for this milestone:
 ```
 
 The release archive must repeat the same 71-test per-file suite after clean extraction.
+
+## v0.6.5 incremental validation
+
+Focused tests cover first-occurrence compatibility, concurrent counting, suspected occurrences,
+exact confirmation, post-presentation tamper rejection, gate-wide blocking, and verified closure.

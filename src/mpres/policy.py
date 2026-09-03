@@ -162,6 +162,14 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
     _expect(engine.get("in_task_hot_patch") == "forbidden", "In-task workflow-engine hot patches must be forbidden.", errors)
     _expect(engine.get("technical_bug_requires_task_policy_amendment") is True, "A technical engine bug must require a task policy amendment.", errors)
     _expect(engine.get("workflow_engine_refactoring_is_separate_work") is True, "Workflow-engine refactoring must be treated as separate work.", errors)
+    _expect(engine.get("incident_recurrence_key") == "incident_id", "Engine incident recurrence must be keyed by incident_id without an extra hash.", errors)
+    threshold = engine.get("deterministic_recurrence_threshold")
+    _expect(isinstance(threshold, int) and not isinstance(threshold, bool) and threshold >= 1, "Engine incident recurrence threshold must be a positive integer.", errors)
+    _expect(engine.get("circuit_breaker_scope") == "task_production", "Engine incident circuit breaker must block task production.", errors)
+    workaround = engine.get("operational_workaround", {}) if isinstance(engine, dict) else {}
+    _expect(workaround.get("approval") == "exact_plan_via_TASK_reconfirmation", "Operational workarounds must be approved as exact plans via TASK reconfirmation.", errors)
+    _expect(workaround.get("agent_may_invent_or_modify") is False, "Agents must not invent or modify operational workarounds.", errors)
+    _expect(workaround.get("control_plane_executes_arbitrary_commands") is False, "The control plane must not execute arbitrary workaround commands.", errors)
 
     token_policy = execution.get("token_accounting", {}) if isinstance(execution, dict) else {}
     _expect(token_policy.get("collection_mode") == "workflow_milestones", "Token accounting must run at workflow milestones.", errors)
@@ -273,7 +281,7 @@ def propose_policy_change(
     fields: list[str],
     reason: str,
 ) -> dict[str, Any]:
-    state = require_gate(root, slug)
+    state = require_gate(root, slug, allow_engine_circuit=True)
     if not request_id.strip() or not reason.strip():
         raise MPresError("Policy proposal requires request ID and reason.")
     if state.get("pending_policy_change_request"):
@@ -317,7 +325,9 @@ def confirm_policy_change(root: Path, slug: str, *, request_id: str) -> dict[str
     creates no extra hash. This is the sole command allowed through the pending-amendment pause.
     """
 
-    state = require_gate(root, slug, allow_pending_policy_change=True)
+    state = require_gate(
+        root, slug, allow_pending_policy_change=True, allow_engine_circuit=True
+    )
     if state.get("pending_policy_change_request") != request_id:
         raise MPresError("This policy change is not the task's pending amendment.")
     path = task_path(root, slug) / "policy-change-requests" / f"{request_id}.yaml"

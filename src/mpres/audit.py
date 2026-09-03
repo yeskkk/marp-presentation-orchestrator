@@ -7,6 +7,7 @@ from typing import Any
 
 from mpres.control_jobs import release_workspace, review_aggregation_root
 from mpres.geogebra import validate_presentation_geogebra_registry
+from mpres.engine_incidents import audit_engine_incidents
 from mpres.policy import policy_audit
 from mpres.production import assignment_path, check_assignment
 from mpres.revision_routing import build_revision_routing
@@ -175,6 +176,11 @@ def audit_task(root: Path, slug: str) -> dict[str, Any]:
         add("error", "policy", message)
     for message in policy.get("warnings", []):
         add("warning", "policy", message)
+    incident_audit = audit_engine_incidents(root, slug, state)
+    for message in incident_audit.get("errors", []):
+        add("error", "engine-incidents", message)
+    for message in incident_audit.get("warnings", []):
+        add("warning", "engine-incidents", message)
     _audit_single_project_log(task, add)
 
     for path in task.rglob("*"):

@@ -1,4 +1,4 @@
-# Workflow and state machine — v0.6.4
+# Workflow and state machine — v0.6.5
 
 ## v0.6.1 pre-production runtime and telemetry gate
 
@@ -168,12 +168,12 @@ workflow_engine_technical_fix policy amendment
         ↓
 main agent revises TASK.md
         ↓
-user reconfirms
+user reconfirms TASK.md and the exact reversible workaround
         ↓
-current task follows the reconfirmed policy
+operator may apply and verify that plan when recurrence opens the circuit
 ```
 
-Actual engine refactoring and regression-test implementation are separate work. There is no in-task hotfix lane.
+Actual engine refactoring and regression-test implementation are separate work. The approved operational mitigation is not a hotfix: it cannot edit engine source or bypass gates.
 
 ## 13. Logging and supervision
 
@@ -196,3 +196,9 @@ Review aggregation and release are explicit Python control-plane jobs with `mode
 ## v0.6.4 transactional state boundary
 
 Task state and the thread registry are canonical SQLite documents inside each task. Every public mutating command enters one reentrant `BEGIN IMMEDIATE` transaction; nested command calls reuse it. JSON/YAML projections are emitted only after commit and only when their revision is still current. Existing v0.6.3 projections are imported automatically on first access. Stale snapshot saves are rejected rather than merged implicitly or allowed to overwrite newer work.
+
+## v0.6.5 incident recurrence and circuit
+
+Incident recording remains available while blocked. Normal operations stop on an open circuit.
+`workaround-approve` accepts only the exact plan captured with TASK reconfirmation;
+`workaround-apply` records operator verification and closes the circuit.

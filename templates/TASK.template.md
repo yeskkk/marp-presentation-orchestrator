@@ -38,6 +38,7 @@
 8. worker 只能读取 `downloads/text/` 中的抽取文本。任何原 PDF 即使物理存在也禁止打开、解析、渲染、转换、OCR、截图或交给视觉模型。
 9. Python 作图默认关闭；GeoGebra 仅可做有界站内搜索并以普通超链接引用。
 10. planner 对 assignment 的语义内容负责。planner 可以审批一份结构化 batch plan，由程序机械展开每个 unit 的精确 assignment；这种展开仍视为 planner 编写。**只有撰写或修订顶层 `TASK.md` 必须由主 planner（main agent）亲自完成；其它 planner 工作均可委派给其它 planner。**
+11. 同一 workflow-engine incident 必须复用稳定 ID 自动累计。默认第二次确定性复现即打开任务生产熔断；只能执行此前与 TASK 一同展示并由用户重新确认的精确、可逆 operational workaround，agent 不得临场选择或修改。
 
 ## 3. 目标听众
 
@@ -135,7 +136,7 @@ worker assignment 只能引用抽取文本的路径、行号或检索词。文�
 - review aggregation：由 Python 控制面验证五个 reviewer handoff、生成 aggregate 和 findings registry；不启动模型线程。
 - release job：由 Python 控制面在 `release_ready` 后运行机械构建、检查、打包和发布；不启动模型线程，也不判断 finding 是否修好。
 
-纯技术 workflow-engine bug 也不得在任务中热修。必须建立 task policy amendment、修订并重新确认 `TASK.md`；引擎重构作为独立工作处理。
+纯技术 workflow-engine bug 也不得在任务中热修。必须建立 task policy amendment、修订并重新确认 `TASK.md`；引擎重构作为独立工作处理。同一 incident 的确定性复现达到阈值后，控制面阻止继续生产；只有精确随 TASK 重新确认过的可逆 workaround 经操作员执行和验证后才能关闭熔断。
 
 ## 13. 验收标准
 

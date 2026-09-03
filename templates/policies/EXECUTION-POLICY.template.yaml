@@ -113,6 +113,18 @@ engine_changes:
   in_task_hot_patch: forbidden
   technical_bug_requires_task_policy_amendment: true
   workflow_engine_refactoring_is_separate_work: true
+  incident_recurrence_key: incident_id
+  deterministic_recurrence_threshold: 2
+  suspected_occurrences_count_toward_threshold: false
+  circuit_breaker_scope: task_production
+  incident_recording_while_blocked: allowed
+  operational_workaround:
+    approval: exact_plan_via_TASK_reconfirmation
+    agent_may_invent_or_modify: false
+    control_plane_executes_arbitrary_commands: false
+    operator_attestation_required_after_application: true
+    allowed_effects: [change_invocation_order, use_temporary_staging_path, restore_permissions_on_copied_workspace, skip_verified_redundant_step, retry_idempotent_control_operation_once]
+    forbidden_effects: [modify_workflow_engine_source, change_model_or_reasoning_effort, bypass_review_or_release_gates, falsify_state_or_token_data]
 pdf_limits:
   warning_min_text_pt: 12
   error_min_text_pt: 8

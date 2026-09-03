@@ -1,9 +1,21 @@
-schema_version: 1
+schema_version: 2
 incident_id: "[[INCIDENT_ID]]"
-symptom: "[[SYMPTOM]]"
-reproduction: []
-blocked_operation: "[[BLOCKED_OPERATION]]"
+classification: confirmed_or_suspected_workflow_engine_bug
 in_task_engine_edit_allowed: false
-requires_task_policy_amendment: true
-refactoring_is_separate_work: true
+first_recorded_utc: null
+last_recorded_utc: null
+occurrence_count: 0
+deterministic_occurrence_count: 0
+suspected_occurrence_count: 0
+blocked_operation: "[[BLOCKED_OPERATION]]"
+affected_presentations: []
+occurrences: []
+policy_amendment_request: null
+required_action: >-
+  Do not hot-patch the workflow engine. Reconfirm the task policy and prepare an exact,
+  reversible operational workaround. A repeated deterministic occurrence opens the task
+  production circuit until the pre-approved workaround is applied and verified.
+circuit_breaker: {threshold: 2, open: false, opened_utc: null, opened_on_occurrence: null, active_workaround_id: null}
+approved_workarounds: {}
+workaround_applications: []
 status: awaiting_policy_amendment

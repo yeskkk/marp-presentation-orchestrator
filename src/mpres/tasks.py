@@ -267,11 +267,23 @@ def create_task(
         "confirmation_sequence": 0,
         "presentations": [],
         "last_delivery_sequence": 0,
+        "engine_incident_index": {
+            "schema_version": 1,
+            "recurrence_key": "incident_id",
+            "deterministic_recurrence_threshold": 2,
+            "incidents": {},
+        },
+        "open_engine_incident_circuits": [],
+        "presented_operational_workarounds": {},
+        "confirmed_operational_workarounds": {},
     }
     initialize_state(root, selected_slug, state)
     from mpres.threads import initialize_thread_registry
 
     initialize_thread_registry(root, selected_slug)
+    from mpres.engine_incidents import initialize_incident_index
+
+    initialize_incident_index(root, selected_slug)
     append_log(
         root,
         selected_slug,
@@ -298,6 +310,9 @@ def present_task(root: Path, slug: str) -> dict[str, Any]:
         )
     task_md = task_path(root, slug) / "TASK.md"
     runtime_profile = load_runtime_profile(root, slug)
+    from mpres.engine_incidents import operational_workaround_snapshots
+
+    workaround_snapshots = operational_workaround_snapshots(root, slug)
     confirmed_runtime_profile = state.get("confirmed_runtime_profile")
     if confirmed_runtime_profile is not None:
         assert_runtime_profile_unchanged(root, slug, confirmed_runtime_profile)
@@ -316,6 +331,7 @@ def present_task(root: Path, slug: str) -> dict[str, Any]:
     state["phase"] = "awaiting_user_confirmation"
     state["presented_task_sha256"] = digest
     state["presented_runtime_profile"] = runtime_profile
+    state["presented_operational_workarounds"] = workaround_snapshots
     state["presented_task_snapshot"] = relative_display(snapshot, root)
     state["presented_utc"] = utc_now()
     state["confirmed_task_sha256"] = None
@@ -334,6 +350,7 @@ def present_task(root: Path, slug: str) -> dict[str, Any]:
             "runtime_profile_path": relative_display(
                 task_path(root, slug) / PROFILE_FILENAME, root
             ),
+            "operational_workarounds": workaround_snapshots,
         },
     )
     return state
@@ -356,6 +373,14 @@ def confirm_task(root: Path, slug: str) -> dict[str, Any]:
     confirmed = task_path(root, slug) / "state" / "TASK.confirmed.md"
     shutil.copy2(task_md, confirmed)
     runtime_profile = snapshot_for_confirmation(root, slug)
+    from mpres.engine_incidents import operational_workaround_snapshots
+
+    workaround_snapshots = operational_workaround_snapshots(root, slug)
+    if workaround_snapshots != state.get("presented_operational_workarounds", {}):
+        raise MPresError(
+            "An operational workaround changed after TASK.md was presented. Run `mpres task "
+            "present` again and obtain confirmation of the exact structured plan."
+        )
     if runtime_profile != state.get("presented_runtime_profile"):
         raise MPresError(
             f"{PROFILE_FILENAME} changed after the task was presented. Run `mpres task present` "
@@ -371,6 +396,7 @@ def confirm_task(root: Path, slug: str) -> dict[str, Any]:
         state["confirmed_runtime_profile"] = runtime_profile
         state["runtime_profile_locked_utc"] = utc_now()
     state["confirmed_task_sha256"] = current
+    state["confirmed_operational_workarounds"] = workaround_snapshots
     state["confirmed_task_snapshot"] = relative_display(confirmed, root)
     state["confirmed_utc"] = utc_now()
     state["confirmation_sequence"] = int(state.get("confirmation_sequence", 0)) + 1
@@ -448,6 +474,7 @@ def require_gate(
     slug: str,
     *,
     allow_pending_policy_change: bool = False,
+    allow_engine_circuit: bool = False,
 ) -> dict[str, Any]:
     ok, message, state = gate_status(root, slug)
     if not ok:
@@ -457,6 +484,15 @@ def require_gate(
         raise MPresError(
             f"Task policy amendment {pending!r} is pending. Revise and reconfirm TASK.md, then "
             "confirm the amendment before resuming production."
+        )
+    from mpres.engine_incidents import open_circuit_ids
+
+    open_circuits = open_circuit_ids(state)
+    if open_circuits and not allow_engine_circuit:
+        raise MPresError(
+            "Workflow-engine circuit breaker is open for: " + ", ".join(open_circuits)
+            + ". Production is blocked. Inspect `mpres engine status`, then apply an exact "
+            "user-preapproved operational workaround."
         )
     return state
 

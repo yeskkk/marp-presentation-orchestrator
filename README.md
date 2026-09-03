@@ -1,6 +1,6 @@
-# Marp Presentation Orchestrator v0.6.4
+# Marp Presentation Orchestrator v0.6.5
 
-这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.4 以已交付的 v0.6.3 为基线，只处理 mutable state 的事务化与并发丢更新：任务状态和线程注册表由任务级 SQLite 事务存储保存，JSON/YAML 继续作为人类可读投影。
+这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.5 以已交付的 v0.6.4 为基线，只处理 workflow-engine incident 的自动复现统计、确定性重复故障熔断和用户预批准的可逆 operational workaround；v0.6.4 的事务化状态边界保持不变。
 
 正式耐久产物始终是：
 
@@ -13,6 +13,22 @@ PDF
 ```
 
 浏览器 HTML 仅用于 author/release 的机械布局检查，检查后立即删除；它不进入 reviewer bundle 或 deliverables。
+
+
+## v0.6.5 增量：重复故障熔断
+
+- 同一故障复用稳定 incident ID；occurrence 自动累计，不生成额外 hash。
+- 默认第二次确定性 occurrence 打开 task-production circuit；`--suspected` 不计阈值。
+- 熔断后正常生产命令停止；incident/status、TASK 重新确认、policy confirm 和 workaround 控制仍可用。
+- 精确 workaround 必须与 TASK 一同展示并由用户重新确认；agent 不得临场选择或修改，控制面不执行任意命令。
+- 操作员执行精确计划并提交验证说明后才关闭 circuit。
+
+```bash
+mpres engine status <slug>
+mpres engine workaround-approve <slug> --incident ENGINE-006
+mpres engine workaround-apply <slug> --incident ENGINE-006 \
+  --verification-note "已按确认计划执行并验证通过。"
+```
 
 ## v0.6.4 增量：事务化 mutable state
 
@@ -273,12 +289,14 @@ propose workflow_engine_technical_fix amendment
         ↓
 main agent revises TASK.md
         ↓
-present and reconfirm TASK.md
+present and reconfirm TASK.md plus exact reversible workaround
         ↓
-engine refactoring handled as separate work
+preapprove the exact plan; operator applies and verifies it if recurrence opens the circuit
+        ↓
+engine refactoring remains separate work
 ```
 
-禁止一边修改 workflow engine、补测试，一边让原课件任务继续运行。
+禁止一边修改 workflow engine、补测试，一边让原课件任务继续运行；允许的只是用户预先确认、可逆且不改引擎源码的操作性缓解。
 
 ## 12. 安装
 

@@ -15,3 +15,8 @@ In `all` mode, entering review automatically opens exactly one earliest-next aut
 ## v0.6.4 transactional mutable state
 
 Treat `state/mutable-state.sqlite3` as the canonical mutable store for task state and the thread registry. `state/task.json` and `THREAD-REGISTRY.yaml` are generated human-readable projections. Use normal `mpres` commands; never edit the SQLite database or invent an external lock protocol. A stale snapshot must be reloaded and the complete command rerun rather than force-written.
+
+## v0.6.5 incident circuit
+
+Never change an incident ID to evade recurrence counting. Once a circuit opens, only document,
+reconfirm, approve, and operator-verify the exact structured workaround; never improvise it.

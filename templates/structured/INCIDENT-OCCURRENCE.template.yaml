@@ -1,0 +1,11 @@
+schema_version: 1
+incident_id: "[[INCIDENT_ID]]"
+sequence: null
+recorded_utc: null
+symptom: "[[SYMPTOM]]"
+reproduction: []
+blocked_operation: "[[BLOCKED_OPERATION]]"
+presentation_id: null
+deterministic: true
+evidence: []
+task_confirmation_sequence: null

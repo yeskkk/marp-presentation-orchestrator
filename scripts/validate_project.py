@@ -16,7 +16,7 @@ from typing import Any
 import yaml
 
 PLACEHOLDER_RE = re.compile(r"\[\[[A-Z0-9_]+\]\]")
-EXPECTED_VERSION = "0.6.4"
+EXPECTED_VERSION = "0.6.5"
 EXPECTED_MARP_VERSION = "4.5.0"
 
 
@@ -201,6 +201,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         ".agents/skills/deck-revision-authoring/SKILL.md",
         ".agents/skills/role-runtime-profiling/SKILL.md",
         ".agents/skills/transactional-workflow-state/SKILL.md",
+        ".agents/skills/operational-incident-mitigation/SKILL.md",
         # Canonical structured records.
         "templates/structured/PRODUCTION-PROFILE.template.yaml",
         "templates/structured/REVIEW-AGGREGATION-JOB.template.yaml",
@@ -213,12 +214,17 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "templates/structured/INTERACTION-RECORD.template.yaml",
         "templates/structured/REVIEW-PLAN.template.yaml",
         "templates/structured/ENGINE-INCIDENT.template.yaml",
+        "templates/structured/INCIDENT-INDEX.template.yaml",
+        "templates/structured/INCIDENT-OCCURRENCE.template.yaml",
+        "templates/structured/OPERATIONAL-WORKAROUND.template.yaml",
         "templates/structured/PERFORMANCE-BUDGET.template.yaml",
         "templates/structured/MILESTONE-CHECKPOINT.template.json",
         "templates/structured/TOOLCHAIN-LOCK.template.yaml",
         "templates/policies/TASK-RUNTIME-PROFILE.template.yaml",
         "docs/MIGRATION-v0.6.3-to-v0.6.4.md",
+        "docs/MIGRATION-v0.6.4-to-v0.6.5.md",
         "tests/test_v064_transactional_state.py",
+        "tests/test_v065_incident_circuit.py",
         # Profile-specific stages and assignments.
         "templates/stages/STAGE-M01-BASELINE-AUDIT.template.md",
         "templates/stages/STAGE-M02-DELTA-DESIGN-PATCH.template.md",
@@ -341,6 +347,22 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         )
         is True,
         "workflow-engine technical bugs must require a task policy amendment",
+        errors,
+    )
+    engine_policy = execution.get("engine_changes", {})
+    _expect(
+        engine_policy.get("incident_recurrence_key") == "incident_id"
+        and engine_policy.get("deterministic_recurrence_threshold") == 2
+        and engine_policy.get("circuit_breaker_scope") == "task_production",
+        "execution policy must define stable incident recurrence and a task-production circuit",
+        errors,
+    )
+    workaround_policy = engine_policy.get("operational_workaround", {})
+    _expect(
+        workaround_policy.get("approval") == "exact_plan_via_TASK_reconfirmation"
+        and workaround_policy.get("agent_may_invent_or_modify") is False
+        and workaround_policy.get("control_plane_executes_arbitrary_commands") is False,
+        "operational workaround policy must be exact, user-confirmed, and non-dynamic",
         errors,
     )
     _expect(
@@ -617,7 +639,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate v0.6.4 configs, templates, policies, CLI, source, and tests."
+        description="Validate v0.6.5 configs, templates, policies, CLI, source, and tests."
     )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--skip-tests", action="store_true")
