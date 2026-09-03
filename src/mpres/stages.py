@@ -10,6 +10,7 @@ from mpres.milestones import record_milestone
 from mpres.state import get_content_unit, get_presentation, load_state, save_state, stage_ids_for_kind
 from mpres.tasks import require_gate
 from mpres.threads import list_threads
+from mpres.transactions import transactional_task_mutation
 from mpres.util import (
     MPresError,
     read_yaml,
@@ -232,6 +233,7 @@ def stage_status(root: Path, slug: str, presentation_id: str, unit_id: str) -> d
     return {**value, "path": relative_display(path, root)}
 
 
+@transactional_task_mutation
 def start_stage_sequence(
     root: Path,
     slug: str,
@@ -338,6 +340,7 @@ def _validate_stage_artifact(
     return artifact
 
 
+@transactional_task_mutation
 def submit_stage(
     root: Path,
     slug: str,
@@ -417,6 +420,7 @@ def accept_stage(*args: Any, **kwargs: Any) -> dict[str, Any]:
     )
 
 
+@transactional_task_mutation
 def reopen_stage(
     root: Path,
     slug: str,

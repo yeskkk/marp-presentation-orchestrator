@@ -1,5 +1,14 @@
 # Changelog
 
+
+## 0.6.4
+
+- Added a task-local SQLite transaction store for canonical task state and the thread registry; JSON/YAML files remain human-readable projections.
+- Serialized all public task-state and thread-lifecycle mutations with reentrant `BEGIN IMMEDIATE` task transactions, preventing read-modify-write lost updates.
+- Added optimistic revision checks so stale direct snapshots fail explicitly instead of overwriting newer state.
+- Added post-commit, revision-checked projection repair and automatic first-read import for existing v0.6.3 tasks.
+- Added `mpres task transaction-status`, mutable-state audit checks, and concurrency/rollback/migration/full-review regression tests.
+
 ## 0.6.3
 
 - Repaired the bounded current-plus-next pipeline: a current deck in review, deck revision, or release-ready state no longer closes the next authoring lane.

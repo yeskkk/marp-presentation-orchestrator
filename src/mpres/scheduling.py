@@ -5,6 +5,7 @@ from typing import Any
 
 from mpres.state import get_content_unit, get_presentation, load_state, save_state
 from mpres.tasks import require_gate
+from mpres.transactions import transactional_task_mutation
 from mpres.util import MPresError, read_yaml, relative_display, task_path, utc_now, write_yaml_atomic
 
 
@@ -150,6 +151,7 @@ def rebalance_active_presentations(
     }
 
 
+@transactional_task_mutation
 def refresh_active_presentation_window(
     root: Path,
     slug: str,
@@ -228,6 +230,7 @@ def sync_work_plan(
     write_yaml_atomic(_work_plan_path(root, slug), plan)
     return plan
 
+@transactional_task_mutation
 def queue_unit(root: Path, slug: str, presentation_id: str, unit_id: str) -> dict[str, Any]:
     """Queue and lazily materialize one unit on the current critical path."""
 

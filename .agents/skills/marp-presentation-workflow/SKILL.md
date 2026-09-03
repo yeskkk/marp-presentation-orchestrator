@@ -32,3 +32,7 @@ Review aggregation and release are Python control-plane jobs. They have no model
 Priority is always: finish current review/revision/release; finish the current deck; start a ready next deck; prepare future metadata without model workers. Never create speculative reviewers, revision authors, or release jobs, and never hold model threads speculatively.
 
 A suspected workflow-engine bug is not an in-task hotfix opportunity. Record `ENGINE-INCIDENT.yaml`, propose a task policy amendment, revise and reconfirm `TASK.md`, and treat engine refactoring as separate work.
+
+## v0.6.4 mutable-state gate
+
+Task state and thread lifecycle are canonical SQLite documents. Use control-plane commands, not direct projection edits. Before production, `mpres task transaction-status <slug>` and the policy audit must show both documents, current projections, and `sqlite-begin-immediate` writer serialization. A stale snapshot is a conflict requiring a full command retry against current state, never a force-write.

@@ -61,7 +61,7 @@ from mpres.review import (
     submit_channel_review,
 )
 from mpres.stages import reopen_stage, stage_status, start_stage_sequence, submit_stage
-from mpres.state import REVIEW_CHANNELS, REVIEW_ROUNDS
+from mpres.state import REVIEW_CHANNELS, REVIEW_ROUNDS, mutable_state_status
 from mpres.supervision import supervise_once, watch_supervision
 from mpres.tasks import (
     confirm_task,
@@ -175,7 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--minutes", type=int)
     init.add_argument("--production-mode", choices=PRODUCTION_MODES, default="greenfield_full")
     task_sub.add_parser("list").add_argument("--json", action="store_true")
-    for name in ("present", "confirm", "gate", "status", "continue", "restore-confirmed"):
+    for name in ("present", "confirm", "gate", "status", "transaction-status", "continue", "restore-confirmed"):
         sub = task_sub.add_parser(name)
         sub.add_argument("slug")
 
@@ -613,6 +613,8 @@ def main(argv: list[str] | None = None) -> int:
                 return 0 if ok else 1
             elif args.task_command == "status":
                 _json(task_status(root, args.slug))
+            elif args.task_command == "transaction-status":
+                _json(mutable_state_status(root, args.slug))
             elif args.task_command == "continue":
                 _json(continue_task(root, args.slug))
             else:

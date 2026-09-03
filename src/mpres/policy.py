@@ -9,6 +9,7 @@ from mpres.production_profiles import load_production_profile
 from mpres.runtime_profile import PROFILE_FILENAME, load_runtime_profile
 from mpres.state import REVIEW_CHANNELS, REVIEW_ROUNDS, load_state, save_state
 from mpres.tasks import gate_status, require_gate
+from mpres.transactions import transactional_task_mutation
 from mpres.util import MPresError, read_yaml, task_path, utc_now, write_yaml_atomic
 
 MATERIAL_FIELDS = {
@@ -263,6 +264,7 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
 
     return {"task_slug": slug, "gate_ok": gate_ok, "errors": errors, "warnings": warnings, "ok": not errors}
 
+@transactional_task_mutation
 def propose_policy_change(
     root: Path,
     slug: str,
@@ -307,6 +309,7 @@ def propose_policy_change(
     return {**value, "path": str(path)}
 
 
+@transactional_task_mutation
 def confirm_policy_change(root: Path, slug: str, *, request_id: str) -> dict[str, Any]:
     """Confirm a material amendment only after TASK.md was edited and reconfirmed.
 

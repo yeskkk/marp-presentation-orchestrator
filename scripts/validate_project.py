@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import compileall
 import json
 import os
@@ -15,7 +16,7 @@ from typing import Any
 import yaml
 
 PLACEHOLDER_RE = re.compile(r"\[\[[A-Z0-9_]+\]\]")
-EXPECTED_VERSION = "0.6.3"
+EXPECTED_VERSION = "0.6.4"
 EXPECTED_MARP_VERSION = "4.5.0"
 
 
@@ -178,6 +179,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "src/mpres/runtime_profile.py",
         "src/mpres/production_profiles.py",
         "src/mpres/control_jobs.py",
+        "src/mpres/transactions.py",
         "src/mpres/scheduling.py",
         "src/mpres/assignments.py",
         "src/mpres/context_packets.py",
@@ -198,6 +200,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         ".agents/skills/workflow-engine-maintenance/SKILL.md",
         ".agents/skills/deck-revision-authoring/SKILL.md",
         ".agents/skills/role-runtime-profiling/SKILL.md",
+        ".agents/skills/transactional-workflow-state/SKILL.md",
         # Canonical structured records.
         "templates/structured/PRODUCTION-PROFILE.template.yaml",
         "templates/structured/REVIEW-AGGREGATION-JOB.template.yaml",
@@ -214,6 +217,8 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "templates/structured/MILESTONE-CHECKPOINT.template.json",
         "templates/structured/TOOLCHAIN-LOCK.template.yaml",
         "templates/policies/TASK-RUNTIME-PROFILE.template.yaml",
+        "docs/MIGRATION-v0.6.3-to-v0.6.4.md",
+        "tests/test_v064_transactional_state.py",
         # Profile-specific stages and assignments.
         "templates/stages/STAGE-M01-BASELINE-AUDIT.template.md",
         "templates/stages/STAGE-M02-DELTA-DESIGN-PATCH.template.md",
@@ -373,6 +378,72 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "PRESENTATION-WORK-PLAN must preserve the next lane through review/revision/release",
         errors,
     )
+    transaction_source = (root / "src/mpres/transactions.py").read_text(encoding="utf-8")
+    state_source = (root / "src/mpres/state.py").read_text(encoding="utf-8")
+    thread_source = (root / "src/mpres/threads.py").read_text(encoding="utf-8")
+    _expect(
+        "BEGIN IMMEDIATE" in transaction_source
+        and "mutable_documents" in transaction_source
+        and "ConcurrentStateUpdateError" in transaction_source
+        and "_flush_projections" in transaction_source,
+        "v0.6.4 transactional store is missing writer serialization, revisions, or projections",
+        errors,
+    )
+    _expect(
+        "STATE_REVISION_FIELD" in state_source
+        and "initialize_document" in state_source
+        and "save_document" in state_source,
+        "task state is not connected to the v0.6.4 transactional document store",
+        errors,
+    )
+    registry_template = yaml.safe_load(
+        (root / "templates/structured/THREAD-REGISTRY.template.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+    _expect(
+        registry_template.get("registry_revision") == 0
+        and "REGISTRY_REVISION_FIELD" in thread_source
+        and "transactional_task_mutation" in thread_source,
+        "thread registry is not revisioned and transaction-protected",
+        errors,
+    )
+
+    # Every source-level call that commits canonical task state must be owned by
+    # a transaction boundary. State.py contains the implementation itself and is
+    # intentionally excluded from this caller scan.
+    for source_path in sorted((root / "src/mpres").glob("*.py")):
+        if source_path.name == "state.py":
+            continue
+        tree = ast.parse(source_path.read_text(encoding="utf-8"))
+        parents: dict[ast.AST, ast.AST] = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[child] = node
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            called = node.func.id if isinstance(node.func, ast.Name) else None
+            if called != "save_state":
+                continue
+            current: ast.AST | None = node
+            owner: ast.FunctionDef | ast.AsyncFunctionDef | None = None
+            while current in parents:
+                current = parents[current]
+                if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    owner = current
+                    break
+            decorators = {
+                decorator.id
+                for decorator in (owner.decorator_list if owner else [])
+                if isinstance(decorator, ast.Name)
+            }
+            _expect(
+                owner is not None and "transactional_task_mutation" in decorators,
+                f"{source_path.relative_to(root)}:{node.lineno} saves task state outside the transaction boundary",
+                errors,
+            )
+
     scheduling_source = (root / "src/mpres/scheduling.py").read_text(encoding="utf-8")
     review_source = (root / "src/mpres/review.py").read_text(encoding="utf-8")
     _expect(
@@ -397,6 +468,11 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
             f"CLI does not expose {command}",
             errors,
         )
+    _expect(
+        '"transaction-status"' in cli_source and "mutable_state_status" in cli_source,
+        "CLI must expose task transaction-status for the v0.6.4 store",
+        errors,
+    )
     _expect('commands.add_parser("recover")' not in cli_source, "recovery CLI is out of scope", errors)
 
     for path in (root / ".codex/agents").glob("*.toml"):
@@ -541,7 +617,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate v0.6.3 configs, templates, policies, CLI, source, and tests."
+        description="Validate v0.6.4 configs, templates, policies, CLI, source, and tests."
     )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--skip-tests", action="store_true")

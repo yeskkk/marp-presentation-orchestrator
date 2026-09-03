@@ -10,7 +10,7 @@ from mpres.geogebra import validate_presentation_geogebra_registry
 from mpres.policy import policy_audit
 from mpres.production import assignment_path, check_assignment
 from mpres.revision_routing import build_revision_routing
-from mpres.state import REVIEW_CHANNELS
+from mpres.state import REVIEW_CHANNELS, mutable_state_status
 from mpres.stages import all_stages_completed
 from mpres.threads import expected_runtime, list_threads
 from mpres.tasks import gate_status
@@ -450,6 +450,38 @@ def audit_task(root: Path, slug: str) -> dict[str, Any]:
                 add("error", "thread-lifecycle", f"Thread {handle.get('handle_id')} remains active for a finalized presentation.")
     except Exception as exc:
         add("error", "thread-lifecycle", f"Thread registry could not be audited: {exc}")
+
+    try:
+        store_status = mutable_state_status(root, slug)
+        document_ids = {
+            str(item.get("document_id"))
+            for item in store_status.get("documents", [])
+            if isinstance(item, dict)
+        }
+        missing_documents = sorted({"task-state", "thread-registry"} - document_ids)
+        if missing_documents:
+            add(
+                "error",
+                "mutable-state",
+                "Transactional store lacks canonical document(s): " + ", ".join(missing_documents),
+            )
+        if store_status.get("single_writer") != "sqlite-begin-immediate":
+            add("error", "mutable-state", "Task mutable state is not using the SQLite single-writer transaction boundary.")
+        for item in store_status.get("documents", []):
+            if isinstance(item, dict) and not item.get("projection_exists"):
+                add(
+                    "error",
+                    "mutable-state",
+                    f"Projection is missing for transactional document {item.get('document_id')!r}.",
+                )
+            elif isinstance(item, dict) and not item.get("projection_matches"):
+                add(
+                    "error",
+                    "mutable-state",
+                    f"Projection is stale for transactional document {item.get('document_id')!r}.",
+                )
+    except Exception as exc:
+        add("error", "mutable-state", f"Transactional mutable-state store could not be audited: {exc}")
 
     return {
         "task_slug": slug,

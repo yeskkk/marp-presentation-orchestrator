@@ -19,3 +19,7 @@ Create model workers only when their gate opens:
 One handle that authored any part of a deck may not review it. The five review channels require five distinct independent handles. A lesson author may close immediately after durable handoff and is not retained for later findings. Post-review revision uses one separate deck revision author and the compiled context packet.
 
 After handoff, attempt a real runtime close/remove. If capacity remains allocated, record `idle_reusable`; an interrupt that retains the handle is not closure. Never create prospective release holds or speculative pre-freeze reviewer threads.
+
+## v0.6.4 transactional registry
+
+`THREAD-REGISTRY.yaml` is a projection of canonical document `thread-registry` in the task-local SQLite store. Register, assign, handoff, and release operations must use the built-in reentrant task transaction. Capacity checks and the corresponding registry update belong to the same transaction. Never coordinate concurrent thread operations by editing YAML or exposing a lock file.

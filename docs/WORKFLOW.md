@@ -1,4 +1,4 @@
-# Workflow and state machine — v0.6.1
+# Workflow and state machine — v0.6.4
 
 ## v0.6.1 pre-production runtime and telemetry gate
 
@@ -192,3 +192,7 @@ Delivery mode affects user pauses, not scheduling discipline or speculative work
 ## v0.6.2 mechanical control jobs
 
 Review aggregation and release are explicit Python control-plane jobs with `model_runtime: null`. The repository contains neither coordinator agent configuration nor coordinator assignment template. Specialist reviewers and the deck revision author remain model roles governed by the confirmed task runtime profile.
+
+## v0.6.4 transactional state boundary
+
+Task state and the thread registry are canonical SQLite documents inside each task. Every public mutating command enters one reentrant `BEGIN IMMEDIATE` transaction; nested command calls reuse it. JSON/YAML projections are emitted only after commit and only when their revision is still current. Existing v0.6.3 projections are imported automatically on first access. Stale snapshot saves are rejected rather than merged implicitly or allowed to overwrite newer work.

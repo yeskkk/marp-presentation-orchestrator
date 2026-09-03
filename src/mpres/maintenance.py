@@ -13,6 +13,7 @@ from mpres.revision_routing import build_revision_routing
 from mpres.review import REQUIRED_FINDING_FIELDS, _normalize_findings_file
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state, save_state
 from mpres.tasks import require_gate
+from mpres.transactions import transactional_task_mutation
 from mpres.util import (
     MPresError,
     copy_source_tree,
@@ -61,6 +62,7 @@ def _current_release_source(task: Path, presentation_id: str) -> Path:
     return source
 
 
+@transactional_task_mutation
 def open_maintenance(
     root: Path,
     slug: str,
@@ -249,6 +251,7 @@ def _scaffold_review_assignments(root: Path, slug: str, presentation_id: str, ba
         )
 
 
+@transactional_task_mutation
 def request_maintenance_review(root: Path, slug: str, presentation_id: str) -> dict[str, Any]:
     require_gate(root, slug)
     maintenance, base = active_maintenance(root, slug, presentation_id)
@@ -295,6 +298,7 @@ def request_maintenance_review(root: Path, slug: str, presentation_id: str) -> d
     return request
 
 
+@transactional_task_mutation
 def submit_maintenance_channel(
     root: Path,
     slug: str,
@@ -400,6 +404,7 @@ def submit_maintenance_channel(
     return review["channels"][channel]
 
 
+@transactional_task_mutation
 def aggregate_maintenance_review(
     root: Path,
     slug: str,
@@ -533,6 +538,7 @@ def _responses_cover_findings(base: Path) -> None:
             raise MPresError(f"Maintenance author response {item.get('id')} lacks evidence.")
 
 
+@transactional_task_mutation
 def complete_maintenance(root: Path, slug: str, presentation_id: str) -> dict[str, Any]:
     require_gate(root, slug)
     maintenance, base = active_maintenance(root, slug, presentation_id)
@@ -602,6 +608,7 @@ def complete_maintenance(root: Path, slug: str, presentation_id: str) -> dict[st
     return maintenance
 
 
+@transactional_task_mutation
 def publish_maintenance(root: Path, slug: str, presentation_id: str) -> dict[str, Any]:
     require_gate(root, slug)
     maintenance, base = active_maintenance(root, slug, presentation_id)

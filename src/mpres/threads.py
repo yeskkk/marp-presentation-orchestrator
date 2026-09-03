@@ -7,21 +7,81 @@ import tomllib
 
 from mpres.runtime_profile import load_runtime_profile, resolve_runtime
 from mpres.tasks import require_gate
-from mpres.util import MPresError, read_yaml, task_path, utc_now, write_yaml_atomic
+from mpres.transactions import (
+    initialize_document,
+    read_document,
+    save_document,
+    transactional_task_mutation,
+)
+from mpres.util import MPresError, read_yaml, task_path, utc_now
 
 THREAD_STATES = {"active", "idle_reusable", "terminal_not_releasable", "closed"}
+REGISTRY_DOCUMENT_ID = "thread-registry"
+REGISTRY_REVISION_FIELD = "registry_revision"
 
 
 def _registry_path(root: Path, slug: str) -> Path:
     return task_path(root, slug) / "THREAD-REGISTRY.yaml"
 
 
-def _load(root: Path, slug: str) -> dict[str, Any]:
+def _validate_registry(value: dict[str, Any], path: Path) -> None:
+    if not isinstance(value.get("handles"), list):
+        raise MPresError(f"Malformed thread registry: {path}")
+    revision = value.get(REGISTRY_REVISION_FIELD)
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        raise MPresError(
+            f"Thread registry field {REGISTRY_REVISION_FIELD!r} must be a non-negative integer."
+        )
+
+
+def initialize_thread_registry(root: Path, slug: str) -> dict[str, Any]:
+    """Import the new task's registry projection into the canonical transaction store."""
+
     path = _registry_path(root, slug)
     value = read_yaml(path)
-    if not isinstance(value, dict) or not isinstance(value.get("handles"), list):
+    if not isinstance(value, dict):
         raise MPresError(f"Malformed thread registry: {path}")
+    value.setdefault(REGISTRY_REVISION_FIELD, 0)
+    _validate_registry(value, path)
+    return initialize_document(
+        root,
+        slug,
+        document_id=REGISTRY_DOCUMENT_ID,
+        payload=value,
+        projection_path=path,
+        projection_format="yaml",
+        revision_field=REGISTRY_REVISION_FIELD,
+    )
+
+
+def _load(root: Path, slug: str) -> dict[str, Any]:
+    path = _registry_path(root, slug)
+    value = read_document(
+        root,
+        slug,
+        document_id=REGISTRY_DOCUMENT_ID,
+        projection_path=path,
+        projection_format="yaml",
+        revision_field=REGISTRY_REVISION_FIELD,
+    )
+    _validate_registry(value, path)
     return value
+
+
+def _save(root: Path, slug: str, registry: dict[str, Any]) -> None:
+    path = _registry_path(root, slug)
+    _validate_registry(registry, path)
+    updated = save_document(
+        root,
+        slug,
+        document_id=REGISTRY_DOCUMENT_ID,
+        payload=registry,
+        projection_path=path,
+        projection_format="yaml",
+        revision_field=REGISTRY_REVISION_FIELD,
+    )
+    registry.clear()
+    registry.update(updated)
 
 
 def _find(registry: dict[str, Any], handle_id: str) -> dict[str, Any]:
@@ -127,6 +187,7 @@ def _require_runtime_match(
         )
 
 
+@transactional_task_mutation
 def register_thread(
     root: Path,
     slug: str,
@@ -183,10 +244,11 @@ def register_thread(
         "updated_utc": utc_now(),
     }
     registry["handles"].append(row)
-    write_yaml_atomic(_registry_path(root, slug), registry)
+    _save(root, slug, registry)
     return row
 
 
+@transactional_task_mutation
 def assign_thread(
     root: Path,
     slug: str,
@@ -243,10 +305,11 @@ def assign_thread(
             "updated_utc": utc_now(),
         }
     )
-    write_yaml_atomic(_registry_path(root, slug), registry)
+    _save(root, slug, registry)
     return row
 
 
+@transactional_task_mutation
 def validate_handoff(
     root: Path,
     slug: str,
@@ -274,10 +337,11 @@ def validate_handoff(
         reviewed.add(presentation_id)
         row["reviewed_presentations"] = sorted(reviewed)
     row["updated_utc"] = utc_now()
-    write_yaml_atomic(_registry_path(root, slug), registry)
+    _save(root, slug, registry)
     return row
 
 
+@transactional_task_mutation
 def release_thread(
     root: Path,
     slug: str,
@@ -306,7 +370,7 @@ def release_thread(
     row["round"] = None
     row["channel"] = None
     row["updated_utc"] = utc_now()
-    write_yaml_atomic(_registry_path(root, slug), registry)
+    _save(root, slug, registry)
     return row
 
 

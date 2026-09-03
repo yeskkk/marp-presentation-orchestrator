@@ -1,6 +1,6 @@
-# Marp Presentation Orchestrator v0.6.3
+# Marp Presentation Orchestrator v0.6.4
 
-这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.3 以已交付的 v0.6.2 为基线，只修复 current＋next 关键路径流水线；任务级固定运行配置、token 可观测性以及机械 review/release 控制面均保持不变。
+这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.4 以已交付的 v0.6.3 为基线，只处理 mutable state 的事务化与并发丢更新：任务状态和线程注册表由任务级 SQLite 事务存储保存，JSON/YAML 继续作为人类可读投影。
 
 正式耐久产物始终是：
 
@@ -13,6 +13,16 @@ PDF
 ```
 
 浏览器 HTML 仅用于 author/release 的机械布局检查，检查后立即删除；它不进入 reviewer bundle 或 deliverables。
+
+## v0.6.4 增量：事务化 mutable state
+
+- `state/task.json` 与 `THREAD-REGISTRY.yaml` 不再是可并发覆盖的 canonical mutable state；canonical 数据位于任务自己的 `state/mutable-state.sqlite3`。
+- SQLite `BEGIN IMMEDIATE` 在控制面内部串行化写事务；agent 不接触锁文件或并发写入协议。
+- 所有会修改任务状态或线程生命周期的公开控制命令都在可重入的 task transaction 中执行；嵌套控制调用复用同一事务。
+- JSON/YAML 仍作为人类可读投影，在数据库提交后写入；刷新前会复核 revision，避免旧投影覆盖新状态。
+- 直接保存过期快照会抛出明确的并发冲突，不再悄悄丢失后写入的数据。
+- v0.6.3 任务无需手工迁移：第一次读取时自动导入现有投影，并补上 `state_revision` / `registry_revision`。
+- `mpres task transaction-status <slug>` 与 `mpres policy audit` 可检查 canonical documents、revision、投影和内部 single-writer 状态。
 
 ## v0.6.3 增量：修复 current＋next 流水线
 

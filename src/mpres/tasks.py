@@ -19,7 +19,8 @@ from mpres.runtime_profile import (
     load_runtime_profile,
     snapshot_for_confirmation,
 )
-from mpres.state import SCHEMA_VERSION, load_state, save_state, state_file
+from mpres.state import SCHEMA_VERSION, initialize_state, load_state, save_state
+from mpres.transactions import transactional_task_mutation
 from mpres.util import (
     MPresError,
     read_yaml,
@@ -28,7 +29,6 @@ from mpres.util import (
     task_sha256,
     text_placeholders,
     utc_now,
-    write_json_atomic,
 )
 
 STOP_MODES = {"pilot", "each", "all"}
@@ -268,7 +268,10 @@ def create_task(
         "presentations": [],
         "last_delivery_sequence": 0,
     }
-    write_json_atomic(state_file(root, selected_slug), state)
+    initialize_state(root, selected_slug, state)
+    from mpres.threads import initialize_thread_registry
+
+    initialize_thread_registry(root, selected_slug)
     append_log(
         root,
         selected_slug,
@@ -284,6 +287,7 @@ def create_task(
     return selected_slug, task
 
 
+@transactional_task_mutation
 def present_task(root: Path, slug: str) -> dict[str, Any]:
     state = load_state(root, slug)
     pending_amendment = state.get("pending_policy_change_request")
@@ -335,6 +339,7 @@ def present_task(root: Path, slug: str) -> dict[str, Any]:
     return state
 
 
+@transactional_task_mutation
 def confirm_task(root: Path, slug: str) -> dict[str, Any]:
     state = load_state(root, slug)
     if state.get("phase") != "awaiting_user_confirmation":
@@ -483,6 +488,7 @@ def list_tasks(root: Path) -> list[dict[str, Any]]:
     return result
 
 
+@transactional_task_mutation
 def continue_task(root: Path, slug: str) -> dict[str, Any]:
     state = require_gate(root, slug)
     if state.get("phase") != "awaiting_user_continuation":

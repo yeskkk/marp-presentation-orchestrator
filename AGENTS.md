@@ -84,6 +84,14 @@ Rules:
 - `delivery_mode: all` removes user pauses; it does not authorize eager creation of every future worker.
 - Ready work waiting beyond the configured threshold is a scheduling warning and should displace noncritical metadata work.
 
+## 6.1 Transactional mutable state
+
+The task-local SQLite store at `tasks/<slug>/state/mutable-state.sqlite3` is canonical for mutable task state and thread lifecycle. `state/task.json` and `THREAD-REGISTRY.yaml` are human-readable projections, not independent editable truth sources.
+
+All public control-plane operations that modify either document must execute inside the built-in reentrant task transaction. SQLite internally serializes writers; agents do not create, inspect, or coordinate through lock files. Nested operations for the same task reuse the outer transaction. A stale direct snapshot must fail with a concurrency error and be reloaded; it must never be force-written over a newer revision.
+
+Existing v0.6.3 tasks are imported from their projections on first access. Do not delete the transaction database after import. Use `mpres task transaction-status <slug>` and the policy audit to verify document revisions and projections.
+
 ## 7. Authoring and durable context
 
 The author coordinator owns deck-level design, current-path supervision, integration, deterministic author gates, and freezing. It does **not** own post-review revision. After freeze and durable handoff, the coordinator may close.

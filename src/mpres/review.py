@@ -31,6 +31,7 @@ from mpres.scheduling import refresh_active_presentation_window
 from mpres.revision_routing import build_revision_routing, write_revision_work_queues
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state, save_state
 from mpres.tasks import require_gate
+from mpres.transactions import transactional_task_mutation
 from mpres.util import (
     MPresError,
     copy_source_tree,
@@ -186,6 +187,7 @@ def _scaffold_specialist_assignments(
         )
 
 
+@transactional_task_mutation
 def request_review(
     root: Path,
     slug: str,
@@ -348,6 +350,7 @@ def _stable_finding_fields(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@transactional_task_mutation
 def submit_channel_review(
     root: Path,
     slug: str,
@@ -503,6 +506,7 @@ def submit_channel_review(
     return round_state["channels"][channel]
 
 
+@transactional_task_mutation
 def aggregate_round(
     root: Path,
     slug: str,
@@ -658,6 +662,7 @@ def aggregate_round(
     )
     return decision
 
+@transactional_task_mutation
 def record_author_responses(
     root: Path,
     slug: str,
@@ -711,6 +716,7 @@ def record_author_responses(
     append_log(root, slug, actor="deck-revision-author", kind="review", presentation_id=presentation_id, message=f"Recorded deck revision responses for all {len(response_ids)} finding(s).")
     return {"presentation_id": presentation_id, "responses_recorded": response_ids, "role": "deck-revision-author"}
 
+@transactional_task_mutation
 def complete_author_revision(
     root: Path,
     slug: str,
@@ -815,6 +821,7 @@ def complete_author_revision(
     )
     return approval
 
+@transactional_task_mutation
 def return_to_author(
     root: Path, slug: str, presentation_id: str, *, reason: str
 ) -> dict[str, Any]:
@@ -845,6 +852,7 @@ def return_to_author(
     return record
 
 
+@transactional_task_mutation
 def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, Any]:
     require_gate(root, slug)
     state = load_state(root, slug)

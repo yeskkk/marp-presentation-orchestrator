@@ -28,6 +28,7 @@ from mpres.tasks import require_gate
 from mpres.time_planning import aggregate_lesson_time_plans, validate_lesson_time_plan
 from mpres.tokens import require_collector_initialized
 from mpres.toolchain import require_recent_smoke
+from mpres.transactions import transactional_task_mutation
 from mpres.util import (
     MPresError,
     copy_source_tree,
@@ -402,6 +403,7 @@ def materialize_active_author_coordinators(
     return results
 
 
+@transactional_task_mutation
 def initialize_production(
     root: Path,
     slug: str,
@@ -527,6 +529,7 @@ def _unit_workspace_paths(task: Path, presentation_id: str, unit_id: str) -> tup
     return unit_root, unit_root / "source", unit_root / "TASK-LESSON-AUTHOR.md"
 
 
+@transactional_task_mutation
 def prepare_unit_workspace(
     root: Path,
     slug: str,
@@ -900,6 +903,7 @@ def check_assignment(
     }
 
 
+@transactional_task_mutation
 def activate_presentations(root: Path, slug: str, presentation_ids: list[str]) -> dict[str, Any]:
     """Activate only the ordered current/next authoring window.
 
@@ -978,6 +982,7 @@ def _clean_fragment(text: str, path: Path) -> str:
     return stripped.strip("\n")
 
 
+@transactional_task_mutation
 def assemble_units(root: Path, slug: str, presentation_id: str) -> dict[str, Any]:
     state = require_gate(root, slug)
     presentation = get_presentation(state, presentation_id)

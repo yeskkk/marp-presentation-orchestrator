@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -10,9 +11,20 @@ from mpres.production_profiles import (
     TARGETED_REVISION_STAGES,
     stage_ids_for_profile,
 )
-from mpres.util import MPresError, read_json, safe_id, task_path, utc_now, write_json_atomic
+from mpres.transactions import (
+    ConcurrentStateUpdateError,
+    database_path,
+    initialize_document,
+    read_document,
+    save_document,
+    transaction_status,
+    update_document,
+)
+from mpres.util import MPresError, safe_id, task_path, utc_now
 
 SCHEMA_VERSION = 5
+STATE_DOCUMENT_ID = "task-state"
+STATE_REVISION_FIELD = "state_revision"
 REVIEW_ROUNDS = ("full",)
 REVIEW_CHANNELS = ("language", "domain_accuracy", "layout", "pedagogy", "audience")
 PRESENTATION_STATUSES = {
@@ -59,19 +71,119 @@ def state_file(root: Path, slug: str) -> Path:
     return task_path(root, slug) / "state" / "task.json"
 
 
-def load_state(root: Path, slug: str) -> dict[str, Any]:
-    data = read_json(state_file(root, slug))
+def _validate_state(data: Mapping[str, Any]) -> None:
     if data.get("schema_version") != SCHEMA_VERSION:
         raise MPresError(
             f"Unsupported task state schema {data.get('schema_version')!r}; "
             f"expected {SCHEMA_VERSION}."
         )
+    revision = data.get(STATE_REVISION_FIELD)
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        raise MPresError(
+            f"Task state field {STATE_REVISION_FIELD!r} must be a non-negative integer."
+        )
+
+
+def initialize_state(root: Path, slug: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Initialize the SQLite canonical state and JSON projection for a new task."""
+
+    value = dict(data)
+    value.setdefault(STATE_REVISION_FIELD, 0)
+    _validate_state(value)
+    initialized = initialize_document(
+        root,
+        slug,
+        document_id=STATE_DOCUMENT_ID,
+        payload=value,
+        projection_path=state_file(root, slug),
+        projection_format="json",
+        revision_field=STATE_REVISION_FIELD,
+    )
+    data.clear()
+    data.update(initialized)
+    return data
+
+
+def load_state(root: Path, slug: str) -> dict[str, Any]:
+    """Load canonical task state and repair/import the JSON projection as needed."""
+
+    data = read_document(
+        root,
+        slug,
+        document_id=STATE_DOCUMENT_ID,
+        projection_path=state_file(root, slug),
+        projection_format="json",
+        revision_field=STATE_REVISION_FIELD,
+    )
+    _validate_state(data)
     return data
 
 
 def save_state(root: Path, slug: str, data: dict[str, Any]) -> None:
+    """Commit one loaded state snapshot with optimistic revision validation.
+
+    Normal control-plane mutators run inside ``transactional_task_mutation`` and
+    therefore serialize automatically. Direct callers are still protected: a
+    stale snapshot raises ``ConcurrentStateUpdateError`` rather than silently
+    replacing a newer update.
+    """
+
     data["updated_utc"] = utc_now()
-    write_json_atomic(state_file(root, slug), data)
+    _validate_state(data)
+    updated = save_document(
+        root,
+        slug,
+        document_id=STATE_DOCUMENT_ID,
+        payload=data,
+        projection_path=state_file(root, slug),
+        projection_format="json",
+        revision_field=STATE_REVISION_FIELD,
+    )
+    data.clear()
+    data.update(updated)
+
+
+def mutate_state(
+    root: Path,
+    slug: str,
+    mutator: Callable[[dict[str, Any]], Mapping[str, Any] | None],
+) -> dict[str, Any]:
+    """Atomically re-read and mutate canonical task state under the writer transaction."""
+
+    def wrapped(data: dict[str, Any]) -> Mapping[str, Any] | None:
+        _validate_state(data)
+        result = mutator(data)
+        value = data if result is None else dict(result)
+        value["updated_utc"] = utc_now()
+        _validate_state(value)
+        return value
+
+    return update_document(
+        root,
+        slug,
+        document_id=STATE_DOCUMENT_ID,
+        projection_path=state_file(root, slug),
+        projection_format="json",
+        revision_field=STATE_REVISION_FIELD,
+        mutator=wrapped,
+    )
+
+
+def mutable_state_status(root: Path, slug: str) -> dict[str, Any]:
+    """Return transaction metadata, importing both v0.6.3 projections if needed."""
+
+    load_state(root, slug)
+    read_document(
+        root,
+        slug,
+        document_id="thread-registry",
+        projection_path=task_path(root, slug) / "THREAD-REGISTRY.yaml",
+        projection_format="yaml",
+        revision_field="registry_revision",
+    )
+    value = transaction_status(root, slug)
+    value["task_state_database"] = str(database_path(root, slug))
+    return value
 
 
 def get_presentation(state: dict[str, Any], presentation_id: str) -> dict[str, Any]:
@@ -88,3 +200,15 @@ def get_content_unit(presentation: dict[str, Any], unit_id: str) -> dict[str, An
         if item.get("id") == unit_id:
             return item
     raise MPresError(f"Unknown content-unit ID {unit_id!r} in {presentation.get('id')!r}.")
+
+
+__all__ = [
+    "ConcurrentStateUpdateError",
+    "SCHEMA_VERSION",
+    "STATE_REVISION_FIELD",
+    "load_state",
+    "save_state",
+    "initialize_state",
+    "mutate_state",
+    "mutable_state_status",
+]

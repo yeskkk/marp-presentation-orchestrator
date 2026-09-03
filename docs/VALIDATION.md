@@ -1,4 +1,4 @@
-# Validation record — v0.6.3
+# Validation record — v0.6.4
 
 Validation date: 2026-09-02 UTC.
 
@@ -192,3 +192,28 @@ The release archive is accepted only after a second clean extraction repeats the
 - Entering full review automatically activates and lazily materializes exactly the earliest next authoring deck in `all` mode.
 - `each`, the initial `pilot` pause, and `next_presentation_authoring_wip_limit: 0` still prevent overlap.
 - Work-plan projection distinguishes the current review/revision/release lane from the concurrent next authoring lane.
+
+## v0.6.4 incremental validation
+
+Scope: replace concurrent whole-file read-modify-write of task state and the thread registry with one task-local transactional store, while retaining JSON/YAML projections.
+
+Release validation covers:
+
+- stale-snapshot compare-and-swap rejection without lost updates;
+- concurrent command serialization under a reentrant task transaction;
+- rollback of both canonical task state and projections after an exception;
+- concurrent thread registration preserving every handle;
+- automatic first-read import and projection repair for a v0.6.3 task;
+- five reviewer-channel submissions completing concurrently without erasing one another;
+- policy audit and `task transaction-status` visibility;
+- all v0.6.1 runtime/token, v0.6.2 mechanical control, and v0.6.3 pipeline tests remaining green.
+
+Worktree acceptance result for this milestone:
+
+```text
+14 test files
+71 tests passed
+0 failed
+```
+
+The release archive must repeat the same 71-test per-file suite after clean extraction.
