@@ -1,0 +1,4 @@
+schema_version: 1
+batch_plan: "[[BATCH_PLAN_PATH]]"
+expanded_assignments: []
+updated_utc: null

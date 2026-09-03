@@ -7,10 +7,12 @@ from typing import Any
 
 from mpres.assignments import (
     apply_batch_contract,
+    contract_paths,
     assignment_contract_status,
     batch_unit_instructions,
     initialize_batch_plan,
     scaffold_assignment_contract,
+    ensure_assignment_taskbook,
 )
 from mpres.course_consistency import initialize_course_registries
 from mpres.geogebra import aggregate_unit_geogebra_records, validate_unit_geogebra_registry
@@ -22,6 +24,7 @@ from mpres.interactions import (
 from mpres.logs import append_log
 from mpres.milestones import record_milestone
 from mpres.scheduling import current_allows_next_authoring, initialize_work_plan
+from mpres.scaffolds import ScaffoldReport, ensure_copy, ensure_json, ensure_text, ensure_tree, ensure_yaml
 from mpres.stages import all_stages_accepted, initialize_unit_stages, stage_state_path
 from mpres.state import REVIEW_CHANNELS, get_content_unit, get_presentation, save_state
 from mpres.tasks import require_gate
@@ -148,10 +151,9 @@ def _role_override(role: str) -> str:
 def _ensure_role_root(task: Path, directory_name: str, logical_role: str) -> Path:
     root = task / "workers" / directory_name
     root.mkdir(parents=True, exist_ok=True)
-    override = root / "AGENTS.override.md"
-    if not override.exists():
-        override.write_text(_role_override(logical_role), encoding="utf-8", newline="\n")
+    ensure_text(root / "AGENTS.override.md", _role_override(logical_role))
     return root
+
 
 
 def _templates(root: Path) -> dict[str, str]:
@@ -204,7 +206,14 @@ def _write_structured_templates(
     *,
     task_kind: str,
     incoming_from: str | None,
-) -> None:
+) -> ScaffoldReport:
+    """Fill only missing author-workspace templates.
+
+    A recovery pass never resets a structured record that an author or planner
+    has already edited. Existing files are preserved even when the repository
+    template changed after the workspace was first created.
+    """
+
     structured = {
         "DECK-MANIFEST.yaml": "DECK-MANIFEST.template.yaml",
         "PEDAGOGY-MAP.md": "PEDAGOGY-MAP.template.md",
@@ -223,6 +232,7 @@ def _write_structured_templates(
         "RELEASE-RETROSPECTIVE.md": "RELEASE-RETROSPECTIVE.template.md",
     }
     unit_yaml = _content_unit_yaml(units, task_kind=task_kind)
+    report = ScaffoldReport()
     for destination, template_name in structured.items():
         text = (root / "templates" / "structured" / template_name).read_text(encoding="utf-8")
         text = _replace(
@@ -236,39 +246,50 @@ def _write_structured_templates(
                 "[[INCOMING_FROM_OR_NULL]]": f'"{incoming_from}"' if incoming_from else "null",
             },
         )
-        (source / destination).write_text(text, encoding="utf-8", newline="\n")
-    write_yaml_atomic(
-        source / "INTERACTION-RECORD.yaml",
-        {
-            "schema_version": 1,
-            "presentation_id": presentation_id,
-            "task_kind": task_kind,
-            "canonical": True,
-            "units": [],
-        },
+        report.merge(ensure_text(source / destination, text))
+    report.merge(
+        ensure_yaml(
+            source / "INTERACTION-RECORD.yaml",
+            {
+                "schema_version": 1,
+                "presentation_id": presentation_id,
+                "task_kind": task_kind,
+                "canonical": True,
+                "units": [],
+            },
+        )
     )
-    # Compatibility views are generated from the canonical record during assembly/render.
-    write_yaml_atomic(
-        source / "INTERACTION-MANIFEST.yaml",
-        {
-            "schema_version": 1,
-            "presentation_id": presentation_id,
-            "task_kind": task_kind,
-            "generated_from": "INTERACTION-RECORD.yaml",
-            "units": [],
-        },
+    report.merge(
+        ensure_yaml(
+            source / "INTERACTION-MANIFEST.yaml",
+            {
+                "schema_version": 1,
+                "presentation_id": presentation_id,
+                "task_kind": task_kind,
+                "generated_from": "INTERACTION-RECORD.yaml",
+                "units": [],
+            },
+        )
     )
-    write_yaml_atomic(
-        source / "MCQ-AUDIT.yaml",
-        {
-            "schema_version": 1,
-            "presentation_id": presentation_id,
-            "task_kind": task_kind,
-            "generated_from": "INTERACTION-RECORD.yaml",
-            "quota": {"course_minimum": 2, "course_maximum": 3, "academic_report_exempt": True},
-            "units": [],
-        },
+    report.merge(
+        ensure_yaml(
+            source / "MCQ-AUDIT.yaml",
+            {
+                "schema_version": 1,
+                "presentation_id": presentation_id,
+                "task_kind": task_kind,
+                "generated_from": "INTERACTION-RECORD.yaml",
+                "quota": {
+                    "course_minimum": 2,
+                    "course_maximum": 3,
+                    "academic_report_exempt": True,
+                },
+                "units": [],
+            },
+        )
     )
+    return report
+
 
 
 def _author_assignment(
@@ -276,18 +297,22 @@ def _author_assignment(
     task: Path,
     templates: dict[str, str],
     presentation: dict[str, Any],
-) -> None:
+) -> ScaffoldReport:
     presentation_id = str(presentation["id"])
     title = str(presentation["title"])
     units = presentation["content_units"]
     author_root = _ensure_role_root(task, "author-coordinator", "author-coordinator")
-    # Do not materialize the lesson-author role root here. Per-unit lesson
-    # workspaces are created only after an approved batch plan queues a unit.
     lesson_root = task / "workers" / "lesson-authors" / presentation_id
     assignment = author_root / "assignments" / presentation_id / "TASK-AUTHOR-COORDINATOR.md"
     source = author_root / "drafts" / presentation_id / "source"
     build = author_root / "drafts" / presentation_id / "build"
-    for directory in [assignment.parent, source / "sections", source / "assets", build, author_root / "checkpoints" / presentation_id]:
+    for directory in [
+        assignment.parent,
+        source / "sections",
+        source / "assets",
+        build,
+        author_root / "checkpoints" / presentation_id,
+    ]:
         directory.mkdir(parents=True, exist_ok=True)
     unit_table = "\n".join(
         (
@@ -297,24 +322,24 @@ def _author_assignment(
         )
         for unit in units
     )
-    assignment.write_text(
-        _replace(
-            templates["author"],
-            {
-                "[[PRESENTATION_ID]]": presentation_id,
-                "[[PRESENTATION_TITLE]]": title,
-                "[[TASK_MD_PATH]]": relative_display(task / "TASK.md", root),
-                "[[CONTENT_UNIT_TABLE]]": unit_table,
-                "[[AUTHOR_SOURCE_PATH]]": relative_display(source, root),
-                "[[AUTHOR_BUILD_PATH]]": relative_display(build, root),
-                "[[LESSON_AUTHOR_ROOT]]": relative_display(lesson_root, root),
-                "[[REVIEW_ROOT]]": relative_display(task / "reviews" / presentation_id, root),
-            },
-        ),
-        encoding="utf-8",
-        newline="\n",
+    assignment_text = _replace(
+        templates["author"],
+        {
+            "[[PRESENTATION_ID]]": presentation_id,
+            "[[PRESENTATION_TITLE]]": title,
+            "[[TASK_MD_PATH]]": relative_display(task / "TASK.md", root),
+            "[[CONTENT_UNIT_TABLE]]": unit_table,
+            "[[AUTHOR_SOURCE_PATH]]": relative_display(source, root),
+            "[[AUTHOR_BUILD_PATH]]": relative_display(build, root),
+            "[[LESSON_AUTHOR_ROOT]]": relative_display(lesson_root, root),
+            "[[REVIEW_ROOT]]": relative_display(task / "reviews" / presentation_id, root),
+        },
     )
-    scaffold_assignment_contract(
+    report = ScaffoldReport()
+    assignment_result = ensure_assignment_taskbook(assignment, assignment_text)
+    report.created.extend(assignment_result["created"])
+    report.preserved.extend(assignment_result["preserved"])
+    contract_result = scaffold_assignment_contract(
         root,
         assignment,
         assignment_id=f"{presentation_id}:author-coordinator",
@@ -323,21 +348,27 @@ def _author_assignment(
         requested_by="critical-path-scheduler",
         need="Coordinate the current deck, integrate lazy lesson handoffs, run gates, and freeze once.",
     )
-    (source / "HEADER.md").write_text(
-        _replace(
-            templates["header"],
-            {"[[PRESENTATION_ID]]": presentation_id, "[[PRESENTATION_TITLE]]": title},
-        ),
-        encoding="utf-8",
-        newline="\n",
+    report.created.extend(contract_result["created"])
+    report.preserved.extend(contract_result["preserved"])
+    report.merge(
+        ensure_text(
+            source / "HEADER.md",
+            _replace(
+                templates["header"],
+                {"[[PRESENTATION_ID]]": presentation_id, "[[PRESENTATION_TITLE]]": title},
+            ),
+        )
     )
-    shutil.copy2(root / "themes" / "mathist-academic.css", source / "theme.css")
-    (source / "README.md").write_text(
-        f"# Integrated Marp source — {presentation_id}: {title}\n\n"
-        "Lesson workspaces are materialized only when queued on the critical path.\n",
-        encoding="utf-8",
-        newline="\n",
+    report.merge(ensure_copy(root / "themes" / "mathist-academic.css", source / "theme.css"))
+    report.merge(
+        ensure_text(
+            source / "README.md",
+            f"# Integrated Marp source — {presentation_id}: {title}\n\n"
+            "Lesson workspaces are materialized only when queued on the critical path.\n",
+        )
     )
+    return report
+
 
 
 def prepare_author_coordinator_workspace(
@@ -345,7 +376,7 @@ def prepare_author_coordinator_workspace(
     slug: str,
     presentation_id: str,
 ) -> dict[str, Any]:
-    """Materialize an author-coordinator workspace only for an active authoring deck."""
+    """Idempotently materialize or repair one active author workspace."""
 
     state = require_gate(root, slug)
     presentation = get_presentation(state, presentation_id)
@@ -356,33 +387,40 @@ def prepare_author_coordinator_workspace(
     task = task_path(root, slug)
     assignment = assignment_path(root, slug, "author-coordinator", presentation_id)
     source = task / "workers" / "author-coordinator" / "drafts" / presentation_id / "source"
-    if assignment.is_file() and source.is_dir():
-        return {
-            "presentation_id": presentation_id,
-            "assignment": relative_display(assignment, root),
-            "source": relative_display(source, root),
-            "already_materialized": True,
-        }
+    required = [
+        assignment,
+        *contract_paths(assignment),
+        source / "HEADER.md",
+        source / "theme.css",
+        source / "DECK-MANIFEST.yaml",
+        source / "INTERACTION-RECORD.yaml",
+    ]
+    already_complete = all(path.is_file() for path in required)
     templates = _templates(root)
-    _author_assignment(root, task, templates, presentation)
+    report = _author_assignment(root, task, templates, presentation)
     rows = list(state.get("presentations", []))
     index = next(i for i, row in enumerate(rows) if row.get("id") == presentation_id)
     incoming_from = str(rows[index - 1].get("id")) if index > 0 else None
-    _write_structured_templates(
-        root,
-        source,
-        presentation_id,
-        str(presentation.get("title") or presentation_id),
-        list(presentation.get("content_units", [])),
-        task_kind=str(state.get("kind")),
-        incoming_from=incoming_from,
+    report.merge(
+        _write_structured_templates(
+            root,
+            source,
+            presentation_id,
+            str(presentation.get("title") or presentation_id),
+            list(presentation.get("content_units", [])),
+            task_kind=str(state.get("kind")),
+            incoming_from=incoming_from,
+        )
     )
     return {
         "presentation_id": presentation_id,
         "assignment": relative_display(assignment, root),
         "source": relative_display(source, root),
-        "already_materialized": False,
+        "already_materialized": already_complete,
+        "repaired_or_created": report.created,
+        "preserved": report.preserved,
     }
+
 
 
 def materialize_active_author_coordinators(
@@ -536,21 +574,23 @@ def prepare_unit_workspace(
     presentation_id: str,
     unit_id: str,
 ) -> dict[str, Any]:
-    """Lazily expand one planner-owned lesson assignment and its profile-selected workspace."""
+    """Lazily and idempotently expand one lesson workspace."""
 
     state = require_gate(root, slug)
     presentation = get_presentation(state, presentation_id)
     unit = get_content_unit(presentation, unit_id)
     task = task_path(root, slug)
     unit_root, source, assignment = _unit_workspace_paths(task, presentation_id, unit_id)
-    if assignment.is_file() and stage_state_path(root, slug, presentation_id, unit_id).is_file():
-        return {
-            "presentation_id": presentation_id,
-            "unit_id": unit_id,
-            "status": unit.get("status"),
-            "workspace": relative_display(unit_root, root),
-            "already_materialized": True,
-        }
+    required = [
+        assignment,
+        *contract_paths(assignment),
+        stage_state_path(root, slug, presentation_id, unit_id),
+        source / "section.md",
+        source / "UNIT-MANIFEST.yaml",
+        source / "INTERACTION-RECORD.yaml",
+        source / "UNIT-CONTEXT-PACKET.yaml",
+    ]
+    already_complete = all(path.is_file() for path in required)
 
     info = batch_unit_instructions(root, slug, presentation_id, unit_id)
     batch_unit = info["unit"]
@@ -594,8 +634,11 @@ def prepare_unit_workspace(
         + _list_text(batch_unit.get("known_risks"))
         + "\n"
     )
-    assignment.write_text(assignment_text, encoding="utf-8", newline="\n")
-    apply_batch_contract(
+    report = ScaffoldReport()
+    assignment_result = ensure_assignment_taskbook(assignment, assignment_text)
+    report.created.extend(assignment_result["created"])
+    report.preserved.extend(assignment_result["preserved"])
+    contract_result = apply_batch_contract(
         root,
         slug,
         assignment,
@@ -604,6 +647,8 @@ def prepare_unit_workspace(
         presentation_id=presentation_id,
         unit_id=unit_id,
     )
+    report.created.extend(contract_result.get("created", []))
+    report.preserved.extend(contract_result.get("preserved", []))
     initialize_unit_stages(
         root,
         slug,
@@ -628,117 +673,146 @@ def prepare_unit_workspace(
             "[[UNIT_LABEL]]": str(unit["meeting_label"]),
         },
     )
-    (source / "section.md").write_text(section, encoding="utf-8", newline="\n")
-    write_yaml_atomic(
-        source / "UNIT-MANIFEST.yaml",
-        {
-            "schema_version": 2,
-            "presentation_id": presentation_id,
-            "unit_id": unit_id,
-            "title": unit.get("title"),
-            "meeting_number": unit.get("global_meeting_number"),
-            "global_meeting_number": unit.get("global_meeting_number"),
-            "deck_local_ordinal": unit.get("deck_local_ordinal"),
-            "meeting_label": unit.get("meeting_label"),
-            "organization_basis": unit.get("organization_basis"),
-            "slide_ids": [first_slide_id],
-            "canonical_records": {
-                "interaction": "INTERACTION-RECORD.yaml",
-                "delta": "UNIT-DELTA.yaml",
-                "time_plan": "LESSON-TIME-PLAN.yaml",
+    report.merge(ensure_text(source / "section.md", section))
+    report.merge(
+        ensure_yaml(
+            source / "UNIT-MANIFEST.yaml",
+            {
+                "schema_version": 2,
+                "presentation_id": presentation_id,
+                "unit_id": unit_id,
+                "title": unit.get("title"),
+                "meeting_number": unit.get("global_meeting_number"),
+                "global_meeting_number": unit.get("global_meeting_number"),
+                "deck_local_ordinal": unit.get("deck_local_ordinal"),
+                "meeting_label": unit.get("meeting_label"),
+                "organization_basis": unit.get("organization_basis"),
+                "slide_ids": [first_slide_id],
+                "canonical_records": {
+                    "interaction": "INTERACTION-RECORD.yaml",
+                    "delta": "UNIT-DELTA.yaml",
+                    "time_plan": "LESSON-TIME-PLAN.yaml",
+                },
+                "semantic_objects": [],
+                "examples": [],
+                "assets": [],
             },
-            "semantic_objects": [],
-            "examples": [],
-            "assets": [],
-        },
+        )
     )
-    write_yaml_atomic(
-        source / "INTERACTION-RECORD.yaml",
-        {
-            "schema_version": 1,
-            "presentation_id": presentation_id,
-            "unit_id": unit_id,
-            "task_kind": state.get("kind"),
-            "canonical": True,
-            "interactions": [],
-            "mcq_items": [],
-        },
+    report.merge(
+        ensure_yaml(
+            source / "INTERACTION-RECORD.yaml",
+            {
+                "schema_version": 1,
+                "presentation_id": presentation_id,
+                "unit_id": unit_id,
+                "task_kind": state.get("kind"),
+                "canonical": True,
+                "interactions": [],
+                "mcq_items": [],
+            },
+        )
     )
-    geogebra_template = (root / "templates" / "structured" / "GEOGEBRA-UNIT-RESOURCES.template.yaml").read_text(encoding="utf-8")
-    (source / "GEOGEBRA-RESOURCES.yaml").write_text(
-        _replace(geogebra_template, {"[[PRESENTATION_ID]]": presentation_id, "[[UNIT_ID]]": unit_id}),
-        encoding="utf-8",
-        newline="\n",
+    geogebra_template = (
+        root / "templates" / "structured" / "GEOGEBRA-UNIT-RESOURCES.template.yaml"
+    ).read_text(encoding="utf-8")
+    report.merge(
+        ensure_text(
+            source / "GEOGEBRA-RESOURCES.yaml",
+            _replace(
+                geogebra_template,
+                {"[[PRESENTATION_ID]]": presentation_id, "[[UNIT_ID]]": unit_id},
+            ),
+        )
     )
     nominal = int(state.get("minutes") or 0) if state.get("kind") == "course" else 0
     prepared = int(round(nominal * 1.5)) if nominal else 0
-    write_yaml_atomic(
-        source / "LESSON-TIME-PLAN.yaml",
-        {
-            "schema_version": 2,
-            "task_kind": state.get("kind"),
-            "presentation_id": presentation_id,
-            "unit_id": unit_id,
-            "meeting_number": unit.get("global_meeting_number"),
-            "global_meeting_number": unit.get("global_meeting_number"),
-            "deck_local_ordinal": unit.get("deck_local_ordinal"),
-            "meeting_label": unit.get("meeting_label"),
-            "organization_basis": unit.get("organization_basis"),
-            "nominal_class_minutes": nominal if nominal else None,
-            "prepared_material_target_minutes": prepared if prepared else None,
-            "core_path_target_minutes": nominal if nominal else None,
-            "extension_example_target_minutes": max(0, prepared - nominal) if nominal else None,
-            "policy": "advisory_not_hard_gate",
-            "stop_at_class_end": True,
-            "core_path": {
-                "purpose": "Complete the required lesson concept chain and diagnostics.",
-                "planned_end_slide_id": "[[CORE_END_SLIDE_ID]]",
+    report.merge(
+        ensure_yaml(
+            source / "LESSON-TIME-PLAN.yaml",
+            {
+                "schema_version": 2,
+                "task_kind": state.get("kind"),
+                "presentation_id": presentation_id,
+                "unit_id": unit_id,
+                "meeting_number": unit.get("global_meeting_number"),
+                "global_meeting_number": unit.get("global_meeting_number"),
+                "deck_local_ordinal": unit.get("deck_local_ordinal"),
+                "meeting_label": unit.get("meeting_label"),
+                "organization_basis": unit.get("organization_basis"),
+                "nominal_class_minutes": nominal if nominal else None,
+                "prepared_material_target_minutes": prepared if prepared else None,
+                "core_path_target_minutes": nominal if nominal else None,
+                "extension_example_target_minutes": max(0, prepared - nominal) if nominal else None,
+                "policy": "advisory_not_hard_gate",
+                "stop_at_class_end": True,
+                "core_path": {
+                    "purpose": "Complete the required lesson concept chain and diagnostics.",
+                    "planned_end_slide_id": "[[CORE_END_SLIDE_ID]]",
+                },
+                "extension_example_bank": {
+                    "purpose": "Optional worked examples after the natural stopping point.",
+                    "items": [],
+                },
+                "variation_rationale": "[[TIME_VARIATION_RATIONALE]]",
             },
-            "extension_example_bank": {"purpose": "Optional worked examples after the natural stopping point.", "items": []},
-            "variation_rationale": "[[TIME_VARIATION_RATIONALE]]",
-        },
+        )
     )
-    write_yaml_atomic(
-        source / "UNIT-DELTA.yaml",
-        {
-            "schema_version": 1,
-            "presentation_id": presentation_id,
-            "unit_id": unit_id,
-            "production_mode": state.get("production_mode"),
-            "baseline": {
-                "source": batch_unit.get("baseline_source"),
-                "maturity": batch_unit.get("baseline_maturity"),
+    report.merge(
+        ensure_yaml(
+            source / "UNIT-DELTA.yaml",
+            {
+                "schema_version": 1,
+                "presentation_id": presentation_id,
+                "unit_id": unit_id,
+                "production_mode": state.get("production_mode"),
+                "baseline": {
+                    "source": batch_unit.get("baseline_source"),
+                    "maturity": batch_unit.get("baseline_maturity"),
+                    "legacy_source_ranges": batch_unit.get("legacy_source_ranges") or [],
+                },
+                "slide_ranges": [],
+                "required_changes": batch_unit.get("required_delta") or [],
+                "continuity_risks": batch_unit.get("known_risks") or [],
+                "unchanged_content_sampling": {"method": "pending", "result": "pending"},
+            },
+        )
+    )
+    report.merge(
+        ensure_yaml(
+            source / "UNIT-CONTEXT-PACKET.yaml",
+            {
+                "schema_version": 1,
+                "presentation_id": presentation_id,
+                "unit_id": unit_id,
+                "production_mode": state.get("production_mode"),
+                "assignment_source": info["plan_path"],
+                "approved_text_sources": batch_unit.get("approved_text_sources") or [],
                 "legacy_source_ranges": batch_unit.get("legacy_source_ranges") or [],
+                "course_registry_paths": [
+                    relative_display(author_source / "TERMINOLOGY.yaml", root),
+                    relative_display(author_source / "SEMANTIC-OBJECTS.yaml", root),
+                ],
+                "unit_delta_path": relative_display(source / "UNIT-DELTA.yaml", root),
+                "required_invariants": info["presentation"].get("common_constraints") or [],
+                "known_risks": batch_unit.get("known_risks") or [],
+                "forbidden_context": [
+                    "original_pdfs",
+                    "screenshots",
+                    "other_units_unless_explicitly_listed",
+                ],
             },
-            "slide_ranges": [],
-            "required_changes": batch_unit.get("required_delta") or [],
-            "continuity_risks": batch_unit.get("known_risks") or [],
-            "unchanged_content_sampling": {"method": "pending", "result": "pending"},
-        },
+        )
     )
-    write_yaml_atomic(
-        source / "UNIT-CONTEXT-PACKET.yaml",
-        {
-            "schema_version": 1,
-            "presentation_id": presentation_id,
-            "unit_id": unit_id,
-            "production_mode": state.get("production_mode"),
-            "assignment_source": info["plan_path"],
-            "approved_text_sources": batch_unit.get("approved_text_sources") or [],
-            "legacy_source_ranges": batch_unit.get("legacy_source_ranges") or [],
-            "course_registry_paths": [
-                relative_display(author_source / "TERMINOLOGY.yaml", root),
-                relative_display(author_source / "SEMANTIC-OBJECTS.yaml", root),
-            ],
-            "unit_delta_path": relative_display(source / "UNIT-DELTA.yaml", root),
-            "required_invariants": info["presentation"].get("common_constraints") or [],
-            "known_risks": batch_unit.get("known_risks") or [],
-            "forbidden_context": ["original_pdfs", "screenshots", "other_units_unless_explicitly_listed"],
-        },
+    self_check = (
+        root / "templates" / "structured" / "SELF-CHECK.template.md"
+    ).read_text(encoding="utf-8")
+    report.merge(
+        ensure_text(
+            source / "SELF-CHECK.md",
+            self_check.replace("[[SCOPE_ID]]", f"{presentation_id}/{unit_id}"),
+        )
     )
-    self_check = (root / "templates" / "structured" / "SELF-CHECK.template.md").read_text(encoding="utf-8")
-    self_check = self_check.replace("[[SCOPE_ID]]", f"{presentation_id}/{unit_id}")
-    (source / "SELF-CHECK.md").write_text(self_check, encoding="utf-8", newline="\n")
     checkpoint = {
         "schema_version": 1,
         "utc": utc_now(),
@@ -748,24 +822,28 @@ def prepare_unit_workspace(
         "status": "assignment_ready",
         "next_action": "queue_and_start_same_fixed_lesson_author",
     }
-    write_json_atomic(unit_root / "checkpoints" / "latest.json", checkpoint)
-    unit.update(
-        {
-            "status": "assignment_ready",
-            "stage": None,
-            "stage_status": "awaiting_start",
-            "workspace_materialized_utc": utc_now(),
-        }
-    )
-    save_state(root, slug, state)
+    report.merge(ensure_json(unit_root / "checkpoints" / "latest.json", checkpoint))
+    if not unit.get("workspace_materialized_utc"):
+        unit.update(
+            {
+                "status": "assignment_ready",
+                "stage": None,
+                "stage_status": "awaiting_start",
+                "workspace_materialized_utc": utc_now(),
+            }
+        )
+        save_state(root, slug, state)
     return {
         "presentation_id": presentation_id,
         "unit_id": unit_id,
-        "status": unit["status"],
+        "status": unit.get("status"),
         "workspace": relative_display(unit_root, root),
         "assignment": relative_display(assignment, root),
-        "already_materialized": False,
+        "already_materialized": already_complete,
+        "repaired_or_created": report.created,
+        "preserved": report.preserved,
     }
+
 
 
 def prepare_revision_author_workspace(
@@ -786,12 +864,10 @@ def prepare_revision_author_workspace(
     build = role_root / "drafts" / presentation_id / "build"
     for directory in [assignment.parent, source, build, role_root / "checkpoints" / presentation_id]:
         directory.mkdir(parents=True, exist_ok=True)
-    if not (source / "presentation.md").is_file():
-        copy_source_tree(frozen_source, source)
-        # Frozen review sources are deliberately read-only.  The deck revision
-        # author receives a writable copy; this must happen before context and
-        # queue files are generated inside the workspace.
-        make_tree_writable(source)
+    # Copy only files missing from an interrupted scaffold. Existing revision
+    # edits are never deleted or replaced.
+    ensure_tree(frozen_source, source)
+    make_tree_writable(source)
     from mpres.context_packets import enrich_revision_context_packet
 
     context = source / "AUTHOR-CONTEXT-PACKET.yaml"
@@ -804,33 +880,30 @@ def prepare_revision_author_workspace(
         finding_registry=finding_registry,
         review_plan=review_plan,
     )
-    if not assignment.exists():
-        assignment.write_text(
-            _replace(
-                _templates(root)["revision"],
-                {
-                    "[[PRESENTATION_ID]]": presentation_id,
-                    "[[PRESENTATION_TITLE]]": str(presentation.get("title")),
-                    "[[PLANNER_ASSIGNMENT_BRIEF]]": "[[PLANNER_ASSIGNMENT_BRIEF]]",
-                    "[[REVISION_SOURCE_PATH]]": relative_display(source, root),
-                    "[[AUTHOR_CONTEXT_PACKET_PATH]]": relative_display(context, root),
-                    "[[FINDINGS_REGISTRY_PATH]]": relative_display(finding_registry, root),
-                    "[[REVIEW_PLAN_PATH]]": relative_display(review_plan, root),
-                },
-            ),
-            encoding="utf-8",
-            newline="\n",
-        )
-        scaffold_assignment_contract(
-            root,
-            assignment,
-            assignment_id=f"{presentation_id}:deck-revision-author",
-            role="deck-revision-author",
-            presentation_id=presentation_id,
-            requested_by="review-aggregation-job",
-            need="Revise the complete deck from five-channel findings using the durable author context packet.",
-        )
+    assignment_text = _replace(
+        _templates(root)["revision"],
+        {
+            "[[PRESENTATION_ID]]": presentation_id,
+            "[[PRESENTATION_TITLE]]": str(presentation.get("title")),
+            "[[PLANNER_ASSIGNMENT_BRIEF]]": "[[PLANNER_ASSIGNMENT_BRIEF]]",
+            "[[REVISION_SOURCE_PATH]]": relative_display(source, root),
+            "[[AUTHOR_CONTEXT_PACKET_PATH]]": relative_display(context, root),
+            "[[FINDINGS_REGISTRY_PATH]]": relative_display(finding_registry, root),
+            "[[REVIEW_PLAN_PATH]]": relative_display(review_plan, root),
+        },
+    )
+    ensure_assignment_taskbook(assignment, assignment_text)
+    scaffold_assignment_contract(
+        root,
+        assignment,
+        assignment_id=f"{presentation_id}:deck-revision-author",
+        role="deck-revision-author",
+        presentation_id=presentation_id,
+        requested_by="review-aggregation-job",
+        need="Revise the complete deck from five-channel findings using the durable author context packet.",
+    )
     return assignment, source
+
 
 
 def assignment_path(

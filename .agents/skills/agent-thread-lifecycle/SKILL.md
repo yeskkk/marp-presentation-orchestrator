@@ -27,3 +27,7 @@ After handoff, attempt a real runtime close/remove. If capacity remains allocate
 ## v0.6.6 diagnostic handles
 
 Create a `diagnostic-reviewer` handle only after its bounded case and planner-approved assignment exist. It uses the fixed reviewer-family runtime and may not diagnose a presentation it authored. Record diagnosed presentations at handoff, then release the handle; do not retain it speculatively for a later enlarged case.
+
+## v0.6.7 assignment immutability
+
+Thread launch consumes one complete approved contract. A retry may validate and reuse it but may not rewrite it or change its planner attribution. Missing files under an approved or revoked contract are a blocking integrity failure. Workspace repair and thread registration remain separate from semantic contract revision.

@@ -16,7 +16,7 @@ from typing import Any
 import yaml
 
 PLACEHOLDER_RE = re.compile(r"\[\[[A-Z0-9_]+\]\]")
-EXPECTED_VERSION = "0.6.6"
+EXPECTED_VERSION = "0.6.7"
 EXPECTED_MARP_VERSION = "4.5.0"
 
 
@@ -190,6 +190,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "src/mpres/revision_routing.py",
         "src/mpres/maintenance.py",
         "src/mpres/diagnostics.py",
+        "src/mpres/scaffolds.py",
         # New roles.
         ".codex/agents/delegated-planner.toml",
         ".codex/agents/deck-revision-author.toml",
@@ -205,11 +206,13 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         ".agents/skills/transactional-workflow-state/SKILL.md",
         ".agents/skills/operational-incident-mitigation/SKILL.md",
         ".agents/skills/presentation-defect-triage/SKILL.md",
+        ".agents/skills/idempotent-assignment-lifecycle/SKILL.md",
         # Canonical structured records.
         "templates/structured/PRODUCTION-PROFILE.template.yaml",
         "templates/structured/REVIEW-AGGREGATION-JOB.template.yaml",
         "templates/structured/RELEASE-JOB.template.yaml",
         "templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml",
+        "templates/structured/BATCH-ASSIGNMENT-EXPANSIONS.template.yaml",
         "templates/structured/PRESENTATION-WORK-PLAN.template.yaml",
         "templates/structured/UNIT-DELTA.template.yaml",
         "templates/structured/UNIT-CONTEXT-PACKET.template.yaml",
@@ -230,9 +233,11 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "docs/MIGRATION-v0.6.3-to-v0.6.4.md",
         "docs/MIGRATION-v0.6.4-to-v0.6.5.md",
         "docs/MIGRATION-v0.6.5-to-v0.6.6.md",
+        "docs/MIGRATION-v0.6.6-to-v0.6.7.md",
         "tests/test_v064_transactional_state.py",
         "tests/test_v065_incident_circuit.py",
         "tests/test_v066_slide_subset_diagnostics.py",
+        "tests/test_v067_assignment_idempotency.py",
         # Profile-specific stages and assignments.
         "templates/stages/STAGE-M01-BASELINE-AUDIT.template.md",
         "templates/stages/STAGE-M02-DELTA-DESIGN-PATCH.template.md",
@@ -281,6 +286,82 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         and "prepare_review_aggregation_job" in control_source
         and "prepare_release_job" in control_source,
         "review aggregation and release must be runtime-free control-plane jobs",
+        errors,
+    )
+
+    # v0.6.7 create-only assignment and workspace recovery.
+    scaffold_source = (root / "src/mpres/scaffolds.py").read_text(encoding="utf-8")
+    assignment_source = (root / "src/mpres/assignments.py").read_text(encoding="utf-8")
+    maintenance_source = (root / "src/mpres/maintenance.py").read_text(encoding="utf-8")
+    _expect(
+        "os.link" in scaffold_source
+        and "os.O_EXCL" in scaffold_source
+        and "ensure_tree" in scaffold_source,
+        "v0.6.7 scaffold publication must be create-if-absent with an exclusive fallback",
+        errors,
+    )
+    _expect(
+        "CONTRACT_SCHEMA_VERSION = 4" in assignment_source
+        and "ensure_assignment_taskbook" in assignment_source
+        and "revision_requires_explicit_revoke" in assignment_source
+        and "approval_sequence" in assignment_source
+        and "BATCH-ASSIGNMENT-EXPANSIONS.yaml" in assignment_source,
+        "v0.6.7 assignment lifecycle or separate batch-expansion state is missing",
+        errors,
+    )
+    for source_path in (
+        root / "src/mpres/production.py",
+        root / "src/mpres/review.py",
+        root / "src/mpres/maintenance.py",
+        root / "src/mpres/diagnostics.py",
+    ):
+        source_text = source_path.read_text(encoding="utf-8")
+        _expect(
+            "ensure_assignment_taskbook" in source_text,
+            f"workspace recovery does not use create-only assignment taskbooks in {source_path.relative_to(root)}",
+            errors,
+        )
+    _expect(
+        "ensure_tree" in maintenance_source and "ensure_copy" in maintenance_source,
+        "maintenance workspace recovery must fill missing files without replacing the existing cycle",
+        errors,
+    )
+
+    request_template = yaml.safe_load(
+        _filled_template_text(root / "templates/structured/ASSIGNMENT-REQUEST.template.yaml")
+    )
+    brief_template = yaml.safe_load(
+        _filled_template_text(root / "templates/structured/ASSIGNMENT-BRIEF.template.yaml")
+    )
+    decision_template = yaml.safe_load(
+        _filled_template_text(root / "templates/structured/ASSIGNMENT-DECISION.template.yaml")
+    )
+    _expect(
+        request_template.get("schema_version") == 4
+        and brief_template.get("schema_version") == 4
+        and decision_template.get("schema_version") == 4,
+        "assignment templates must use the v0.6.7 schema-v4 identity",
+        errors,
+    )
+    _expect(
+        decision_template.get("revision_requires_explicit_revoke") is True
+        and decision_template.get("approval_sequence") == 0
+        and decision_template.get("immutable_after_approval") is False,
+        "assignment decision template must encode explicit revoke and approval sequencing",
+        errors,
+    )
+    batch_template = yaml.safe_load(
+        _filled_template_text(root / "templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml")
+    )
+    expansion_template = yaml.safe_load(
+        _filled_template_text(root / "templates/structured/BATCH-ASSIGNMENT-EXPANSIONS.template.yaml")
+    )
+    _expect(
+        batch_template.get("schema_version") == 2
+        and batch_template.get("immutable_after_approval") is True
+        and expansion_template.get("schema_version") == 1
+        and expansion_template.get("expanded_assignments") == [],
+        "approved batch semantics and operational expansion state must be separate",
         errors,
     )
 
@@ -534,6 +615,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "CLI must expose task transaction-status for the v0.6.4 store",
         errors,
     )
+    _expect('"batch-revoke"' in cli_source and "revoke_batch_plan" in cli_source, "CLI must expose explicit batch-plan revocation", errors)
     _expect('commands.add_parser("recover")' not in cli_source, "recovery CLI is out of scope", errors)
 
     for path in (root / ".codex/agents").glob("*.toml"):
@@ -653,6 +735,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
         [sys.executable, "-m", "mpres", "--help"],
         [sys.executable, "-m", "mpres", "log-daemon", "--help"],
         [sys.executable, "-m", "mpres", "assignment", "--help"],
+        [sys.executable, "-m", "mpres", "assignment", "batch-revoke", "--help"],
         [sys.executable, "-m", "mpres", "production", "--help"],
         [sys.executable, "-m", "mpres", "stage", "--help"],
         [sys.executable, "-m", "mpres", "review", "--help"],
@@ -679,7 +762,7 @@ def validate(root: Path, *, run_tests: bool) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Validate v0.6.6 configs, templates, policies, CLI, source, and tests."
+        description="Validate v0.6.7 configs, templates, policies, CLI, source, and tests."
     )
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--skip-tests", action="store_true")

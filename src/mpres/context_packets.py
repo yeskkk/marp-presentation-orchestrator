@@ -173,7 +173,7 @@ def enrich_revision_context_packet(
     finding_registry: Path,
     review_plan: Path,
 ) -> dict[str, Any]:
-    """Turn the frozen author handoff into the deck-revision-author's durable context packet."""
+    """Enrich the revision context once and preserve it on workspace recovery."""
 
     require_gate(root, slug)
     path = source_root / "AUTHOR-CONTEXT-PACKET.yaml"
@@ -193,10 +193,7 @@ def enrich_revision_context_packet(
         for row in registry.get("findings", [])
         if isinstance(row, dict) and row.get("id")
     ]
-    packet["created_for"] = ["deck-revision-author"]
-    packet["revision_handoff_utc"] = utc_now()
-    packet["original_lesson_author_threads_may_be_closed"] = True
-    packet["review_handoff"] = {
+    expected_handoff = {
         "frozen_source": relative_display(frozen_source, root),
         "finding_registry": relative_display(finding_registry, root),
         "review_plan": relative_display(review_plan, root),
@@ -207,5 +204,29 @@ def enrich_revision_context_packet(
         "target_role": "deck-revision-author",
         "original_lesson_authors_reopened": False,
     }
+    existing_handoff = packet.get("review_handoff")
+    if isinstance(existing_handoff, dict):
+        mismatches = [
+            key for key, value in expected_handoff.items() if existing_handoff.get(key) != value
+        ]
+        if mismatches:
+            raise MPresError(
+                "Existing revision context belongs to a different review handoff and will not be overwritten: "
+                + ", ".join(mismatches)
+            )
+        return {
+            **packet,
+            "path": relative_display(path, root),
+            "already_enriched": True,
+        }
+
+    packet["created_for"] = ["deck-revision-author"]
+    packet["revision_handoff_utc"] = utc_now()
+    packet["original_lesson_author_threads_may_be_closed"] = True
+    packet["review_handoff"] = expected_handoff
     write_yaml_atomic(path, packet)
-    return {**packet, "path": relative_display(path, root)}
+    return {
+        **packet,
+        "path": relative_display(path, root),
+        "already_enriched": False,
+    }

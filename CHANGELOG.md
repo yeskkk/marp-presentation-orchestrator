@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.7
+
+- Added create-if-absent assignment taskbooks and structured contract scaffolds; retries preserve existing planner and worker bytes.
+- Made exact repeated approval a no-op and required explicit assignment or batch-plan revocation before revision and reapproval.
+- Preserved first approval metadata and introduced monotonic approval sequences.
+- Separated operational batch expansion history from the approved semantic batch plan.
+- Made author, lesson, reviewer, revision, maintenance, diagnostic, and mechanical control-job workspace preparation repair missing generated files without resetting existing work.
+- Added the idempotent-assignment-lifecycle skill, schema-v4 assignment templates, migration guidance, CLI support, and focused concurrency/recovery tests.
+
+Not included yet: canonical YAML handoff strengthening or broader reference-plus-delta context compaction.
+
 ## 0.6.6
 
 - Added a bounded, read-only diagnostic path for user-reported slide IDs or page numbers.

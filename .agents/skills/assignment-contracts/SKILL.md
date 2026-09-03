@@ -23,3 +23,7 @@ This deterministic expansion counts as planner-written. It may not fill missing 
 Coordinator, specialist-reviewer, deck-revision-author, release, and maintenance assignments are individually written and approved by a main or delegated planner. An assignment is runnable only when its Markdown taskbook is complete, its structured brief has no placeholders, and its decision records `status: approved` with planner semantic ownership.
 
 Approval establishes assignment authorship, not acceptance of future worker output.
+
+## v0.6.7 idempotent lifecycle
+
+All assignment contract and taskbook scaffolds are create-only. A retry preserves existing bytes and fills only missing files from an interrupted unapproved scaffold. Approved or revoked incomplete contracts fail closed. Exact repeated approval is a no-op; planner revision requires explicit `assignment revoke`, followed by a new approval sequence. Batch expansion history is stored separately from the approved semantic plan.

@@ -6,10 +6,15 @@ from typing import Any, Iterable, Mapping
 
 import yaml
 
-from mpres.assignments import assignment_contract_status, scaffold_assignment_contract
+from mpres.assignments import (
+    assignment_contract_status,
+    ensure_assignment_taskbook,
+    scaffold_assignment_contract,
+)
 from mpres.logs import append_log
 from mpres.marp_source import Deck, Slide, parse_deck
 from mpres.runtime_profile import load_runtime_profile, resolve_runtime
+from mpres.scaffolds import ensure_text, ensure_yaml
 from mpres.state import get_presentation, load_state
 from mpres.tasks import require_gate
 from mpres.transactions import transactional_task_mutation
@@ -17,6 +22,7 @@ from mpres.util import (
     MPresError,
     ensure_within,
     make_tree_read_only,
+    make_tree_writable,
     read_json,
     read_yaml,
     relative_display,
@@ -413,7 +419,7 @@ def open_diagnostic_case(
     neighbor_radius: int = 1,
     case_id: str | None = None,
 ) -> dict[str, Any]:
-    """Create one bounded, read-only diagnosis from user-reported slide locations."""
+    """Create or resume one bounded, read-only diagnostic scaffold."""
 
     require_gate(root, slug, allow_engine_circuit=True)
     if len(user_report.strip()) < 20:
@@ -425,8 +431,7 @@ def open_diagnostic_case(
         root, slug, presentation_id
     )
     case_root = diagnostic_case_root(root, slug, presentation_id, case_id)
-    if case_root.exists():
-        raise MPresError(f"Diagnostic case already exists: {case_root}")
+    existed_before = case_root.exists()
 
     source, report_root, source_kind, presentation_status = _resolve_source_anchor(
         root, slug, presentation_id
@@ -442,18 +447,41 @@ def open_diagnostic_case(
     selected_ids = {str(slide.slide_id) for slide in selected_slides if slide.slide_id}
     index_rows = _slide_index(deck, selected_indexes, target_indexes)
 
-    case_root.mkdir(parents=True, exist_ok=False)
+    existing_case_path = case_root / "DIAGNOSTIC-CASE.yaml"
+    existing_case = read_yaml(existing_case_path) if existing_case_path.is_file() else None
+    if existing_case is not None:
+        if not isinstance(existing_case, dict):
+            raise MPresError(f"Existing diagnostic case is malformed: {existing_case_path}")
+        expected = {
+            "case_id": case_id,
+            "task_slug": slug,
+            "presentation_id": presentation_id,
+            "user_report": user_report.strip(),
+        }
+        mismatches = [key for key, value in expected.items() if existing_case.get(key) != value]
+        existing_scope = existing_case.get("scope") if isinstance(existing_case.get("scope"), dict) else {}
+        if existing_scope.get("target_slide_ids") != target_slide_ids:
+            mismatches.append("scope.target_slide_ids")
+        if int(existing_scope.get("neighbor_radius", -1)) != int(neighbor_radius):
+            mismatches.append("scope.neighbor_radius")
+        if mismatches:
+            raise MPresError(
+                "Existing diagnostic case has different intake semantics and will not be overwritten: "
+                + ", ".join(mismatches)
+            )
+
+    case_root.mkdir(parents=True, exist_ok=True)
     try:
         evidence = case_root / "evidence"
         response = case_root / "response"
-        evidence.mkdir()
-        response.mkdir()
-        (evidence / "SLIDE-SUBSET.md").write_text(
+        evidence.mkdir(exist_ok=True)
+        response.mkdir(exist_ok=True)
+        make_tree_writable(evidence)
+        ensure_text(
+            evidence / "SLIDE-SUBSET.md",
             _subset_markdown(deck, selected_slides, case_id=case_id),
-            encoding="utf-8",
-            newline="\n",
         )
-        write_yaml_atomic(
+        ensure_yaml(
             evidence / "SLIDE-INDEX.yaml",
             {
                 "schema_version": 1,
@@ -466,11 +494,11 @@ def open_diagnostic_case(
                 "included_slides": index_rows,
             },
         )
-        write_yaml_atomic(
+        ensure_yaml(
             evidence / "SUPPORTING-RECORDS.yaml",
             _selected_source_records(source, selected_ids),
         )
-        write_yaml_atomic(
+        ensure_yaml(
             evidence / "GATE-EVIDENCE.yaml",
             _gate_evidence(report_root, selected_ids, root),
         )
@@ -485,10 +513,11 @@ def open_diagnostic_case(
         }.items():
             result_template = result_template.replace(old, new)
         result_path = response / "DIAGNOSTIC-RESULT.yaml"
-        result_path.write_text(result_template, encoding="utf-8", newline="\n")
+        ensure_text(result_path, result_template)
 
         assignment_path = case_root / "TASK-DIAGNOSTIC-REVIEWER.md"
-        assignment_path.write_text(
+        ensure_assignment_taskbook(
+            assignment_path,
             _diagnostic_assignment_text(
                 root,
                 slug=slug,
@@ -498,8 +527,6 @@ def open_diagnostic_case(
                 evidence_root=evidence,
                 result_path=result_path,
             ),
-            encoding="utf-8",
-            newline="\n",
         )
         scaffold_assignment_contract(
             root,
@@ -525,7 +552,11 @@ def open_diagnostic_case(
             "presentation_id": presentation_id,
             "classification": "presentation_defect",
             "status": "awaiting_diagnosis",
-            "opened_utc": utc_now(),
+            "opened_utc": (
+                str(existing_case.get("opened_utc"))
+                if isinstance(existing_case, dict) and existing_case.get("opened_utc")
+                else utc_now()
+            ),
             "user_report": user_report.strip(),
             "source_anchor": {
                 "kind": source_kind,
@@ -562,30 +593,36 @@ def open_diagnostic_case(
                 "patch_scope": relative_display(case_root / "PATCH-SCOPE.yaml", root),
             },
         }
-        write_yaml_atomic(case_root / "DIAGNOSTIC-CASE.yaml", case)
+        ensure_yaml(existing_case_path, case)
         make_tree_read_only(evidence)
     except Exception:
-        if case_root.exists():
+        if not existed_before and case_root.exists():
             shutil.rmtree(case_root, ignore_errors=True)
         raise
 
-    append_log(
-        root,
-        slug,
-        actor="planner",
-        kind="diagnostic",
-        presentation_id=presentation_id,
-        message=(
-            f"Opened read-only diagnostic case {case_id} for {len(target_slide_ids)} target "
-            f"slide(s) and {len(selected_indexes)} bounded target/neighbor slides."
-        ),
-        data={
-            "case": relative_display(case_root / "DIAGNOSTIC-CASE.yaml", root),
-            "target_slide_ids": target_slide_ids,
-            "included_slide_ids": [row["slide_id"] for row in index_rows],
-        },
-    )
-    return {**case, "case_path": relative_display(case_root, root)}
+    if not existed_before:
+        append_log(
+            root,
+            slug,
+            actor="planner",
+            kind="diagnostic",
+            presentation_id=presentation_id,
+            message=(
+                f"Opened read-only diagnostic case {case_id} for {len(target_slide_ids)} target "
+                f"slide(s) and {len(selected_indexes)} bounded target/neighbor slides."
+            ),
+            data={
+                "case": relative_display(existing_case_path, root),
+                "target_slide_ids": target_slide_ids,
+                "included_slide_ids": [row["slide_id"] for row in index_rows],
+            },
+        )
+    return {
+        **(existing_case or case),
+        "case_path": relative_display(case_root, root),
+        "already_open": bool(existing_case),
+    }
+
 
 
 def _substantive_text(value: Any, label: str, minimum: int = 12) -> str:

@@ -24,3 +24,7 @@ reconfirm, approve, and operator-verify the exact structured workaround; never i
 ## v0.6.6 bounded diagnostic path
 
 When a user identifies a concrete slide or page problem, use `mpres diagnostic open` to create the smallest useful target-plus-neighbor evidence packet. A diagnostic reviewer reads only that packet, uses the immutable task runtime profile, never opens or renders PDFs, never uses screenshots/OCR/model vision, never edits canonical source, and never widens scope independently. `PATCH-SCOPE.yaml` is advisory until a planner authorizes a separate author or maintenance assignment; every later patch still runs local and full-deck gates.
+
+## v0.6.7 assignment and workspace retries
+
+Treat assignment and workspace preparation as create-only recovery. Never overwrite an existing taskbook, request, brief, decision, worker draft, frozen review artifact, diagnostic result, or maintenance record. Exact approval retries are no-ops. A planner must explicitly revoke an assignment or batch plan before revising and reapproving it.

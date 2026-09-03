@@ -5,6 +5,7 @@ from typing import Any, Mapping
 
 import yaml
 
+from mpres.scaffolds import ensure_yaml
 from mpres.state import REVIEW_CHANNELS
 from mpres.util import (
     MPresError,
@@ -54,25 +55,43 @@ def prepare_review_aggregation_job(root: Path, slug: str, presentation_id: str) 
     directory = review_aggregation_root(root, slug, presentation_id)
     directory.mkdir(parents=True, exist_ok=True)
     job = directory / "job.yaml"
-    if not job.exists():
-        write_yaml_atomic(
-            job,
-            _structured_job_template(
-                root,
-                "REVIEW-AGGREGATION-JOB.template.yaml",
-                presentation_id,
-                {
-                    "schema_version": 1,
-                    "job": "review-aggregation",
-                    "implementation": "python-control-plane",
-                    "model_runtime": None,
-                    "presentation_id": presentation_id,
-                    "required_channels": list(REVIEW_CHANNELS),
-                    "status": "waiting_for_channel_receipts",
-                },
+    if job.is_file():
+        from mpres.util import read_yaml
+
+        existing = read_yaml(job)
+        if not isinstance(existing, dict):
+            raise MPresError(f"Review aggregation job is malformed: {job}")
+        expected = {
+            "job": "review-aggregation",
+            "implementation": "python-control-plane",
+            "model_runtime": None,
+            "presentation_id": presentation_id,
+        }
+        mismatches = [key for key, value in expected.items() if existing.get(key) != value]
+        if mismatches:
+            raise MPresError(
+                "Existing review-aggregation job has a different identity and will not be overwritten: "
+                + ", ".join(mismatches)
             )
-            | {"created_utc": utc_now()},
+        return job
+    ensure_yaml(
+        job,
+        _structured_job_template(
+            root,
+            "REVIEW-AGGREGATION-JOB.template.yaml",
+            presentation_id,
+            {
+                "schema_version": 1,
+                "job": "review-aggregation",
+                "implementation": "python-control-plane",
+                "model_runtime": None,
+                "presentation_id": presentation_id,
+                "required_channels": list(REVIEW_CHANNELS),
+                "status": "waiting_for_channel_receipts",
+            },
         )
+        | {"created_utc": utc_now()},
+    )
     return job
 
 
@@ -184,30 +203,48 @@ def prepare_release_job(root: Path, slug: str, presentation_id: str) -> Path:
     ready = release_workspace(root, slug, presentation_id)
     ready.mkdir(parents=True, exist_ok=True)
     job = ready / "job.yaml"
-    if not job.exists():
-        write_yaml_atomic(
-            job,
-            _structured_job_template(
-                root,
-                "RELEASE-JOB.template.yaml",
-                presentation_id,
-                {
-                    "schema_version": 1,
-                    "job": "release",
-                    "implementation": "python-control-plane",
-                    "model_runtime": None,
-                    "presentation_id": presentation_id,
-                    "status": "release_ready",
-                    "required_actions": [
-                        "render_release_source",
-                        "validate_release_reports",
-                        "copy_pdf_and_source_to_deliverables",
-                        "write_release_receipt",
-                    ],
-                },
+    if job.is_file():
+        from mpres.util import read_yaml
+
+        existing = read_yaml(job)
+        if not isinstance(existing, dict):
+            raise MPresError(f"Release job is malformed: {job}")
+        expected = {
+            "job": "release",
+            "implementation": "python-control-plane",
+            "model_runtime": None,
+            "presentation_id": presentation_id,
+        }
+        mismatches = [key for key, value in expected.items() if existing.get(key) != value]
+        if mismatches:
+            raise MPresError(
+                "Existing release job has a different identity and will not be overwritten: "
+                + ", ".join(mismatches)
             )
-            | {"created_utc": utc_now()},
+        return job
+    ensure_yaml(
+        job,
+        _structured_job_template(
+            root,
+            "RELEASE-JOB.template.yaml",
+            presentation_id,
+            {
+                "schema_version": 1,
+                "job": "release",
+                "implementation": "python-control-plane",
+                "model_runtime": None,
+                "presentation_id": presentation_id,
+                "status": "release_ready",
+                "required_actions": [
+                    "render_release_source",
+                    "validate_release_reports",
+                    "copy_pdf_and_source_to_deliverables",
+                    "write_release_receipt",
+                ],
+            },
         )
+        | {"created_utc": utc_now()},
+    )
     return job
 
 

@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 plan_id: authoring-batch-001
 status: draft
 written_by: planner
@@ -17,4 +17,12 @@ common:
     - "[[COMMON_ACCEPTANCE_CRITERION]]"
 presentations: {}
 approved_utc: null
+first_approved_utc: null
+approval_sequence: 0
+notes: null
+immutable_after_approval: true
+revision_requested_utc: null
+revision_reason: null
+# Legacy compatibility projection only. Operational expansion history is stored
+# in BATCH-ASSIGNMENT-EXPANSIONS.yaml so this semantic plan stays byte-stable.
 expanded_assignments: []

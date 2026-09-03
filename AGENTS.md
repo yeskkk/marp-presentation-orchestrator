@@ -64,6 +64,12 @@ Coordinators may request work and supply evidence but cannot invent or weaken as
 
 No stage-specific assignment is allowed. One unit has one executable assignment, one fixed lesson-author thread, and one profile-selected stage sequence.
 
+### Assignment lifecycle and retries
+
+Assignment taskbooks and structured request/brief/decision files are create-only. Re-running a scaffold or workspace preparation command may fill missing generated files from an interrupted unapproved operation, but it must preserve all existing planner text, approval metadata, worker drafts, stage artifacts, frozen evidence, and control-job timestamps. An approved or revoked contract with a missing file is an integrity failure and must not be reconstructed.
+
+Exact repeated approval by the same planner actor with the same notes is a no-op. Any semantic or attribution change requires explicit `mpres assignment revoke`; batch-plan revision similarly requires `mpres assignment batch-revoke`. Reapproval increments the approval sequence while retaining the first approval time. Operational batch expansion history belongs in `BATCH-ASSIGNMENT-EXPANSIONS.yaml`, never in the approved semantic plan. There is no force-overwrite path.
+
 ## 6. Critical-path scheduling and lazy initialization
 
 Use deterministic event-driven scheduling. The priority order is:

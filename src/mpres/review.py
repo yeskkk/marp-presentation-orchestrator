@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from mpres.assignments import scaffold_assignment_contract
+from mpres.assignments import ensure_assignment_taskbook, scaffold_assignment_contract
 from mpres.control_jobs import (
     RELEASE_ACTOR,
     REVIEW_AGGREGATION_ACTOR,
@@ -28,6 +28,7 @@ from mpres.production import (
 )
 from mpres.rendering import RENDER_PIPELINE, source_and_build_paths
 from mpres.scheduling import refresh_active_presentation_window
+from mpres.scaffolds import ensure_copy, ensure_json, ensure_text, ensure_tree, ensure_yaml
 from mpres.revision_routing import build_revision_routing, write_revision_work_queues
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state, save_state
 from mpres.tasks import require_gate
@@ -120,7 +121,9 @@ def _validate_render(build: Path, stage: str) -> tuple[dict[str, Any], list[Path
 
 def _scaffold_specialist_assignments(
     root: Path, slug: str, presentation_id: str, request_root: Path
-) -> None:
+) -> dict[str, Any]:
+    """Create only missing reviewer files and preserve every existing submission."""
+
     task = task_path(root, slug)
     assignment_template = (
         root / "templates" / "assignments" / "TASK-specialist-reviewer.template.md"
@@ -128,6 +131,8 @@ def _scaffold_specialist_assignments(
     report_template = (
         root / "templates" / "review" / "review-report.template.md"
     ).read_text(encoding="utf-8")
+    created: list[str] = []
+    preserved: list[str] = []
     for channel in REVIEW_CHANNELS:
         channel_root = (
             task
@@ -160,8 +165,10 @@ def _scaffold_specialist_assignments(
         for old, new in values.items():
             assignment = assignment.replace(old, new)
         assignment_path_value = channel_root / "TASK-SPECIALIST-REVIEWER.md"
-        assignment_path_value.write_text(assignment, encoding="utf-8", newline="\n")
-        scaffold_assignment_contract(
+        taskbook = ensure_assignment_taskbook(assignment_path_value, assignment)
+        created.extend(taskbook["created"])
+        preserved.extend(taskbook["preserved"])
+        contract = scaffold_assignment_contract(
             root,
             assignment_path_value,
             assignment_id=f"{presentation_id}:{REVIEW_ROUND}:{channel}",
@@ -175,16 +182,28 @@ def _scaffold_specialist_assignments(
                 "the reviewer must read the complete frozen deck."
             ),
         )
+        created.extend(contract["created"])
+        preserved.extend(contract["preserved"])
         report = report_template.replace("[[CHANNEL]]", channel).replace(
             "[[PRESENTATION_ID]]", presentation_id
         ).replace("[[ROUND]]", REVIEW_ROUND)
-        (channel_root / "report.md").write_text(report, encoding="utf-8", newline="\n")
-        (channel_root / "findings.yaml").write_text(
-            f"schema_version: 3\npresentation_id: {presentation_id}\nround: {REVIEW_ROUND}\n"
-            f"channel: {channel}\nfindings: []\n",
-            encoding="utf-8",
-            newline="\n",
+        result = ensure_text(channel_root / "report.md", report)
+        created.extend(result.created)
+        preserved.extend(result.preserved)
+        result = ensure_yaml(
+            channel_root / "findings.yaml",
+            {
+                "schema_version": 3,
+                "presentation_id": presentation_id,
+                "round": REVIEW_ROUND,
+                "channel": channel,
+                "findings": [],
+            },
         )
+        created.extend(result.created)
+        preserved.extend(result.preserved)
+    return {"created": created, "preserved": preserved, "changed": bool(created)}
+
 
 
 @transactional_task_mutation
@@ -195,13 +214,51 @@ def request_review(
     *,
     changed_areas: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Freeze one complete deck, then materialize—not pre-create—the five-channel review."""
+    """Freeze one complete deck and idempotently materialize its review workspace."""
 
     require_gate(root, slug)
     state = load_state(root, slug)
     if state.get("phase") != "working":
         raise MPresError(f"Cannot request review while task phase is {state.get('phase')!r}.")
     presentation = get_presentation(state, presentation_id)
+    request_root = _request_root(root, slug, presentation_id)
+    request_path = request_root / "request.json"
+    if presentation.get("status") in {"review_requested", "reviewing"}:
+        existing = read_json(request_path) if request_path.is_file() else None
+        if not isinstance(existing, dict):
+            raise MPresError(
+                "Presentation state says review is active, but its canonical request is missing or malformed."
+            )
+        expected = {
+            "task_slug": slug,
+            "presentation_id": presentation_id,
+            "round": REVIEW_ROUND,
+        }
+        mismatches = [key for key, value in expected.items() if existing.get(key) != value]
+        if changed_areas is not None and existing.get("changed_areas") != changed_areas:
+            mismatches.append("changed_areas")
+        if mismatches:
+            raise MPresError(
+                "Existing review request has different semantics and will not be overwritten: "
+                + ", ".join(mismatches)
+            )
+        frozen_source = request_root / "source"
+        rendered = request_root / "rendered"
+        if not frozen_source.is_dir() or not rendered.is_dir():
+            raise MPresError(
+                "Active review freeze is incomplete; reconstructing a committed frozen deck is forbidden."
+            )
+        job = prepare_review_aggregation_job(root, slug, presentation_id)
+        scaffold = _scaffold_specialist_assignments(
+            root, slug, presentation_id, request_root
+        )
+        return {
+            **existing,
+            "already_requested": True,
+            "review_job": relative_display(job, root),
+            "scaffold_created": scaffold["created"],
+            "scaffold_preserved": scaffold["preserved"],
+        }
     if presentation.get("status") != "authoring":
         raise MPresError("The sole full review may be requested only from authoring status.")
     author_assignment = check_assignment(root, slug, "author-coordinator", presentation_id)
@@ -215,62 +272,89 @@ def request_review(
     if len(self_check.read_text(encoding="utf-8").strip()) < 300:
         raise MPresError("Author SELF-CHECK.md is too short.")
 
-    request_root = _request_root(root, slug, presentation_id)
-    if request_root.exists():
-        raise MPresError(f"The sole review request already exists: {request_root}")
-    (request_root / "rendered").mkdir(parents=True, exist_ok=False)
-    copy_source_tree(build / "source-snapshot", request_root / "source", read_only=True)
-    shutil.copy2(self_check, request_root / "SELF-CHECK.md")
+    request_root.mkdir(parents=True, exist_ok=True)
+    rendered = request_root / "rendered"
+    rendered.mkdir(parents=True, exist_ok=True)
+    frozen_source = request_root / "source"
+    if frozen_source.exists():
+        make_tree_writable(frozen_source)
+        ensure_tree(build / "source-snapshot", frozen_source)
+    else:
+        copy_source_tree(build / "source-snapshot", frozen_source, read_only=False)
+    ensure_copy(self_check, request_root / "SELF-CHECK.md")
     for path in evidence_paths:
-        shutil.copy2(path, request_root / "rendered" / path.name)
-    make_tree_read_only(request_root / "rendered")
-    frozen_utc = utc_now()
-    request = {
-        "schema_version": 4,
-        "task_slug": slug,
-        "presentation_id": presentation_id,
-        "round": REVIEW_ROUND,
-        "created_utc": frozen_utc,
-        "scope": "complete frozen deck; every one of five reviewers reads the entire deck",
-        "changed_areas": changed_areas or [],
-        "source_path": relative_display(request_root / "source", root),
-        "pdf_path": relative_display(request_root / "rendered" / f"{presentation_id}.pdf", root),
-        "render_transaction_id": report.get("render_transaction_id"),
-        "status": "pending_planner_approval_of_review_assignments",
-        "post_revision_review": "forbidden-by-policy",
-        "integrity_policy": "frozen snapshot; no hashes except TASK.md confirmation",
-    }
-    write_json_atomic(request_root / "request.json", request)
-    make_tree_read_only(request_root / "source")
+        ensure_copy(path, rendered / path.name)
+
+    existing_request = read_json(request_path) if request_path.is_file() else None
+    if existing_request is not None:
+        expected_identity = {
+            "task_slug": slug,
+            "presentation_id": presentation_id,
+            "round": REVIEW_ROUND,
+        }
+        mismatches = [
+            key for key, value in expected_identity.items() if existing_request.get(key) != value
+        ]
+        if mismatches:
+            raise MPresError(
+                f"Existing review freeze belongs to a different request at {request_path}: "
+                + ", ".join(mismatches)
+            )
+        if changed_areas is not None and existing_request.get("changed_areas") != changed_areas:
+            raise MPresError(
+                "Existing review request has different changed_areas and will not be overwritten."
+            )
+        frozen_utc = str(existing_request.get("created_utc") or utc_now())
+        request = existing_request
+    else:
+        frozen_utc = utc_now()
+        request = {
+            "schema_version": 4,
+            "task_slug": slug,
+            "presentation_id": presentation_id,
+            "round": REVIEW_ROUND,
+            "created_utc": frozen_utc,
+            "scope": "complete frozen deck; every one of five reviewers reads the entire deck",
+            "changed_areas": changed_areas or [],
+            "source_path": relative_display(frozen_source, root),
+            "pdf_path": relative_display(rendered / f"{presentation_id}.pdf", root),
+            "render_transaction_id": report.get("render_transaction_id"),
+            "status": "pending_planner_approval_of_review_assignments",
+            "post_revision_review": "forbidden-by-policy",
+            "integrity_policy": "frozen snapshot; no hashes except TASK.md confirmation",
+        }
+        ensure_json(request_path, request)
+    make_tree_read_only(frozen_source)
+    make_tree_read_only(rendered)
 
     review_root = _review_root(root, slug, presentation_id)
     review_plan = review_root / "REVIEW-PLAN.yaml"
-    plan_text = (root / "templates" / "structured" / "REVIEW-PLAN.template.yaml").read_text(encoding="utf-8")
+    plan_text = (
+        root / "templates" / "structured" / "REVIEW-PLAN.template.yaml"
+    ).read_text(encoding="utf-8")
     for old, new in {
         "[[PRESENTATION_ID]]": presentation_id,
         "[[FROZEN_UTC]]": frozen_utc,
-        "[[FROZEN_SOURCE]]": relative_display(request_root / "source", root),
-        "[[FROZEN_PDF]]": relative_display(request_root / "rendered" / f"{presentation_id}.pdf", root),
+        "[[FROZEN_SOURCE]]": relative_display(frozen_source, root),
+        "[[FROZEN_PDF]]": relative_display(rendered / f"{presentation_id}.pdf", root),
     }.items():
         plan_text = plan_text.replace(old, new)
-    review_plan.write_text(plan_text, encoding="utf-8", newline="\n")
+    ensure_text(review_plan, plan_text)
 
     presentation["status"] = "review_requested"
     presentation["active_round"] = REVIEW_ROUND
     presentation["rounds"] = {
         REVIEW_ROUND: {
             "status": "requested",
-            "request": relative_display(request_root / "request.json", root),
+            "request": relative_display(request_path, root),
             "review_plan": relative_display(review_plan, root),
             "channels": {},
             "requested_utc": request["created_utc"],
         }
     }
     active_window = refresh_active_presentation_window(root, slug, state)
-    # The control-plane aggregation job and specialist assignments are created
-    # only after the frozen snapshot exists. No coordinator model is launched.
     review_job = prepare_review_aggregation_job(root, slug, presentation_id)
-    _scaffold_specialist_assignments(root, slug, presentation_id, request_root)
+    scaffold_report = _scaffold_specialist_assignments(root, slug, presentation_id, request_root)
     append_log(
         root,
         slug,
@@ -279,9 +363,18 @@ def request_review(
         presentation_id=presentation_id,
         round_name=REVIEW_ROUND,
         message="Registered the runtime-free review-aggregation job and began waiting for five reviewer receipts.",
-        data={"job": relative_display(review_job, root)},
+        data={
+            "job": relative_display(review_job, root),
+            "scaffold_created": scaffold_report["created"],
+        },
     )
-    record_milestone(root, slug, "deck_frozen", presentation_id=presentation_id, data={"review_plan": relative_display(review_plan, root)})
+    record_milestone(
+        root,
+        slug,
+        "deck_frozen",
+        presentation_id=presentation_id,
+        data={"review_plan": relative_display(review_plan, root)},
+    )
     append_log(
         root,
         slug,
@@ -294,13 +387,14 @@ def request_review(
             "and registered a mechanical review-aggregation job."
         ),
         data={
-            "request": relative_display(request_root / "request.json", root),
+            "request": relative_display(request_path, root),
             "review_plan": relative_display(review_plan, root),
             "active_presentations": active_window["active_presentations"],
             "activated_next_authoring": active_window["activated"],
         },
     )
-    return request
+    return {**request, "already_requested": False}
+
 
 def _normalize_findings_file(path: Path) -> list[dict[str, Any]]:
     value = read_yaml(path)

@@ -1,9 +1,9 @@
-# Design notes — v0.6.6
+# Design notes — v0.6.7
 
 
 ## Why v0.6.1 is incremental
 
-v0.6.1 changed only runtime selection and token observability. v0.6.2 removed model-based review/release coordinators, v0.6.3 repaired the bounded current-plus-next scheduler, and v0.6.4 makes task state and the thread registry transactional. v0.6.5 adds incident recurrence and circuit breaking. v0.6.6 adds a separately testable bounded, read-only slide-subset diagnostic path.
+v0.6.1 changed only runtime selection and token observability. v0.6.2 removed model-based review/release coordinators, v0.6.3 repaired the bounded current-plus-next scheduler, and v0.6.4 makes task state and the thread registry transactional. v0.6.5 adds incident recurrence and circuit breaking. v0.6.6 adds a separately testable bounded, read-only slide-subset diagnostic path. v0.6.7 adds create-only assignment and workspace recovery.
 
 ## Why v0.6.0 exists
 
@@ -59,6 +59,15 @@ The prior unpinned Marp installation changed its generated HTML DOM and invalida
 - One daemon remains the only project-log writer.
 - Corrective releases never overwrite historical deliverables.
 
+
+
+## v0.6.7 — why atomic replace is wrong for assignment recovery
+
+Atomic replacement prevents a partial file, but it still destroys an existing planner or worker artifact. Assignment and workspace recovery therefore needs a stronger invariant: publish only when the destination does not exist. A fully written temporary file is linked into place, with an exclusive-create fallback; the losing retry preserves the winner. Stable identity and semantic fields are validated after publication.
+
+Approval is a lifecycle transition rather than a repeatable rewrite. The first approval timestamp and attribution remain durable, identical retries perform no writes, and revision requires a recorded revoke. Batch expansion is operational state and is intentionally separated from the immutable approved batch semantics.
+
+This milestone does not attempt to make arbitrary presentation files transactional. It covers deterministic scaffolding and lifecycle integrity; canonical YAML handoff validation remains a later increment.
 
 ## v0.6.3 — why the active window follows the current deck
 

@@ -1,6 +1,6 @@
-# Marp Presentation Orchestrator v0.6.6
+# Marp Presentation Orchestrator v0.6.7
 
-这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.6 以已交付的 v0.6.5 为基线，只增加用户报告具体页面问题时的有界、只读诊断快速路径；既有任务级固定运行配置、机械 review/release、current＋next 调度、事务状态与 incident circuit 均保持不变。
+这是一个面向 **Codex CLI + Marp** 的课程课件与学术报告生产框架。v0.6.7 以已交付的 v0.6.6 为基线，只增加 assignment 生命周期与 workspace scaffold 的幂等恢复；既有任务级固定运行配置、机械 review/release、current＋next 调度、事务状态、incident circuit 与有界诊断路径均保持不变。
 
 正式耐久产物始终是：
 
@@ -14,6 +14,20 @@ PDF
 
 浏览器 HTML 仅用于 author/release 的机械布局检查，检查后立即删除；它不进入 reviewer bundle 或 deliverables。
 
+
+
+## v0.6.7 增量：assignment 与 workspace 幂等恢复
+
+- assignment taskbook、request、brief 和 decision 采用 create-if-absent；重复 scaffold 保留所有既有字节，只补齐未批准中断状态下的缺失文件。
+- 已批准或已撤销合同若缺文件会失败关闭，不根据模板重建未知的 planner 语义。
+- 同一 planner、同一 notes 的重复批准是无写入 no-op；修改合同必须先显式 `assignment revoke`，重新批准时递增 `approval_sequence` 并保留首次批准时间。
+- 已批准 batch plan 不再被 unit materialization 写入；展开历史单独保存到 `BATCH-ASSIGNMENT-EXPANSIONS.yaml`。
+- author、lesson、reviewer、revision、maintenance、diagnostic 与机械 control-job workspace 的重试只补缺失文件，保留 worker 草稿、冻结证据、stage state 和首次创建时间。
+
+```bash
+mpres assignment revoke <slug> <assignment-path> --reason "..."
+mpres assignment batch-revoke <slug> --reason "..."
+```
 
 ## v0.6.6 增量：问题页只读诊断
 

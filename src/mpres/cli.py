@@ -13,6 +13,7 @@ from mpres.assignments import (
     assignment_contract_status,
     batch_plan_status,
     revoke_assignment,
+    revoke_batch_plan,
 )
 from mpres.audit import audit_task
 from mpres.checkpoints import checkpoint_status, save_checkpoint
@@ -215,6 +216,9 @@ def build_parser() -> argparse.ArgumentParser:
     batch_approve.add_argument("slug")
     batch_approve.add_argument("--planner-actor", required=True)
     batch_approve.add_argument("--notes")
+    batch_revoke = assignment_sub.add_parser("batch-revoke")
+    batch_revoke.add_argument("slug")
+    batch_revoke.add_argument("--reason", required=True)
 
     production = commands.add_parser("production")
     production_sub = production.add_subparsers(dest="production_command", required=True)
@@ -686,6 +690,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
             if args.assignment_command == "batch-approve":
                 _json(approve_batch_plan(root, args.slug, planner_actor=args.planner_actor, notes=args.notes))
+                return 0
+            if args.assignment_command == "batch-revoke":
+                _json(revoke_batch_plan(root, args.slug, reason=args.reason))
                 return 0
             path = args.path.expanduser().resolve()
             if args.assignment_command == "status":

@@ -1,4 +1,13 @@
-# Workflow and state machine — v0.6.6
+# Workflow and state machine — v0.6.7
+
+
+## v0.6.7 assignment and workspace idempotency
+
+Every assignment is a four-file lifecycle: the Markdown taskbook plus request, brief, and decision YAML. Scaffold commands publish missing files with create-if-absent semantics and validate stable identity. The decision is the final commit marker. Existing files are never replaced during recovery.
+
+An exact repeated approval is read-only. To change taskbook semantics, planner attribution, notes, or acceptance criteria, explicitly revoke the assignment and then reapprove it; batch plans use the corresponding batch revoke transition. Approved contracts are protected read-only as a guardrail. Missing content in an approved or revoked contract is corruption and blocks launch.
+
+Workspace creation is now a repair operation across authoring, lesson, full review, deck revision, maintenance, diagnostic, and mechanical control jobs. It fills missing generated assets while preserving drafts, stage records, frozen source/evidence, and job creation timestamps. Batch materialization writes operational coordinates to `BATCH-ASSIGNMENT-EXPANSIONS.yaml`, leaving the approved semantic plan unchanged.
 
 ## v0.6.1 pre-production runtime and telemetry gate
 

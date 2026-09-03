@@ -6,9 +6,14 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from mpres.assignments import assignment_contract_status, scaffold_assignment_contract
+from mpres.assignments import (
+    assignment_contract_status,
+    ensure_assignment_taskbook,
+    scaffold_assignment_contract,
+)
 from mpres.logs import append_log
 from mpres.rendering import RENDER_PIPELINE, source_and_build_paths
+from mpres.scaffolds import ensure_copy, ensure_json, ensure_text, ensure_tree, ensure_yaml
 from mpres.revision_routing import build_revision_routing
 from mpres.review import REQUIRED_FINDING_FIELDS, _normalize_findings_file
 from mpres.state import REVIEW_CHANNELS, get_presentation, load_state, save_state
@@ -72,6 +77,8 @@ def open_maintenance(
     reason: str,
     allowed_changes: list[str],
 ) -> dict[str, Any]:
+    """Open or idempotently repair one corrective-maintenance workspace."""
+
     require_gate(root, slug)
     if mode not in MAINTENANCE_MODES:
         raise MPresError(f"Maintenance mode must be one of {sorted(MAINTENANCE_MODES)}")
@@ -79,72 +86,139 @@ def open_maintenance(
         raise MPresError("Corrective maintenance requires a substantive reason.")
     if not allowed_changes or any(not item.strip() for item in allowed_changes):
         raise MPresError("Corrective maintenance needs explicit allowed-change boundaries.")
+
+    normalized_changes = [item.strip() for item in allowed_changes]
     state = load_state(root, slug)
     presentation = get_presentation(state, presentation_id)
     if presentation.get("status") != "finalized":
         raise MPresError("Only a finalized presentation may enter corrective maintenance.")
-    current = presentation.get("maintenance")
-    if isinstance(current, dict) and current.get("status") not in {"published", "abandoned"}:
-        raise MPresError("This presentation already has an active maintenance cycle.")
+
     task = task_path(root, slug)
     history = presentation.setdefault("maintenance_history", [])
-    base_revision = 1
-    current_marker = task / "deliverables" / presentation_id / "CURRENT-REVISION.json"
-    base_release = task / "deliverables" / presentation_id / "release.json"
-    if current_marker.is_file():
-        base_revision = max(base_revision, int(read_json(current_marker).get("revision") or 1))
-    elif base_release.is_file():
-        base_revision = max(base_revision, int(read_json(base_release).get("revision") or 1))
-    revision = max(
-        [base_revision, *[int(item.get("revision") or 0) for item in history if isinstance(item, dict)]]
-    ) + 1
+    current = presentation.get("maintenance")
+    active_cycle = bool(
+        isinstance(current, dict)
+        and current.get("status") not in {None, "published", "abandoned"}
+    )
+    if active_cycle:
+        assert isinstance(current, dict)
+        revision = int(current.get("revision") or 0)
+        if revision < 1:
+            raise MPresError("Active maintenance revision is malformed.")
+        expected_active = {
+            "presentation_id": presentation_id,
+            "revision": revision,
+            "mode": mode,
+            "reason": reason.strip(),
+            "allowed_changes": normalized_changes,
+        }
+        mismatches = [
+            key for key, value in expected_active.items() if current.get(key) != value
+        ]
+        if mismatches:
+            raise MPresError(
+                "This presentation already has an active maintenance cycle with different boundaries: "
+                + ", ".join(mismatches)
+            )
+    else:
+        base_revision = 1
+        current_marker = task / "deliverables" / presentation_id / "CURRENT-REVISION.json"
+        base_release = task / "deliverables" / presentation_id / "release.json"
+        if current_marker.is_file():
+            base_revision = max(
+                base_revision, int(read_json(current_marker).get("revision") or 1)
+            )
+        elif base_release.is_file():
+            base_revision = max(
+                base_revision, int(read_json(base_release).get("revision") or 1)
+            )
+        revision = max(
+            [
+                base_revision,
+                *[
+                    int(item.get("revision") or 0)
+                    for item in history
+                    if isinstance(item, dict)
+                ],
+            ]
+        ) + 1
+
     base = maintenance_root(root, slug, presentation_id, revision)
     source = base / "source"
     build = base / "build"
     source.parent.mkdir(parents=True, exist_ok=True)
-    copy_source_tree(_current_release_source(task, presentation_id), source)
+    ensure_tree(_current_release_source(task, presentation_id), source)
     build.mkdir(parents=True, exist_ok=True)
 
-    scope_template = (root / "templates" / "structured" / "CORRECTIVE-SCOPE.template.md").read_text(
-        encoding="utf-8"
-    )
+    cycle_path = base / "CORRECTIVE-CYCLE.yaml"
+    existing_cycle = read_yaml(cycle_path) if cycle_path.is_file() else None
+    if existing_cycle is not None:
+        if not isinstance(existing_cycle, dict):
+            raise MPresError(f"Existing corrective cycle is malformed: {cycle_path}")
+        expected = {
+            "presentation_id": presentation_id,
+            "revision": revision,
+            "mode": mode,
+            "reason": reason.strip(),
+            "allowed_changes": normalized_changes,
+        }
+        mismatches = [key for key, value in expected.items() if existing_cycle.get(key) != value]
+        if mismatches:
+            raise MPresError(
+                "Existing maintenance scaffold has different boundaries and will not be overwritten: "
+                + ", ".join(mismatches)
+            )
+        opened_utc = str(existing_cycle.get("opened_utc") or utc_now())
+    elif active_cycle and isinstance(current, dict):
+        opened_utc = str(current.get("opened_utc") or utc_now())
+    else:
+        opened_utc = utc_now()
+
+    scope_template = (
+        root / "templates" / "structured" / "CORRECTIVE-SCOPE.template.md"
+    ).read_text(encoding="utf-8")
     scope_template = (
         scope_template.replace("[[PRESENTATION_ID]]", presentation_id)
         .replace("[[REVISION_NUMBER]]", str(revision))
         .replace("[[REASON]]", reason.strip())
         .replace("[[MODE]]", mode)
-        .replace("[[ALLOWED_CHANGES]]", "\n".join(f"- {item.strip()}" for item in allowed_changes))
+        .replace("[[ALLOWED_CHANGES]]", "\n".join(f"- {item}" for item in normalized_changes))
     )
-    (source / "CORRECTIVE-SCOPE.md").write_text(scope_template, encoding="utf-8", newline="\n")
-    retrospective = (root / "templates" / "structured" / "MAINTENANCE-RETROSPECTIVE.template.md").read_text(
-        encoding="utf-8"
-    )
+    ensure_text(source / "CORRECTIVE-SCOPE.md", scope_template)
+
+    retrospective = (
+        root / "templates" / "structured" / "MAINTENANCE-RETROSPECTIVE.template.md"
+    ).read_text(encoding="utf-8")
     retrospective = retrospective.replace("[[PRESENTATION_ID]]", presentation_id).replace(
         "[[REVISION_NUMBER]]", str(revision)
     )
-    (source / "MAINTENANCE-RETROSPECTIVE.md").write_text(retrospective, encoding="utf-8", newline="\n")
-    checklist = (root / "templates" / "structured" / "MAINTENANCE-CHECKLIST.template.yaml").read_text(
-        encoding="utf-8"
-    )
+    ensure_text(source / "MAINTENANCE-RETROSPECTIVE.md", retrospective)
+
+    checklist = (
+        root / "templates" / "structured" / "MAINTENANCE-CHECKLIST.template.yaml"
+    ).read_text(encoding="utf-8")
     checklist = (
         checklist.replace("[[PRESENTATION_ID]]", presentation_id)
         .replace("[[REVISION_NUMBER]]", str(revision))
         .replace("[[MODE]]", mode)
     )
-    (source / "MAINTENANCE-CHECKLIST.yaml").write_text(checklist, encoding="utf-8", newline="\n")
+    ensure_text(source / "MAINTENANCE-CHECKLIST.yaml", checklist)
 
-    assignment_template = (root / "templates" / "assignments" / "TASK-maintenance.template.md").read_text(
-        encoding="utf-8"
-    )
+    assignment_template = (
+        root / "templates" / "assignments" / "TASK-maintenance.template.md"
+    ).read_text(encoding="utf-8")
     assignment = (
         assignment_template.replace("[[PRESENTATION_ID]]", presentation_id)
         .replace("[[REVISION_NUMBER]]", str(revision))
         .replace("[[MODE]]", mode)
         .replace("[[REASON]]", reason.strip())
-        .replace("[[SOURCE_RELEASE]]", relative_display(_current_release_source(task, presentation_id), root))
+        .replace(
+            "[[SOURCE_RELEASE]]",
+            relative_display(_current_release_source(task, presentation_id), root),
+        )
     )
     assignment_path = base / "TASK-MAINTENANCE.md"
-    assignment_path.write_text(assignment, encoding="utf-8", newline="\n")
+    ensure_assignment_taskbook(assignment_path, assignment)
     scaffold_assignment_contract(
         root,
         assignment_path,
@@ -154,32 +228,41 @@ def open_maintenance(
         requested_by="planner",
         need=f"Perform {mode} corrective maintenance without overwriting the historical release.",
     )
-    cycle = {
+
+    desired_cycle = {
         "schema_version": 2,
         "presentation_id": presentation_id,
         "revision": revision,
         "mode": mode,
         "reason": reason.strip(),
-        "allowed_changes": [item.strip() for item in allowed_changes],
-        "opened_utc": utc_now(),
+        "allowed_changes": normalized_changes,
+        "opened_utc": opened_utc,
         "status": "open",
         "source_release": relative_display(_current_release_source(task, presentation_id), root),
         "source": relative_display(source, root),
         "assignment": relative_display(assignment_path, root),
     }
-    write_yaml_atomic(base / "CORRECTIVE-CYCLE.yaml", cycle)
-    presentation["maintenance"] = cycle
+    ensure_yaml(cycle_path, desired_cycle)
+    # Canonical task state may have advanced beyond the immutable opening
+    # record (for example, to review_requested). Never let a recovery pass
+    # reset that lifecycle status from the older CORRECTIVE-CYCLE.yaml file.
+    canonical_cycle = (current if active_cycle else None) or existing_cycle or desired_cycle
+    assert isinstance(canonical_cycle, dict)
+    presentation["maintenance"] = canonical_cycle
     save_state(root, slug, state)
-    append_log(
-        root,
-        slug,
-        actor="planner",
-        kind="maintenance",
-        presentation_id=presentation_id,
-        message=f"Opened corrective maintenance revision r{revision:04d} in {mode} mode.",
-        data={"revision": revision, "mode": mode, "path": relative_display(base, root)},
-    )
-    return cycle
+
+    first_open = not active_cycle and existing_cycle is None
+    if first_open:
+        append_log(
+            root,
+            slug,
+            actor="planner",
+            kind="maintenance",
+            presentation_id=presentation_id,
+            message=f"Opened corrective maintenance revision r{revision:04d} in {mode} mode.",
+            data={"revision": revision, "mode": mode, "path": relative_display(base, root)},
+        )
+    return {**canonical_cycle, "already_open": not first_open}
 
 
 def _require_maintenance_assignment(root: Path, base: Path) -> None:
@@ -189,15 +272,17 @@ def _require_maintenance_assignment(root: Path, base: Path) -> None:
         raise MPresError("The planner-written maintenance assignment is incomplete or unapproved.")
 
 
-def _scaffold_review_assignments(root: Path, slug: str, presentation_id: str, base: Path) -> None:
+def _scaffold_review_assignments(root: Path, slug: str, presentation_id: str, base: Path) -> dict[str, Any]:
     task = task_path(root, slug)
-    template = (root / "templates" / "assignments" / "TASK-specialist-reviewer.template.md").read_text(
-        encoding="utf-8"
-    )
-    report_template = (root / "templates" / "review" / "review-report.template.md").read_text(
-        encoding="utf-8"
-    )
+    template = (
+        root / "templates" / "assignments" / "TASK-specialist-reviewer.template.md"
+    ).read_text(encoding="utf-8")
+    report_template = (
+        root / "templates" / "review" / "review-report.template.md"
+    ).read_text(encoding="utf-8")
     request_root = base / "review" / "full" / "request"
+    created: list[str] = []
+    preserved: list[str] = []
     for channel in REVIEW_CHANNELS:
         channel_root = base / "review" / "full" / channel
         channel_root.mkdir(parents=True, exist_ok=True)
@@ -223,8 +308,10 @@ def _scaffold_review_assignments(root: Path, slug: str, presentation_id: str, ba
         for old, new in values.items():
             assignment = assignment.replace(old, new)
         assignment_path = channel_root / "TASK-SPECIALIST-REVIEWER.md"
-        assignment_path.write_text(assignment, encoding="utf-8", newline="\n")
-        scaffold_assignment_contract(
+        result = ensure_assignment_taskbook(assignment_path, assignment)
+        created.extend(result["created"])
+        preserved.extend(result["preserved"])
+        contract = scaffold_assignment_contract(
             root,
             assignment_path,
             assignment_id=f"{presentation_id}:maintenance:{base.name}:{channel}",
@@ -235,11 +322,15 @@ def _scaffold_review_assignments(root: Path, slug: str, presentation_id: str, ba
             requested_by="planner",
             need=f"Review corrective maintenance {base.name} in the isolated {channel} channel.",
         )
+        created.extend(contract["created"])
+        preserved.extend(contract["preserved"])
         report = report_template.replace("[[CHANNEL]]", channel).replace(
             "[[PRESENTATION_ID]]", presentation_id
         ).replace("[[ROUND]]", "full")
-        (channel_root / "report.md").write_text(report, encoding="utf-8", newline="\n")
-        write_yaml_atomic(
+        result2 = ensure_text(channel_root / "report.md", report)
+        created.extend(result2.created)
+        preserved.extend(result2.preserved)
+        result3 = ensure_yaml(
             channel_root / "findings.yaml",
             {
                 "schema_version": 1,
@@ -249,53 +340,103 @@ def _scaffold_review_assignments(root: Path, slug: str, presentation_id: str, ba
                 "findings": [],
             },
         )
+        created.extend(result3.created)
+        preserved.extend(result3.preserved)
+    return {"created": created, "preserved": preserved, "changed": bool(created)}
+
 
 
 @transactional_task_mutation
 def request_maintenance_review(root: Path, slug: str, presentation_id: str) -> dict[str, Any]:
+    """Create or repair the sole full-review request for a maintenance cycle."""
+
     require_gate(root, slug)
     maintenance, base = active_maintenance(root, slug, presentation_id)
-    if maintenance.get("mode") != "full_corrective_review" or maintenance.get("status") != "open":
-        raise MPresError("A full corrective review may be requested only from an open full-review maintenance cycle.")
+    if maintenance.get("mode") != "full_corrective_review":
+        raise MPresError("Only a full-corrective-review maintenance cycle may request specialist review.")
+    if maintenance.get("status") not in {"open", "review_requested", "reviewing"}:
+        raise MPresError(
+            "A maintenance review may be requested or resumed only before aggregation."
+        )
     _require_maintenance_assignment(root, base)
-    report = read_json(base / "build" / "render-report-maintenance.json")
-    if report.get("success") is not True or report.get("pipeline") != RENDER_PIPELINE:
+    render_report = read_json(base / "build" / "render-report-maintenance.json")
+    if render_report.get("success") is not True or render_report.get("pipeline") != RENDER_PIPELINE:
         raise MPresError("A successful maintenance render is required before corrective review.")
+
     request_root = base / "review" / "full" / "request"
-    if request_root.exists():
-        raise MPresError("This maintenance review request already exists.")
-    (request_root / "rendered").mkdir(parents=True, exist_ok=False)
-    copy_source_tree(base / "build" / "source-snapshot", request_root / "source", read_only=True)
+    request_path = request_root / "request.json"
+    existing_request = read_json(request_path) if request_path.is_file() else None
+    if existing_request is not None:
+        expected = {
+            "presentation_id": presentation_id,
+            "revision": maintenance["revision"],
+            "mode": maintenance["mode"],
+        }
+        mismatches = [key for key, value in expected.items() if existing_request.get(key) != value]
+        if mismatches:
+            raise MPresError(
+                "Existing maintenance review request has a different identity and will not be overwritten: "
+                + ", ".join(mismatches)
+            )
+        created_utc = str(existing_request.get("created_utc") or utc_now())
+    else:
+        created_utc = utc_now()
+
+    request_root.mkdir(parents=True, exist_ok=True)
+    source = request_root / "source"
+    rendered = request_root / "rendered"
+    make_tree_writable(request_root)
+    ensure_tree(base / "build" / "source-snapshot", source)
+    rendered.mkdir(parents=True, exist_ok=True)
     pdf = base / "build" / f"{presentation_id}.pdf"
-    shutil.copy2(pdf, request_root / "rendered" / pdf.name)
-    request = {
+    ensure_copy(pdf, rendered / pdf.name)
+    desired_request = {
         "schema_version": 1,
         "presentation_id": presentation_id,
         "revision": maintenance["revision"],
         "mode": maintenance["mode"],
-        "created_utc": utc_now(),
-        "source_path": relative_display(request_root / "source", root),
-        "pdf_path": relative_display(request_root / "rendered" / pdf.name, root),
+        "created_utc": created_utc,
+        "source_path": relative_display(source, root),
+        "pdf_path": relative_display(rendered / pdf.name, root),
         "status": "pending",
         "post_revision_review": "none",
     }
-    write_json_atomic(request_root / "request.json", request)
+    ensure_json(request_path, desired_request)
     make_tree_read_only(request_root)
-    _scaffold_review_assignments(root, slug, presentation_id, base)
-    maintenance["status"] = "review_requested"
-    maintenance["review"] = {"channels": {}, "request": relative_display(request_root / "request.json", root)}
-    state = load_state(root, slug)
-    get_presentation(state, presentation_id)["maintenance"] = maintenance
-    save_state(root, slug, state)
-    append_log(
-        root,
-        slug,
-        actor="author-coordinator",
-        kind="maintenance",
-        presentation_id=presentation_id,
-        message=f"Requested the one full five-channel review for maintenance revision r{maintenance['revision']:04d}.",
-    )
-    return request
+    scaffold = _scaffold_review_assignments(root, slug, presentation_id, base)
+
+    first_request = maintenance.get("status") == "open" and existing_request is None
+    if maintenance.get("status") == "open":
+        maintenance["status"] = "review_requested"
+        maintenance["review"] = {
+            "channels": {},
+            "request": relative_display(request_path, root),
+        }
+        state = load_state(root, slug)
+        get_presentation(state, presentation_id)["maintenance"] = maintenance
+        save_state(root, slug, state)
+    elif not isinstance(maintenance.get("review"), dict):
+        raise MPresError("Active maintenance review state is missing its canonical review record.")
+
+    if first_request:
+        append_log(
+            root,
+            slug,
+            actor="author-coordinator",
+            kind="maintenance",
+            presentation_id=presentation_id,
+            message=(
+                f"Requested the one full five-channel review for maintenance revision "
+                f"r{maintenance['revision']:04d}."
+            ),
+        )
+    canonical = existing_request or desired_request
+    return {
+        **canonical,
+        "already_requested": existing_request is not None,
+        "scaffold_created": scaffold["created"],
+        "scaffold_preserved": scaffold["preserved"],
+    }
 
 
 @transactional_task_mutation

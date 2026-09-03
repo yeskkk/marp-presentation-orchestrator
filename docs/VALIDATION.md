@@ -1,6 +1,18 @@
-# Validation record — v0.6.6
+# Validation record — v0.6.7
 
-Validation date: 2026-09-02 UTC.
+Validation date: 2026-09-03 UTC.
+
+
+## v0.6.7 incremental gates
+
+- A repeated scaffold creates only missing files and preserves every existing assignment-contract byte.
+- An approved or revoked incomplete contract fails closed rather than regenerating unknown planner content.
+- Exact repeated approval preserves actor, notes, timestamp, and file bytes; revision requires explicit revoke and reapproval increments the sequence.
+- Unit expansion records operational history separately and does not mutate an approved batch plan.
+- Author, lesson, reviewer, revision, maintenance, diagnostic, and mechanical job retries preserve drafts and canonical evidence while repairing missing generated files.
+- Concurrent same-identity scaffolds converge on one complete contract without replacement.
+
+The release is validated in the clean worktree and again after extracting the final source ZIP. Each pytest module runs in its own process so the persistent logging-daemon fixtures cannot retain the parent capture pipe.
 
 ## v0.6.1 incremental gates
 
@@ -26,7 +38,7 @@ This release implements the production-control changes adopted after the
 - only writing or revising top-level `TASK.md` is exclusive to the main agent;
   every other planner operation may be delegated to a planner worker;
 - unit workspaces, five specialist reviewers, the deck revision author, and
-  the release coordinator are created only when their critical-path state is
+  the mechanical release job is registered only when their critical-path state is
   reached;
 - lesson authors may close after durable handoff; one deck revision author
   receives the compiled context packet and owns every post-review edit;
@@ -52,18 +64,19 @@ This release implements the production-control changes adopted after the
 ## Automated regression
 
 The complete regression suite is run with third-party pytest plugin autoload
-disabled:
+disabled. Each test module runs in a fresh process because the logging-daemon
+fixtures intentionally exercise persistent subprocess behavior:
 
 ```bash
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
 export PYTHONPATH=src
-python -m pytest -q
+for module in tests/test_*.py; do python -m pytest -q "$module"; done
 ```
 
 Final result:
 
 ```text
-47 passed
+99 passed
 ```
 
 The tests cover, among other things:
@@ -72,7 +85,7 @@ The tests cover, among other things:
    lesson-author ownership;
 2. planner-approved batch expansion and the main-agent-only `TASK.md` rule;
 3. lazy unit workspace creation, critical-path activation, and just-in-time
-   reviewer, revision-author, and release-coordinator creation;
+   reviewer, revision-author, and mechanical release-job registration;
 4. author-context compilation, deterministic finding routing, one deck-level
    revision owner, and no reviewer recheck;
 5. five isolated full-deck review channels and atomic aggregation;
@@ -226,3 +239,15 @@ exact confirmation, post-presentation tamper rejection, gate-wide blocking, and 
 ## v0.6.6 incremental validation
 
 The release gate additionally verifies: bounded target/neighbor extraction; slide-ID and page resolution; target and evidence caps; read-only evidence and result directories; no PDF artifacts in cases; fixed reviewer-family runtime; planner assignment approval; rejection of out-of-packet evidence or patch scope; explicit low-confidence scope expansion; published-source preservation; diagnostic CLI help; diagnostic log kind; and full v0.6.5 regression compatibility.
+
+## v0.6.7 incremental validation
+
+Twelve focused tests cover create-only author, lesson, reviewer, maintenance, diagnostic, and control-job recovery; byte-preserving repeated approval; explicit revoke/reapproval sequencing; approved-incomplete fail-closed behavior; separate batch-expansion state; same-identity concurrency; and conflicting concurrent semantic requests.
+
+Final acceptance for the clean worktree and independently extracted source package is:
+
+```text
+17 test modules
+99 tests passed
+0 failed
+```

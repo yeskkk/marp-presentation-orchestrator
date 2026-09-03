@@ -6,6 +6,7 @@ from typing import Any
 from mpres.assignments import assignment_contract_status
 from mpres.logs import append_log
 from mpres.production_profiles import profile_for
+from mpres.scaffolds import ScaffoldReport, ensure_text, ensure_yaml
 from mpres.milestones import record_milestone
 from mpres.state import get_content_unit, get_presentation, load_state, save_state, stage_ids_for_kind
 from mpres.tasks import require_gate
@@ -80,7 +81,9 @@ def initialize_unit_stages(
     unit_title: str,
     task_kind: str,
     production_mode: str | None = None,
-) -> None:
+) -> dict[str, Any]:
+    """Create only missing stage files and preserve any existing stage work."""
+
     stage_order = list(stage_ids_for_kind(task_kind, production_mode))
     stage_profile = profile_for(production_mode or "greenfield_full", task_kind).stage_profile
     values = {
@@ -89,6 +92,7 @@ def initialize_unit_stages(
         "[[UNIT_TITLE]]": unit_title,
     }
     stages: dict[str, Any] = {}
+    report = ScaffoldReport()
     for stage_id in stage_order:
         directory = stage_root(root, slug, presentation_id, unit_id, stage_id)
         directory.mkdir(parents=True, exist_ok=True)
@@ -98,31 +102,53 @@ def initialize_unit_stages(
         for old, replacement in values.items():
             artifact = artifact.replace(old, replacement)
         artifact_path = directory / "STAGE-ARTIFACT.md"
-        artifact_path.write_text(artifact, encoding="utf-8", newline="\n")
+        report.merge(ensure_text(artifact_path, artifact))
         stages[stage_id] = {
             "status": "planned",
             "artifact": relative_display(artifact_path, root),
             "task_kind": task_kind,
             "production_mode": production_mode,
         }
-    write_yaml_atomic(
-        stage_state_path(root, slug, presentation_id, unit_id),
-        {
-            "schema_version": 5,
+
+    state_path = stage_state_path(root, slug, presentation_id, unit_id)
+    desired = {
+        "schema_version": 5,
+        "presentation_id": presentation_id,
+        "unit_id": unit_id,
+        "unit_title": unit_title,
+        "task_kind": task_kind,
+        "production_mode": production_mode,
+        "stage_profile": stage_profile,
+        "sequence_status": "awaiting_start",
+        "stage_order": stage_order,
+        "current_stage": stage_order[0],
+        "fixed_author_for_all_stages": True,
+        "thread_handle": None,
+        "stages": stages,
+    }
+    if state_path.is_file():
+        current = read_yaml(state_path)
+        if not isinstance(current, dict):
+            raise MPresError(f"Existing lesson stage state is malformed: {state_path}")
+        identity = {
             "presentation_id": presentation_id,
             "unit_id": unit_id,
-            "unit_title": unit_title,
             "task_kind": task_kind,
             "production_mode": production_mode,
             "stage_profile": stage_profile,
-            "sequence_status": "awaiting_start",
             "stage_order": stage_order,
-            "current_stage": stage_order[0],
-            "fixed_author_for_all_stages": True,
-            "thread_handle": None,
-            "stages": stages,
-        },
-    )
+        }
+        mismatches = [key for key, value in identity.items() if current.get(key) != value]
+        if mismatches:
+            raise MPresError(
+                f"Existing lesson stage scaffold conflicts with the requested unit at {state_path}: "
+                + ", ".join(mismatches)
+            )
+        report.preserved.append(str(state_path))
+    else:
+        report.merge(ensure_yaml(state_path, desired))
+    return report.as_dict()
+
 
 
 def initialize_stage_files(root: Path, slug: str, presentation_id: str, unit_id: str, unit_title: str) -> None:
