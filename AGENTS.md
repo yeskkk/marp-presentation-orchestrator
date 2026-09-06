@@ -14,3 +14,6 @@ Use the installed compact CLI or start scripts. They do not launch a model or
 turn off approval/sandbox policy. Main responds to semantic decisions or explicit
 user feedback, not healthy polling events. Unknown execution must be reconciled.
 A deterministic fixture test is not native-browser or model-quality validation.
+
+When reporting a finished delivery, attach/link the existing path from
+`delivery_package` only when its state is `ready`; a PDF commit alone is not ZIP success.

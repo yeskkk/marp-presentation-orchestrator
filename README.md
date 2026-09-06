@@ -3,8 +3,8 @@
 把教材、教学目标与用户确认的课程计划转化为 Marp 课件。Python 负责运行事实和机械
 检查，AI 负责教学语义；不要求 main agent 阅读大量过程文档后逐条操作流程。
 
-**版本 v0.6.12：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
-修订 → 再次完整门禁 → PDF 发布。** 运行器不把源码提交等同于交付；缺少原生渲染工具、
+**版本 v0.6.13：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
+修订 → 再次完整门禁 → PDF 发布 → PDF/源码配对 ZIP。** 运行器不把源码提交等同于交付；缺少原生渲染工具、
 审核回执、finding 处置或明确宿主状态时都会停止。当前验收覆盖确定性适配器和失败分支，
 尚未在本交付环境验证真实模型与固定 Marp 浏览器的端到端输出质量。
 
@@ -22,7 +22,7 @@
 | 完整机械门禁 | 指定源码修订 → 临时 HTML/DOM → 数学渲染 → PDF 结构和文本边界检查 | 已实现 `artifact inspect --level full` |
 | 冻结与专项审核 | 五个不同且独立的 reviewer 阅读同一冻结稿；不做模型型审核协调 | 已实现 |
 | 修订与再次门禁 | findings 送给作者，生成新修订；旧稿门禁不能批准新稿 | 已实现 |
-| 发布与暂停 | 仅对合格版本发布 PDF；按 all/pilot/each 决定继续或请求用户反馈 | 已实现 |
+| 发布、打包与暂停 | 仅对合格版本发布 PDF；从发布记录取对应源码，机械生成累计交付 ZIP；按 all/pilot/each 继续或暂停 | 已实现 |
 
 新建任务默认 `workflow: full`。程序只有将对应 PDF 发布记录提交为 committed 后才
 标为 delivered；所有 deck 都完成才将任务标为 completed。`workflow: authoring` 是明确的
@@ -56,6 +56,7 @@ src/mpres/
     runner.py                  实际宿主证据、池准入、领取、输入包、JSON 适配器
     quality.py                 源码/full gate、修订绑定、并发幂等、失败与恢复
     workflow.py                固定整稿状态机、组装、审核证明、finding 处置、发布
+    delivery.py                按已提交 release 配对 PDF/源码，累计 ZIP、校验与独立重试
     theme.css                  实际课件样式；写作输出预置同一份 theme
     semantic.py                四个语义 schema 的真实验证；每类作业只注入对应语义指南
     schemas/                   plan、author-result、review-result、diagnosis-result
@@ -92,7 +93,7 @@ tasks/<slug>/
   TASK-RUNTIME-PROFILE.yaml      用户自行选择的固定 runtime
   sources/                      获准教材文本和数据
   content/                      人工或作者编辑的实际内容
-  deliverables/                 已审核并经门禁的 PDF
+  deliverables/                 已审核并经门禁的 PDF，以及 <slug>-delivery.zip
   .mpres/
     task.sqlite3                唯一运行事实源
     artifacts/<revision>/       已提交或导入的只读源码与资产
@@ -242,6 +243,8 @@ mpres --root . artifact inspect economics REVISION_ID --level full --retry
    自动添加新 reviewer 轮次；扩大教学范围或删除冻结页面需要新任务/新审核。
 7. 发布前再次验证五个审核回执、独立性、finding 和精确候选 gate。PDF 先暂存，最终
    路径独占创建，prepared → committed；中断后同字节才能收敛，永不静默覆盖旧交付。
+8. 每次 advance/tick 在已提交发布之后同步交付 ZIP。压缩只使用 committed releases；
+   不扫描工作草稿，不运行新模型或重新渲染，返回的 delivery_package.path 是应交给用户的压缩包。
 
 ```bash
 mpres --root . workflow status economics
@@ -263,6 +266,65 @@ mpres --root . workflow recover-assembly economics --job-id JOB_ID --note "已�
 记录停止核验；AI attempt 回执不明时继续沿用同请求对账，不假称失败后重试。
 语义争议不会被 retry-checks 绕过；本版尚未提供原任务内任意语义变更/重新确认流程，
 这类变更需新建或导入新任务后确认。
+
+### 交付压缩包：PDF 与对应的 Markdown 同名
+
+每次完成一份或多份交付后，runner 自动生成或更新：
+
+```text
+tasks/<slug>/deliverables/<slug>-delivery.zip
+```
+
+例如 `economics` 任务已经交付两份课件，解压后的目录如下：
+
+```text
+economics-delivery/
+  p01/
+    p01.pdf
+    p01.md
+    theme.css
+    assets/                     # 该已发布修订中的资源；有则保留
+  p02/
+    p02.pdf
+    p02.md
+    theme.css
+    assets/
+```
+
+每个 PDF 与 Markdown 使用同一 presentation ID（与交付 PDF 文件名一致）。
+内部仍使用 `presentation.md`；只有 ZIP 条目改名，**不移动、改名或重写 canonical source**。
+程序从 `releases.artifact_id` 取这份 PDF 对应的源码修订，不取较新的工作草稿。
+同一源码快照内的主题、图片和其他资源保留相对路径；各课件分目录，避免同名资源互相覆盖。
+ZIP 中的源码为普通可编辑文件，不继承内部快照的只读权限。压缩包不是完整任务备份，
+不加入任务数据库、线程记录、检查日志、输入教材或其他任务工作目录。
+
+`all` 持续更新同一个累计包；`pilot/each` 在反馈暂停前也会生成，只包含当时已交付的课件。
+后续交付继续更新同一路径，不散落一批时间戳压缩包。无交付或只有 prepared 发布时不生成 ZIP。
+宿主向用户展示交付时，应附上 `delivery_package.state=ready` 对应的 `path`，而不只列单份 PDF；
+项目命令提供本地路径，不代替宿主向外部聊天/云盘上传文件的接口。
+
+已交付的 SQLite 新控制面任务也可以补打包或重新验证：
+
+```bash
+mpres --root . workflow bundle economics
+mpres --root . workflow status economics
+mpres --root . task status economics
+```
+
+`workflow bundle` 校验已有 ZIP 的条目及内容；未变化时不重写、不重复记账。
+正常 tick 使用现有事件和 ZIP 文件元数据判断是否需要更新，避免每次轮询解压所有内容。
+打包先在 `.mpres/delivery-staging` 暂存并校验，再用短数据库事务核对 release 集合、原子替换 ZIP。
+压缩或校验失败保留上一个完整 ZIP，runner 返回 blocked 和打包错误；不会撤销已提交 PDF，
+也不会为了重试 ZIP 而重新调用 author、reviewer 或渲染器。修好文件权限、磁盘空间等问题后，
+重跑 `workflow bundle` 或 runner 即可。`task.status=completed` 仍指 PDF 发布完成，
+是否已完成压缩交付另看 `delivery_package.state`。缺失源码、缺失/被改写的正式 PDF、
+不安全路径或重名条目均拒绝打包，不跳过缺失的配对文件后冒充成功。
+
+`.gitignore` 使用 `**/deliverables/*-delivery.zip` 屏蔽这些生成包；暂存目录由已有 `.mpres/`
+规则屏蔽。不使用全局 `*.zip`，不会屏蔽项目源码发行包或用户主动版本控制的教材 ZIP。
+Git 已经跟踪过的文件仍需手动取消跟踪，ignore 规则不会自动删除历史记录。
+本功能不更改任务确认配置、runtime 或数据库 schema，也不增加 skill、模板或过程文档。
+显式 `legacy` 旧引擎尚未接入自动 ZIP；上述命令面向有 `.mpres/task.sqlite3` 的新控制面任务。
 
 ## 9. 状态、成本和迁移
 
@@ -333,7 +395,8 @@ schema 是真正执行的边界，不只是说明文件。计划在确认前验�
 
 ## 最近阶段
 
-v0.6.12 在已接通整稿流程的版本上删除管理 skills 与过时启动提示，加入四个实际验证的
-语义 schema，把一次作业的提示收敛为对应语义内容。数据库保持 schema 4；旧确认 runtime
-不变。下一步是实际宿主和原生 Marp 的小规模课程验收、完整任务导出及兼容层进一步清退，
-尚未标记整个重构为 v0.7.0 完成。
+v0.6.13 增加机械化交付 ZIP：每份正式 PDF 与该版本的 `presentation.md` 在包内同名，
+附带原源码资源，支持累计交付、补打包、独立失败重试，并加入精确 `.gitignore` 规则。
+数据库仍为 schema 4，六个语义 skills 和固定 runtime 不变。本次测试验证 ZIP 真实写入、
+读取和源码配对，端到端测试仍使用明确标识的宿主/原生渲染替身；不代表真实模型和浏览器
+生产质量验收，也不把本版标记为整个重构的 v0.7.0 完成。

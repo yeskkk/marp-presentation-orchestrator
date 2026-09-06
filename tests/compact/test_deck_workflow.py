@@ -107,7 +107,7 @@ def test_complete_two_decks_full_review_revision_release(compact_root,native_dou
     runner,last=run_host(service,host)
     assert service.status()['status']=='completed', (last,Workflow(service.task).status())
     assert last['release_pipeline_enabled'] is True
-    assert sorted(p.name for p in (service.task/'deliverables').iterdir())==['p01.pdf','p02.pdf']
+    assert sorted(p.name for p in (service.task/'deliverables').iterdir())==['full-delivery.zip','p01.pdf','p02.pdf']
     assert len(service.store.rows('SELECT * FROM releases'))==2
     assert len(service.store.rows("SELECT * FROM jobs WHERE kind='review' AND state='succeeded'"))==10
     assert len(service.store.rows("SELECT * FROM jobs WHERE kind='revise' AND state='succeeded'"))==2

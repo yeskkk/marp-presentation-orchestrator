@@ -17,3 +17,6 @@ Thumbs.db
 .mpres/
 tasks/*/logs/project.jsonl
 tasks/*/downloads/
+
+# Generated PDF + matching Markdown delivery bundles (not source release ZIPs).
+**/deliverables/*-delivery.zip

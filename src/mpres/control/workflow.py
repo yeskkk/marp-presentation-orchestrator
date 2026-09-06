@@ -15,6 +15,7 @@ import yaml
 
 from mpres.marp_source import parse_deck
 from mpres.util import MPresError, utc_now
+from .delivery import Delivery
 from .files import inside, remove_tree, snapshot
 from .quality import Quality
 from .service import CHANNELS, Service, require_text, uid
@@ -93,7 +94,8 @@ class Workflow:
     def status(self) -> dict:
         return {'enabled': self.enabled(), 'decks': self.store.rows('SELECT * FROM decks ORDER BY ordinal'),
                 'decisions': self.store.rows('SELECT * FROM decisions WHERE resolved_at IS NULL'),
-                'releases': self.store.rows('SELECT * FROM releases ORDER BY created_at')}
+                'releases': self.store.rows('SELECT * FROM releases ORDER BY created_at'),
+                'delivery_package': Delivery(self.task).status()}
 
     def allowed(self) -> set[str]:
         """One current + one future writing lane, subject to feedback and shared pool."""
@@ -222,7 +224,9 @@ class Workflow:
                     changed = True
             if not changed:
                 break
-        return {**self.status(), 'changed': before != self.store.rows('SELECT * FROM decks ORDER BY ordinal')}
+        package = Delivery(self.task).ensure()
+        return {**self.status(), 'delivery_package': package,
+                'changed': before != self.store.rows('SELECT * FROM decks ORDER BY ordinal')}
 
     def _advance_deck(self, deck: dict) -> bool:
         phase = deck['phase']

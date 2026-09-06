@@ -292,6 +292,9 @@ class Runner:
         workflow = Workflow(self.task)
         workflow_report = workflow.advance()
         full = workflow_report['enabled']
+        if workflow_report.get('delivery_package', {}).get('state') == 'failed':
+            return {'status': 'blocked', 'reason': 'Delivery ZIP could not be generated; retry packaging, not content production',
+                    'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': full}
         task_status = self.service.status()['status']
         if task_status in {'paused', 'completed'}:
             return {'status': task_status, 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': full}

@@ -55,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     interrupt=artifact.add_parser('interrupt-gate'); interrupt.add_argument('slug'); interrupt.add_argument('gate_id')
     interrupt.add_argument('--reason',required=True)
     workflow=sub.add_parser('workflow').add_subparsers(dest='operation',required=True)
-    for name in ('advance','status','continue','retry-checks','retry-publish','recover-assembly'):
+    for name in ('advance','status','bundle','continue','retry-checks','retry-publish','recover-assembly'):
         cmd=workflow.add_parser(name);cmd.add_argument('slug')
         if name=='continue':cmd.add_argument('--by',required=True);cmd.add_argument('--note',required=True)
         if name in {'retry-checks','retry-publish'}:cmd.add_argument('--presentation',required=True);cmd.add_argument('--note',required=True)
@@ -86,7 +86,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.command=='workflow':
                 from .workflow import Workflow
                 workflow=Workflow(service.task)
-                if args.operation=='continue':result=workflow.continue_delivery(args.by,args.note)
+                if args.operation=='bundle':
+                    from .delivery import Delivery
+                    result=Delivery(service.task).bundle()
+                elif args.operation=='continue':result=workflow.continue_delivery(args.by,args.note)
                 elif args.operation=='retry-checks':result=workflow.retry_checks(args.presentation,args.note)
                 elif args.operation=='retry-publish':result=workflow.retry_publish(args.presentation,args.note)
                 elif args.operation=='recover-assembly':result=workflow.recover_assembly(args.job_id,args.note)
@@ -121,6 +124,7 @@ def main(argv: list[str] | None = None) -> int:
                 result=service.record_usage(args.attempt_id,args.call_id,json.loads(args.counters.read_text()))
             else:result=service.submit(args.attempt_id,json.loads(args.result.read_text()),source=args.source)
         print(json.dumps(result,ensure_ascii=False,indent=2))
+        if isinstance(result,dict) and result.get('delivery_package', {}).get('state')=='failed': return 2
         if isinstance(result,dict) and result.get('success') is False: return 2
         if isinstance(result,dict) and (result.get('status')=='blocked' or result.get('state') in {'failed','interrupted'}): return 2
         if isinstance(result,dict) and any(x.get('status')=='uncertain' for x in result.get('results',[])): return 3

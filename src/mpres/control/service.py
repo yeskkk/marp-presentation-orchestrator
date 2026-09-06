@@ -479,9 +479,10 @@ class Service:
                 'fields':fields,'cost_currency':None}
 
     def status(self) -> dict:
+        from .delivery import Delivery
         state = self.store.rows('SELECT singleton,title,status,created_at,config_id FROM task')[0]
         state.update({'database':str(self.store.path),'jobs':self.store.rows('SELECT kind,state,count(*) AS count FROM jobs GROUP BY kind,state'),
                       'unresolved_decisions':self.store.rows('SELECT * FROM decisions WHERE resolved_at IS NULL'),
                       'artifacts':self.store.rows('SELECT id,presentation,unit,origin,verified FROM artifacts'),
-                      'model_control_roles':[]})
+                      'model_control_roles':[], 'delivery_package': Delivery(self.task).status()})
         return state
