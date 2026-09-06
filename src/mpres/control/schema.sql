@@ -1,0 +1,99 @@
+PRAGMA user_version = 2;
+CREATE TABLE task (
+    singleton INTEGER PRIMARY KEY CHECK (singleton=1), title TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('draft','running','paused','completed')),
+    created_at TEXT NOT NULL, presented_json TEXT, author_slots_limit INTEGER, config_id INTEGER REFERENCES configs(id)
+);
+CREATE TABLE configs (
+    id INTEGER PRIMARY KEY, settings_json TEXT NOT NULL, runtime_json TEXT NOT NULL,
+    task_text TEXT NOT NULL, task_digest TEXT NOT NULL,
+    confirmed_by TEXT NOT NULL, confirmed_at TEXT NOT NULL
+);
+CREATE TRIGGER immutable_config_update BEFORE UPDATE ON configs BEGIN
+    SELECT RAISE(ABORT, 'confirmed configuration is immutable'); END;
+CREATE TRIGGER immutable_config_delete BEFORE DELETE ON configs BEGIN
+    SELECT RAISE(ABORT, 'confirmed configuration is immutable'); END;
+CREATE TABLE plan_items (
+    id INTEGER PRIMARY KEY, config_id INTEGER NOT NULL REFERENCES configs(id),
+    presentation TEXT NOT NULL, unit TEXT NOT NULL, deck_title TEXT NOT NULL,
+    title TEXT NOT NULL, ordinal INTEGER NOT NULL, brief TEXT NOT NULL,
+    sources_json TEXT NOT NULL, UNIQUE(config_id,presentation,unit), UNIQUE(config_id,ordinal)
+);
+CREATE TABLE jobs (
+    id TEXT PRIMARY KEY, key TEXT NOT NULL UNIQUE, config_id INTEGER NOT NULL REFERENCES configs(id),
+    plan_item_id INTEGER REFERENCES plan_items(id), presentation TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('write','assemble','edit','review','revise','gate','release','diagnose')),
+    family TEXT CHECK(family IN ('planner','author','reviewer')),
+    round INTEGER NOT NULL DEFAULT 0, channel TEXT NOT NULL DEFAULT '',
+    input_artifact_id TEXT REFERENCES artifacts(id),
+    state TEXT NOT NULL DEFAULT 'queued' CHECK(state IN ('queued','running','succeeded','failed','blocked')),
+    created_at TEXT NOT NULL, UNIQUE(presentation,kind,plan_item_id,round,channel,input_artifact_id)
+);
+CREATE TABLE dependencies (
+    job_id TEXT NOT NULL REFERENCES jobs(id), needs_id TEXT NOT NULL REFERENCES jobs(id),
+    PRIMARY KEY(job_id,needs_id), CHECK(job_id<>needs_id)
+);
+CREATE TABLE sessions (
+    id TEXT PRIMARY KEY, family TEXT NOT NULL CHECK(family IN ('planner','author','reviewer')),
+    model TEXT NOT NULL, effort TEXT NOT NULL CHECK(effort IN ('low','medium','high','max')),
+    state TEXT NOT NULL DEFAULT 'open' CHECK(state IN ('open','uncertain','closed')),
+    receipt TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE attempts (
+    id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id),
+    session_id TEXT REFERENCES sessions(id), sequence INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('reserved','running','uncertain','succeeded','failed')),
+    started_at TEXT NOT NULL, finished_at TEXT, provider_receipt TEXT,
+    result_json TEXT, error TEXT, UNIQUE(job_id,sequence)
+);
+CREATE UNIQUE INDEX one_live_job ON attempts(job_id) WHERE state IN ('reserved','running','uncertain');
+CREATE UNIQUE INDEX one_live_session ON attempts(session_id) WHERE session_id IS NOT NULL AND state IN ('reserved','running','uncertain');
+CREATE TABLE participation (
+    session_id TEXT NOT NULL REFERENCES sessions(id), presentation TEXT NOT NULL,
+    kind TEXT NOT NULL, round INTEGER NOT NULL, channel TEXT NOT NULL,
+    PRIMARY KEY(session_id,presentation,kind,round,channel)
+);
+CREATE TABLE artifacts (
+    id TEXT PRIMARY KEY, attempt_id TEXT REFERENCES attempts(id), presentation TEXT NOT NULL,
+    unit TEXT, path TEXT NOT NULL UNIQUE, entrypoint TEXT NOT NULL DEFAULT 'presentation.md', created_at TEXT NOT NULL,
+    origin TEXT NOT NULL CHECK(origin IN ('submission','import','assembly')),
+    verified INTEGER NOT NULL DEFAULT 0 CHECK(verified IN (0,1))
+);
+CREATE TABLE checks (
+    id INTEGER PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+    name TEXT NOT NULL, success INTEGER NOT NULL CHECK(success IN (0,1)),
+    detail_json TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE findings (
+    id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id),
+    artifact_id TEXT NOT NULL REFERENCES artifacts(id), channel TEXT NOT NULL,
+    detail_json TEXT NOT NULL, resolution_json TEXT
+);
+CREATE TABLE decisions (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, presentation TEXT,
+    detail_json TEXT NOT NULL, resolved_at TEXT, answer TEXT
+);
+CREATE TABLE events (
+    id INTEGER PRIMARY KEY, kind TEXT NOT NULL, job_id TEXT REFERENCES jobs(id),
+    detail_json TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE TABLE usage (
+    attempt_id TEXT NOT NULL REFERENCES attempts(id), call_id TEXT NOT NULL,
+    input_tokens INTEGER CHECK(input_tokens>=0), cached_input_tokens INTEGER CHECK(cached_input_tokens>=0),
+    output_tokens INTEGER CHECK(output_tokens>=0), reasoning_tokens INTEGER CHECK(reasoning_tokens>=0),
+    total_tokens INTEGER CHECK(total_tokens>=0), created_at TEXT NOT NULL,
+    PRIMARY KEY(attempt_id,call_id),
+    CHECK(cached_input_tokens IS NULL OR input_tokens IS NULL OR cached_input_tokens<=input_tokens)
+);
+CREATE UNIQUE INDEX one_unit_write ON jobs(plan_item_id) WHERE kind='write';
+
+CREATE TABLE pool_slots (
+    id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL CHECK(kind IN ('write','edit','review')),
+    channel TEXT NOT NULL, family TEXT NOT NULL, model TEXT NOT NULL, effort TEXT NOT NULL,
+    ordinal INTEGER NOT NULL, session_id TEXT UNIQUE REFERENCES sessions(id),
+    state TEXT NOT NULL CHECK(state IN ('pending','creating','ready','uncertain'))
+);
+CREATE TABLE runtime_host (
+    singleton INTEGER PRIMARY KEY CHECK(singleton=1), report_json TEXT NOT NULL, observed_at TEXT NOT NULL
+);

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.9
+
+Mechanical semantic-job runner with observed host inventory, persistent pool admission, fixed runtime execution receipts, bounded packets, no blind external retries, and JSON-stdio/bridge adapters. Full deck release pipeline remains disabled pending gate migration.
+
+## 0.6.8
+
+Compact relational task/config/job/attempt storage, fixed runtime binding, immutable content revisions, token null handling and read-only legacy import. New default CLI; no duplicate writable state for compact tasks. Automated runner remains the next stage.
+
+
 ## 0.6.7
 
 - Added create-if-absent assignment taskbooks and structured contract scaffolds; retries preserve existing planner and worker bytes.

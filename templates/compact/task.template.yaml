@@ -1,0 +1,28 @@
+schema_version: 1
+engine: compact
+title: Untitled course
+# These are user-confirmed upper bounds, not promises to spawn that many sessions.
+delivery: all
+author_concurrency: 4
+max_attempts: 2
+context_budget_bytes: 262144
+provider_timeout_seconds: 1200
+# Empty means the host's real capacity is unknown; the runner must not spawn.
+provider:
+  mode: bridge
+  command: []
+  handle_limit: null
+  external_handles: 0
+  recovery_reserve: 2
+  supports_close: false
+  supports_reset: false
+# Each unit is one semantic writing job, not six process-document stages.
+presentations: []
+# Example:
+# - id: p01
+#   title: Vectors and economic quantities
+#   units:
+#   - id: l01
+#     title: Coordinates and units
+#     brief: Explain coordinates as quantities with units. Include an example and diagnostic question.
+#     sources: [sources/chapter-1.txt]

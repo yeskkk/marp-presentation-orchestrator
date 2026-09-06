@@ -73,6 +73,8 @@ def task_path(root: Path, slug: str) -> Path:
     tasks_root = (root / "tasks").resolve()
     if tasks_root not in path.parents:
         raise MPresError("Task path escaped tasks directory.")
+    if (path / ".mpres" / "task.sqlite3").is_file():
+        raise MPresError("This task uses the compact SQLite engine. Legacy commands may not read or write its state.")
     return path
 
 

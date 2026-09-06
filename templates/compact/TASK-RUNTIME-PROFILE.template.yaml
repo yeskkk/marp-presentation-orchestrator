@@ -1,0 +1,29 @@
+schema_version: 1
+selection_scope: task
+user_editable_until_task_confirmation: true
+immutable_after_task_confirmation: true
+runtime_changes_during_task: forbidden
+
+# The user edits this task-local file before confirming TASK.md.
+# Agents may read these choices but must never choose, escalate, downgrade,
+# substitute, or rewrite them during production.
+defaults:
+  planner:
+    model: gpt-5.6-sol
+    reasoning_effort: high
+  author:
+    model: gpt-5.6-sol
+    reasoning_effort: medium
+  reviewer:
+    model: gpt-5.6-sol
+    reasoning_effort: low
+
+# Optional user-authored refinements. These are resolved deterministically.
+role_overrides: {}
+# Example chosen by the user before confirmation:
+# role_overrides:
+#   diagnostic-reviewer:
+#     model: luna
+#     reasoning_effort: medium
+reviewer_channel_overrides: {}
+presentation_overrides: {}
