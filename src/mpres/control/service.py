@@ -31,7 +31,7 @@ def require_text(value: Any, label: str) -> str:
 def settings_document(value: Any) -> dict:
     if not isinstance(value, dict):
         raise MPresError('task.yaml must be a mapping')
-    allowed = {'schema_version','engine','title','delivery','author_concurrency','max_attempts','provider','presentations','context_budget_bytes','provider_timeout_seconds'}
+    allowed = {'schema_version','engine','title','delivery','author_concurrency','max_attempts','provider','presentations','context_budget_bytes','provider_timeout_seconds','quality','workflow'}
     if set(value) - allowed:
         raise MPresError(f'Unknown task settings: {sorted(set(value)-allowed)}')
     if value.get('schema_version') != 1 or value.get('engine') != 'compact':
@@ -62,6 +62,16 @@ def settings_document(value: Any) -> dict:
     for key in ('context_budget_bytes','provider_timeout_seconds'):
         if key in value and (type(value[key]) is not int or value[key]<1):
             raise MPresError(f'{key} must be a positive integer')
+    if value.get('workflow', 'authoring') not in {'authoring', 'full'}:
+        raise MPresError('workflow must be authoring or full')
+    quality = value.get('quality')
+    if quality is not None:
+        if not isinstance(quality, dict) or set(quality) != {'browser', 'timeout_seconds'}:
+            raise MPresError('quality requires browser and timeout_seconds only')
+        if quality['browser'] not in {'auto', 'chrome', 'firefox'}:
+            raise MPresError('Unsupported Marp browser')
+        if type(quality['timeout_seconds']) is not int or not 1 <= quality['timeout_seconds'] <= 7200:
+            raise MPresError('quality.timeout_seconds must be 1..7200')
     decks = value.get('presentations')
     if not isinstance(decks, list) or not decks:
         raise MPresError('Supply a semantic course plan in task.yaml before presenting')
@@ -89,6 +99,8 @@ def settings_document(value: Any) -> dict:
             require_text(unit['brief'], 'unit semantic brief')
             if not isinstance(unit['sources'],list) or any(not isinstance(x,str) or not x.startswith('sources/') for x in unit['sources']):
                 raise MPresError('Sources must be task-relative sources/ paths')
+    from .semantic import validate
+    validate('plan', {'presentations': decks})
     return value
 
 
@@ -270,6 +282,8 @@ class Service:
             job = conn.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
             if job is None:
                 raise MPresError('Unknown job ID; no state has been written')
+            if conn.execute('SELECT status FROM task').fetchone()[0] != 'running':
+                raise MPresError('Task is paused or completed')
             if job['state'] != 'queued':
                 raise MPresError('Job is not queued')
             if job['kind']=='write':
@@ -331,6 +345,9 @@ class Service:
         require_text(result.get('summary'),'semantic summary')
         attempt = self.attempt(attempt_id)
         job = self.job(attempt['job_id'])
+        from .semantic import validate, result_schema_name
+        if job['family'] is not None:
+            validate(result_schema_name(job['kind']), result)
         canonical = encode(result)
         if source is not None:
             if not source.resolve().is_relative_to(self.task):
@@ -359,6 +376,8 @@ class Service:
             raise MPresError('Author/edit result requires its source directory with presentation.md')
         if not needs_source and source is not None:
             raise MPresError('A reviewer or diagnostic worker cannot replace source')
+        from .workflow import validate_result
+        validate_result(self, job, result, source)
         artifact = None
         if source is not None:
             if not source.resolve().is_relative_to(self.task):
@@ -374,6 +393,14 @@ class Service:
                     if row['result_json'] != canonical:
                         raise MPresError('Conflicting concurrent result')
                     if artifact:
+                        previous=conn.execute('SELECT path FROM artifacts WHERE attempt_id=?',(attempt_id,)).fetchone()
+                        if not previous:
+                            raise MPresError('Concurrent submission source differs')
+                        old_root=self.task/previous['path'];new_root=self.task/artifact[1]
+                        old_files={p.relative_to(old_root).as_posix():p.read_bytes() for p in old_root.rglob('*') if p.is_file()}
+                        new_files={p.relative_to(new_root).as_posix():p.read_bytes() for p in new_root.rglob('*') if p.is_file()}
+                        if old_files!=new_files:
+                            raise MPresError('Concurrent submission source differs')
                         remove_tree(self.task/artifact[1])
                     return {'attempt_id':attempt_id,'already_submitted':True}
                 if row['state'] not in {'running','uncertain'}:
@@ -394,6 +421,10 @@ class Service:
                     p = conn.execute('SELECT unit FROM plan_items WHERE id=?',(job['plan_item_id'],)).fetchone()
                     conn.execute('INSERT INTO artifacts(id,attempt_id,presentation,unit,path,created_at,origin) VALUES(?,?,?,?,?,?,?)',
                                  (artifact[0],attempt_id,job['presentation'],p['unit'] if p else None,artifact[1],utc_now(),'submission'))
+                if job['kind']=='revise' and artifact and result.get('resolutions') is not None:
+                    for resolution in result['resolutions']:
+                        conn.execute('UPDATE findings SET resolution_json=? WHERE id=?',
+                                     (encode({**resolution, 'artifact_id': artifact[0], 'attempt_id': attempt_id}), resolution['finding_id']))
                 conn.execute("UPDATE attempts SET state='succeeded',result_json=?,finished_at=? WHERE id=?",(canonical,utc_now(),attempt_id))
                 conn.execute("UPDATE jobs SET state='succeeded' WHERE id=?",(job['id'],))
                 conn.execute("UPDATE sessions SET state='open' WHERE id=? AND state='uncertain'",(row['session_id'],))

@@ -20,7 +20,7 @@ def host(handles=(),limit=16):
 
 def ready(compact_root,count=6,limit=16,concurrency=6):
     service=Service.create(compact_root,'runner','Vectors')
-    config=read_yaml(service.task/'task.yaml')
+    config=read_yaml(service.task/'task.yaml'); config['workflow']='authoring'
     config['author_concurrency']=concurrency
     config['provider']['handle_limit']=limit
     config['provider']['external_handles']=1
@@ -191,14 +191,14 @@ def test_stale_capability_receipt_blocks_admission(compact_root):
 def test_database_v1_upgrade_preserves_confirmed_profile(compact_root):
     service=prepare(compact_root)
     before=service.store.rows('SELECT * FROM configs')
-    c=service.store.connect();c.execute('DROP TABLE runtime_host');c.execute('DROP TABLE pool_slots');c.execute('ALTER TABLE task DROP COLUMN author_slots_limit');c.execute('PRAGMA user_version=1');c.close()
+    c=service.store.connect();c.execute('DROP TABLE releases');c.execute('DROP TABLE decks');c.execute('DROP TABLE gate_runs');c.execute('DROP TABLE runtime_host');c.execute('DROP TABLE pool_slots');c.execute('ALTER TABLE task DROP COLUMN author_slots_limit');c.execute('PRAGMA user_version=1');c.close()
     assert service.store.rows('SELECT * FROM configs')==before
-    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==2;c.close()
+    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==4;c.close()
 
 
 def test_command_adapter_runs_jobs_without_main_scheduling(compact_root,tmp_path):
     service=Service.create(compact_root,'command','Command fixture')
-    config=read_yaml(service.task/'task.yaml')
+    config=read_yaml(service.task/'task.yaml'); config['workflow']='authoring'
     config['provider'].update(mode='command',command=[sys.executable,str(Path(__file__).with_name('fake_provider.py')),str(tmp_path/'provider.sqlite3')],handle_limit=16,external_handles=1)
     config['presentations']=[{'id':'p01','title':'Test','units':[{'id':f'l{i}','title':'Unit','brief':'Explain one semantic point.','sources':[]} for i in range(3)]}]
     write_yaml_atomic(service.task/'task.yaml',config);service.present();service.confirm('user')
@@ -235,7 +235,7 @@ def test_concurrency_guard_is_inside_binding_transaction(compact_root):
 
 def test_runtime_overrides_reserve_distinct_future_reviewer_slots(compact_root):
     service=Service.create(compact_root,'overrides','Overrides')
-    config=read_yaml(service.task/'task.yaml');config['provider']['handle_limit']=16
+    config=read_yaml(service.task/'task.yaml'); config['workflow']='authoring';config['provider']['handle_limit']=16
     config['presentations']=[{'id':'p01','title':'Test','units':[{'id':'l01','title':'Lesson','brief':'Explain dimensions.','sources':[]}]}]
     profile=read_yaml(service.task/'TASK-RUNTIME-PROFILE.yaml')
     profile['reviewer_channel_overrides']['domain_accuracy']={'model':'luna','reasoning_effort':'medium'}

@@ -1,4 +1,4 @@
-PRAGMA user_version = 2;
+PRAGMA user_version = 4;
 CREATE TABLE task (
     singleton INTEGER PRIMARY KEY CHECK (singleton=1), title TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('draft','running','paused','completed')),
@@ -96,4 +96,25 @@ CREATE TABLE pool_slots (
 );
 CREATE TABLE runtime_host (
     singleton INTEGER PRIMARY KEY CHECK(singleton=1), report_json TEXT NOT NULL, observed_at TEXT NOT NULL
+);
+
+CREATE TABLE gate_runs (
+    id TEXT PRIMARY KEY, artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+    level TEXT NOT NULL CHECK(level IN ('source','full')),
+    sequence INTEGER NOT NULL, state TEXT NOT NULL CHECK(state IN ('running','passed','failed','interrupted')),
+    started_at TEXT NOT NULL, finished_at TEXT, detail_json TEXT, pdf_path TEXT,
+    UNIQUE(artifact_id,level,sequence)
+);
+CREATE UNIQUE INDEX one_active_gate ON gate_runs(artifact_id,level) WHERE state='running';
+
+CREATE TABLE decks (
+ presentation TEXT PRIMARY KEY, config_id INTEGER NOT NULL REFERENCES configs(id), ordinal INTEGER NOT NULL UNIQUE,
+ phase TEXT NOT NULL CHECK(phase IN ('units','editing','preflight','reviewing','revising','postflight','releasing','delivered','blocked')),
+ candidate_id TEXT REFERENCES artifacts(id), frozen_id TEXT REFERENCES artifacts(id), active_job_id TEXT REFERENCES jobs(id),
+ repair_count INTEGER NOT NULL DEFAULT 0, blocked_from TEXT, block_reason TEXT, delivered_at TEXT
+);
+CREATE TABLE releases (
+ presentation TEXT PRIMARY KEY REFERENCES decks(presentation), artifact_id TEXT NOT NULL REFERENCES artifacts(id),
+ gate_id TEXT NOT NULL REFERENCES gate_runs(id), pdf_path TEXT NOT NULL UNIQUE,
+ state TEXT NOT NULL CHECK(state IN ('prepared','committed')), created_at TEXT NOT NULL, committed_at TEXT
 );

@@ -1,24 +1,16 @@
 # Agent entry
 
-Read README.md for architecture and current implementation boundaries.
+Read README.md for the architecture and real implementation boundaries.
+The user confirms TASK.md, task.yaml and TASK-RUNTIME-PROFILE.yaml; never choose or
+change their model/effort. AI owns semantic planning, writing, editing, independent
+review and diagnosis. The runner owns routine execution, gates, status and release.
 
-For a new task use the compact `mpres task` interface. The user edits and confirms
-TASK.md, task.yaml and TASK-RUNTIME-PROFILE.yaml. Never choose or change runtime
-on the user's behalf. Semantic work means planning, writing, editing, independent
-review or diagnosis. Do not generate assignment triplets, stage essays, registry
-projections, or self-declared gate receipts. Submit content and semantic results.
+Only six semantic skills are active. A job packet already contains its one guide,
+its result schema and bounded inputs. Do not read all skills or legacy instructions.
+Do not generate process records, assign job identities, schedule work or assert
+mechanical success. Provider receipts and token counters must be genuine.
 
-The database generates job/attempt identities. Use only IDs returned by the
-service. Execution/creation receipts must come from the actual provider. Do not
-invent close support, released capacity, gate success, token counts or completion.
-
-Legacy commands are explicitly opt-in and cannot address a compact task. Legacy
-operating instructions in docs/legacy are for unconverted old tasks only; the old
-management skills are not required inputs for compact jobs.
-
-This is a staged refactor. In v0.6.9 the compact data and semantic-job runner
-are operational. Use runner commands rather than making scheduling decisions in
-model turns. Command mode requires a real user-configured JSON adapter; bridge mode
-forwards exact requests and actual receipts. A test adapter is not a real provider.
-Full deck gate/review/revision/release integration is still a following stage.
-Never claim accepted writing jobs are validated or finalized presentations.
+Use the installed compact CLI or start scripts. They do not launch a model or
+turn off approval/sandbox policy. Main responds to semantic decisions or explicit
+user feedback, not healthy polling events. Unknown execution must be reconciled.
+A deterministic fixture test is not native-browser or model-quality validation.

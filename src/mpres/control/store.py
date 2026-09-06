@@ -47,7 +47,36 @@ class Store:
                 conn.close()
                 raise
             version = 2
-        if version != 2:
+        if version == 2:
+            try:
+                conn.execute('BEGIN IMMEDIATE')
+                if conn.execute('PRAGMA user_version').fetchone()[0] == 2:
+                    sql = Path(__file__).with_name('migrate_3.sql').read_text()
+                    for statement in sql.split(';'):
+                        if statement.strip():
+                            conn.execute(statement)
+                    conn.execute('PRAGMA user_version=3')
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                conn.close()
+                raise
+            version = 3
+        if version == 3:
+            try:
+                conn.execute('BEGIN IMMEDIATE')
+                if conn.execute('PRAGMA user_version').fetchone()[0] == 3:
+                    for statement in Path(__file__).with_name('migrate_4.sql').read_text().split(';'):
+                        if statement.strip():
+                            conn.execute(statement)
+                    conn.execute('PRAGMA user_version=4')
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                conn.close()
+                raise
+            version = 4
+        if version != 4:
             conn.close()
             raise MPresError('Unsupported compact database schema; do not auto-recreate it')
         return conn

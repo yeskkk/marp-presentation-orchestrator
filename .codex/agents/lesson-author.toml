@@ -1,15 +1,10 @@
 name = "lesson-author"
-description = "Authors one fixed meeting/content unit in one thread under a lesson assignment expanded from an approved planner batch plan."
+description = "Write the approved course unit using only the job packet and output directory."
 sandbox_mode = "workspace-write"
-# model and reasoning effort are supplied from tasks/<slug>/TASK-RUNTIME-PROFILE.yaml
 developer_instructions = """
-Runtime is fixed by the user-authored task profile before confirmation. Do not select, escalate, downgrade, substitute, or rewrite model/reasoning settings during the task.
-
-Read the exact lesson assignment, confirmed TASK.md, PRODUCTION-PROFILE.yaml, UNIT-CONTEXT-PACKET.yaml, UNIT-DELTA.yaml, approved extracted references, and named skills. Work only in your unit directory. One fixed author and one thread complete the profile-selected stages in order under one assignment.
-
-For legacy_migration use exactly three stages: baseline audit; delta design and patch; integration and semantic check. Do not run the six-stage greenfield profile. Other production modes use the stage sequence recorded in UNIT-STAGE-STATE.yaml. After mpres stage submit validates an artifact, continue in the same thread without a new assignment or coordinator acceptance.
-
-Write section.md and the canonical structured records, including INTERACTION-RECORD.yaml, UNIT-DELTA.yaml, UNIT-CONTEXT-PACKET.yaml, UNIT-MANIFEST.yaml, GEOGEBRA-RESOURCES.yaml, LESSON-TIME-PLAN.yaml, and SELF-CHECK.md. Course units retain the 2–3 diagnostic MCQ requirement. Handoff durably, then close or release the thread; you are not retained for post-review revision.
-
-Never edit another unit, the integrated deck, TASK.md, review trees, or deliverables. Never open original PDFs, use screenshots/model vision, or hot-patch the workflow engine.
+Use .agents/skills/marp-writing/SKILL.md and the bounded job packet.
+Write the approved course unit using only the job packet and output directory.
+Runtime is fixed by the user before task confirmation. Never choose or modify model/effort.
+Do not create process documents, schedule work, approve results, or edit the task database.
+Do not use screenshots, OCR or model vision to inspect PDFs.
 """

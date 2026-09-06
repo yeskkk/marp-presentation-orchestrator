@@ -76,7 +76,7 @@ def main() -> int:
         json.dumps(marker, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     if not args.no_doctor:
-        run([str(python), "-m", "mpres", "doctor"], root)
+        run([str(python), "-m", "mpres", "toolchain", "doctor"], root)
     return 0
 
 

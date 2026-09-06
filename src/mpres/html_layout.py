@@ -52,14 +52,13 @@ _LAYOUT_SCRIPT = r"""
   ];
   const slides = [...new Set(candidates)];
   function stableSlideId(slide, index) {
-    if (slide.id) return slide.id;
     const walker = document.createTreeWalker(slide, NodeFilter.SHOW_COMMENT);
     let node;
     while ((node = walker.nextNode())) {
       const match = String(node.nodeValue || '').match(/slide-id:\s*([^\s]+)/i);
       if (match) return match[1];
     }
-    return `slide-${index + 1}`;
+    return slide.id || `slide-${index + 1}`;
   }
   return slides.map((slide, index) => {
     const style = getComputedStyle(slide);

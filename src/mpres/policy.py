@@ -237,9 +237,10 @@ def policy_audit(root: Path, slug: str) -> dict[str, Any]:
         "Project Codex config must not hard-code a default subagent runtime.",
         errors,
     )
+    # Legacy task records can retain a historical coordinator identity, but
+    # it is no longer an active Codex role required for mechanical compatibility.
     required_agent_configs = {
         "delegated-planner",
-        "author-coordinator",
         "lesson-author",
         "deck-revision-author",
         "specialist-reviewer",

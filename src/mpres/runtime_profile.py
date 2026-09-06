@@ -17,6 +17,7 @@ ROLE_FAMILIES = {
     "lesson-author": "author",
     "deck-revision-author": "author",
     "maintenance-author": "author",
+    "resource-designer": "author",
     "reviewer": "reviewer",
     "specialist-reviewer": "reviewer",
     "diagnostic-reviewer": "reviewer",

@@ -1,5 +1,7 @@
 schema_version: 1
 engine: compact
+# New tasks run the complete deck lifecycle; authoring is an explicit draft-only option.
+workflow: full
 title: Untitled course
 # These are user-confirmed upper bounds, not promises to spawn that many sessions.
 delivery: all
@@ -7,6 +9,9 @@ author_concurrency: 4
 max_attempts: 2
 context_budget_bytes: 262144
 provider_timeout_seconds: 1200
+quality:
+  browser: auto
+  timeout_seconds: 1800
 # Empty means the host's real capacity is unknown; the runner must not spawn.
 provider:
   mode: bridge

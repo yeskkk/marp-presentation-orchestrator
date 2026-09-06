@@ -1,0 +1,9 @@
+/* @theme mathist-academic */
+section {
+  width: 1280px; height: 720px; padding: 64px 72px;
+  font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
+  font-size: 30px; line-height: 1.4; background: white; color: #183044;
+}
+h1 { font-size: 52px; } h2 { font-size: 40px; }
+section.support { border-left: 10px solid #68878f; }
+img { max-width: 100%; max-height: 460px; }

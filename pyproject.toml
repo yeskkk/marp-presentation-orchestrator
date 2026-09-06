@@ -4,13 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "marp-presentation-orchestrator"
-version = "0.6.9"
+version = "0.6.12"
 description = "A Codex + Marp workflow for parallel authoring, production profiles, critical-path scheduling, one mandatory full-deck review, and PDF-only delivery."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Project scaffold generated for the user" }]
 dependencies = [
+  "jsonschema>=4.23",
   "beautifulsoup4>=4.12",
   "Pillow>=11.0",
   "playwright>=1.48,<2",

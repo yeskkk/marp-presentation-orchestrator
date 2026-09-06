@@ -23,7 +23,7 @@ def compact_root(tmp_path):
 
 def prepare(root, slug='sample', count=2):
     service=Service.create(root,slug,'Vectors')
-    settings=read_yaml(service.task/'task.yaml')
+    settings=read_yaml(service.task/'task.yaml'); settings['workflow']='authoring'
     settings['presentations']=[{'id':'p01','title':'Vectors','units':[
         {'id':f'l{i+1:02d}','title':f'Meeting {i+1}', 'brief':'Explain quantities, units and a worked example.','sources':[]}
         for i in range(count)]}]
@@ -79,7 +79,7 @@ def test_fixed_defaults_and_confirmation(compact_root):
 
 def test_presented_config_cannot_change_silently(compact_root):
     service=prepare(compact_root)
-    settings=read_yaml(service.task/'task.yaml');settings['author_concurrency']=5
+    settings=read_yaml(service.task/'task.yaml'); settings['workflow']='authoring';settings['author_concurrency']=5
     write_yaml_atomic(service.task/'task.yaml',settings)
     with pytest.raises(MPresError):service.confirm('user')
 

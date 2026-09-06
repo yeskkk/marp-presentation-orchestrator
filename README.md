@@ -1,121 +1,123 @@
 # Marp Presentation Orchestrator
 
-这个项目把教材、教学意图和少量人工决策转化为 Marp 课件。目标不是让 main
-agent 学会操作大量流程文档，而是让 Python 管理运行，AI 只负责教学语义。
+把教材、教学目标与用户确认的课程计划转化为 Marp 课件。Python 负责运行事实和机械
+检查，AI 负责教学语义；不要求 main agent 阅读大量过程文档后逐条操作流程。
 
-**当前发布阶段：v0.6.9。** 新任务已使用关系型 SQLite；作业运行器可以按已批准
-计划机械领取、启动、接收结果，预留后续审核／编辑容量，并拒绝不明确的外部状态。
-本版接通的是「语义作业执行循环」，**尚未接通整稿 gate → 冻结 → 审核 → 修订 →
-PDF 发布的全自动编排**。源码提交成功不等于课件验收或发布成功。该边界是有意保留
-的，避免将尚未迁移的完整质量门禁绕过。旧生产接口仍显式使用 `legacy`，不能与
-新任务的状态混写。
+**版本 v0.6.12：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
+修订 → 再次完整门禁 → PDF 发布。** 运行器不把源码提交等同于交付；缺少原生渲染工具、
+审核回执、finding 处置或明确宿主状态时都会停止。当前验收覆盖确定性适配器和失败分支，
+尚未在本交付环境验证真实模型与固定 Marp 浏览器的端到端输出质量。
 
-## 1. 谁负责什么
+## 1. 完整流程：每一步做什么
 
-用户与 main agent 确定受众、先修知识、课次安排、教学范围和交付方式。用户在
-任务开始前编辑模型配置。确认后，程序使用这份固定配置，不根据难度、置信度、
-预算或重试次数改变模型和推理强度。
-
-AI 的工作是规划、课次写作、整稿编辑、五通道语义审核和问题诊断。作业身份、
-会话登记、重复提交、检查记录、耗时、token 和发布状态属于程序职责，不要求 AI
-再写一套 request/brief/decision 文件。没有模型型 review/release coordinator。
-
-## 2. 整体流程与本版已经接通的步骤
-
-| 步骤 | 如何运作 | v0.6.9 状态 |
+| 步骤 | 执行者与工作方式 | 当前实现 |
 |---|---|---|
-| 创建任务 | 生成三份用户入口和一份 SQLite 数据库 | 已实现 |
-| 编写教学计划 | 在 task.yaml 中列出 deck、课次 brief 和获准资料；AI 可帮助形成语义内容 | 已实现校验 |
-| 展示与确认 | 同时展示 TASK、非模型设置、runtime；用户确认后在数据库保存快照 | 已实现 |
-| 实例化作业 | 从已批准课次生成数据库 job ID；重复运行不重复创建 | 已实现 |
-| 宿主与容量 | 读取实际 inventory/limit/usage 能力，计算覆盖五 reviewer 和编辑者的持久池；并发只是上限 | 已实现 |
-| 会话绑定与执行 | runner 生成精确请求，程序或宿主转发；短事务检查身份、固定 runtime 和独立性 | 已实现 |
-| 内容提交 | 执行回执 + 语义结果 + 实际源码；保存只读修订，重复提交不重复推进 | 已实现 |
-| 源码与布局验收 | 复用原有 Marp、数学、HTML DOM、PDF 机械检查 | 原有能力保留；新 runner 下一阶段接入 |
-| 整稿编辑与冻结 | 程序收集单元，必要时启动短时编辑，不设常驻协调员 | 下一阶段 |
-| 五通道完整审核 | 五个不同、独立的 reviewer 读取同一个冻结版本 | 数据约束已实现；自动调度下一阶段 |
-| 修订与发布 | findings 路由 → 编辑 → 完整门禁 → PDF 交付 | 下一阶段 |
+| 需求与课程规划 | 用户和规划 AI 确定听众、先修、按第几节课组织的 brief、核心与补充内容 | 用户入口和校验已实现 |
+| 展示、确认配置 | 程序展示三份入口；用户明确确认后保存不可变配置快照 | 已实现 |
+| 创建作业 | 从已批准 plan item 生成数据库 job ID、依赖和课次坐标 | 已实现 |
+| 容量准入 | 宿主实际 inventory 与用户上限取更严格值；预算作者、五 reviewer、编辑者和恢复余量 | 已实现 |
+| 写作与提交 | runner 领取作业，发精确 JSON 请求，接实际回执、源码和 usage | 已实现 |
+| 单元源码门禁 | runner 下次 tick 对新修订运行源码、TeX 和资产边界检查 | 已实现 |
+| 整稿组装与语义编辑 | 程序组装，短时编辑作业判断叙事与教学衔接，不设常驻 coordinator | 已实现 |
+| 完整机械门禁 | 指定源码修订 → 临时 HTML/DOM → 数学渲染 → PDF 结构和文本边界检查 | 已实现 `artifact inspect --level full` |
+| 冻结与专项审核 | 五个不同且独立的 reviewer 阅读同一冻结稿；不做模型型审核协调 | 已实现 |
+| 修订与再次门禁 | findings 送给作者，生成新修订；旧稿门禁不能批准新稿 | 已实现 |
+| 发布与暂停 | 仅对合格版本发布 PDF；按 all/pilot/each 决定继续或请求用户反馈 | 已实现 |
 
-在 command 适配器模式下，本版已经无需 main 逐个选择、拼装和批准作业控制命令。
-bridge 模式仍需要宿主转发精确请求和回执，但不需要 main 重新计算调度决策。
-整稿生命周期自动推进继续留给下一独立阶段；不能提前宣布整套重构已经完成。
+新建任务默认 `workflow: full`。程序只有将对应 PDF 发布记录提交为 committed 后才
+标为 delivered；所有 deck 都完成才将任务标为 completed。`workflow: authoring` 是明确的
+只写稿模式，永不自动发布。旧 v0.6.8—v0.6.10 配置没有 workflow 字段时按 authoring
+兼容，不能悄悄给旧确认追加审核与发布授权；需要完整流程时新建任务或只读导入后确认。
 
-## 3. 目录和代码结构
+## 2. 职责划分与固定运行配置
+
+main agent 只处理需求、教学范围和不能机械解决的语义问题。runner 管作业身份、
+依赖、句柄、容量、输入包、提交、检查、计时和 token。没有模型型 review-coordinator
+或 release-coordinator；不要恢复旧管理角色来驱动新入口。
+
+用户在任务确认前编辑 `TASK-RUNTIME-PROFILE.yaml`。默认 planner/author/reviewer
+分别为 sol high/medium/low，项目中的具体默认标识延续为 `gpt-5.6-sol`。
+用户应自行填宿主实际接受的模型标识。程序不推断当前有哪些模型，不依据难度、预算、
+置信度或重试切换 runtime。实际运行回执不匹配时拒收，不接受隐藏 fallback。
+
+作者并发是用户上限；容量不足时可排队、降低实际并发，但不能改模型或推理强度。
+
+## 3. 代码如何组织
 
 ```text
 src/mpres/
-  cli.py                    默认新入口；legacy 时才加载原命令行
+  cli.py                       默认新入口；显式 legacy 才加载旧入口
   control/
-    schema.sql              关系模型、外键、唯一约束、不可变配置
-    store.py                SQLite 短事务、查询和一致性数据库备份
-    service.py              配置确认、作业、绑定、提交、usage 和状态服务
-    files.py                路径检查、只读修订、可写工作副本
-    migration.py            旧任务只读导入到新目录
-    cli.py                  新任务的薄命令行适配
-    runner.py               宿主能力、持久池准入、作业领取、输入包、JSON 适配器
-  runtime_profile.py        复用已验证的静态模型配置解析
-  marp_source.py            Marp 解析、源码 lint（保留）
-  html_layout.py            临时 HTML + DOM 几何检查（保留）
-  math_inspection.py        数学源码与 renderer 检查（保留）
-  pdf_inspection.py         PDF 结构、文本和边界检查（保留）
-  assets.py, references.py  资产与参考资料工具（保留）
-  legacy_cli.py             原 v0.6.7 命令行；仅用于旧式任务
-  ...                       原生产模块，等待逐项迁移和删除
+    cli.py                     参数解析和结构化输出，不包含语义判断
+    schema.sql                 关系、外键、唯一约束和不可变配置
+    migrate_3.sql, migrate_4.sql 旧 schema 的原子增量迁移
+    store.py                   短事务、查询、一致性数据库备份
+    service.py                 确认、作业、绑定、提交、usage 和状态
+    runner.py                  实际宿主证据、池准入、领取、输入包、JSON 适配器
+    quality.py                 源码/full gate、修订绑定、并发幂等、失败与恢复
+    workflow.py                固定整稿状态机、组装、审核证明、finding 处置、发布
+    theme.css                  实际课件样式；写作输出预置同一份 theme
+    semantic.py                四个语义 schema 的真实验证；每类作业只注入对应语义指南
+    schemas/                   plan、author-result、review-result、diagnosis-result
+    files.py                   安全相对路径、只读快照、可写副本
+    migration.py               旧任务只读导入
+  marp_source.py               Marp 解析、内容 lint；compact 不要求旧过程记录
+  html_layout.py              临时 HTML + DOM 几何检查；canonical ID 优先
+  math_inspection.py          TeX 结构与渲染节点检查，不证明数学正确性
+  pdf_inspection.py           页数、字体、文本、边界和异常字符检查
+  rendering.py, toolchain.py  复用固定 Marp 命令和版本校验
+  runtime_profile.py          固定配置解析
+  legacy_cli.py, ...          旧任务兼容实现，不得向新任务另建状态
 
-templates/compact/          新任务仅三份用户入口模板
-templates/{其他目录}/       旧任务兼容模板，不复制到新任务
-.agents/skills/             旧语义与管理 skills 暂存；不作为新控制面的运行依赖
-schemas/                    后续集中存放少量 AI 语义输出 schema
-scripts/                    静态验证与启动辅助，不存放 AI 调度决策
-tests/compact/              新控制面回归；旧 tests 继续保留
+templates/compact/            三份用户配置模板
+.agents/skills/               仅六个语义 skills；旧管理 skills 已删除
+scripts/                     显式安装、静态验证；启动器只调用 compact CLI
+tests/compact/               新控制面、适配器与门禁测试
+tests/                       原有回归测试保留
 ```
 
-新任务的实际布局：
+数据关系是 config → plan item → job → attempt → artifact → gate/check。
+Session 与 attempt 关联；usage、finding、decision、event 也在 SQLite 中。
+`gate_runs` 引用 artifact ID 和级别，每次明确重查有单调 sequence；报告为数据库数据，
+不是作者必须填写的 YAML。decks 保存每稿当前阶段和候选/冻结修订；releases 保存
+prepared/committed 发布记录。保留旧模块是为了复用经过测试的技术能力和读取旧任务，
+不是维护两个可写状态系统。
+
+## 4. 用户看到的任务目录
 
 ```text
 tasks/<slug>/
-  TASK.md
-  task.yaml
-  TASK-RUNTIME-PROFILE.yaml
-  sources/                   获准参考资料
-  content/                   作者可编辑的实际内容
-  deliverables/              正式交付（本版不自动发布）
+  TASK.md                       教学任务和用户确认边界
+  task.yaml                     计划与非模型参数
+  TASK-RUNTIME-PROFILE.yaml      用户自行选择的固定 runtime
+  sources/                      获准教材文本和数据
+  content/                      人工或作者编辑的实际内容
+  deliverables/                 已审核并经门禁的 PDF
   .mpres/
-    task.sqlite3             唯一运行事实源
-    artifacts/<revision>/    已提交／导入的只读内容修订
-    work/<attempt>/
-      input/                 本次需要的参考文本快照
-      output/                本次实际内容输出，不是过程报告
+    task.sqlite3                唯一运行事实源
+    artifacts/<revision>/       已提交或导入的只读源码与资产
+    work/<attempt>/             本次输入快照和可写 output
+    gates/<gate-id>/            完整检查生成的 PDF；不是正式交付
 ```
 
-数据库保存 config、plan item、job、dependency、session、attempt、participation、
-artifact、check、finding、decision、event 和 usage 的关系。不会再把两份整块 JSON
-作为全部状态，也不再生成可写 JSON/YAML 登记投影。大型资产仍在文件系统。
+不生成 assignment 三联单、THREAD-REGISTRY.yaml、STAGE-ARTIFACT.md 或 SELF-CHECK.md。
+状态用命令查询，需要人工归档时才重定向输出。只读权限是防误写措施，不是同一系统
+用户之间的安全沙箱。请在独立工作账户或容器内运行外部作者与渲染器。
 
-## 4. 安装和使用
+## 5. 安装、创建、确认
 
-Python 需要 3.11 或以上。完整 Marp 生产还需要项目 `package.json` 固定的 Marp CLI、
-Node.js 和可用浏览器。不要升级 Marp 版本来掩盖任务故障。
+需要 Python 3.11+；完整检查需要固定版本的 Marp CLI、Node.js 和浏览器。
 
 ```bash
 python -m venv .venv
-# Linux/macOS；Windows 使用 .venv\Scripts\activate
-. .venv/bin/activate
+. .venv/bin/activate                 # Windows: .venv\Scripts\activate
 python -m pip install -e '.[dev]'
 npm install
 mpres --help
-```
-
-仅检查 Python 源码接口也可使用 `PYTHONPATH=src python -m mpres ...`；这不代表外部
-渲染器已经安装或通过验收。
-
-### 创建并确认
-
-```bash
 mpres --root . task init economics --title "面向经济学的线性代数"
 ```
 
-编辑三份入口。最小的 `task.yaml` 课次部分示例：
+先编辑三份入口。`task.yaml` 的每课 brief 必须是教学语义，不是操作指令：
 
 ```yaml
 presentations:
@@ -124,232 +126,214 @@ presentations:
     units:
       - id: l01
         title: 坐标和单位
-        brief: 从商品数量进入坐标表达，说明单位，安排一个例题和一个诊断问题。
+        brief: 从商品数量解释坐标，说明单位，安排一个例题和一个诊断问题。
         sources: [sources/chapter-1.txt]
 ```
 
-其余配置保留模板字段。`provider.handle_limit: null` 表示尚未确认宿主容量；
-这不是无限容量，后续 runner 必须在启动前拒绝未知能力。
+provider 模式、容量和命令需来自实际环境，不应猜测。`handle_limit: null` 表示未知，
+不是无限容量。`quality` 仅允许 browser 与 timeout_seconds；不提供跳过 full gate
+或注入“成功报告”的任务配置。
 
 ```bash
 mpres --root . task present economics
-# 用户已看到准确内容并明确确认后才执行：
-mpres --root . task confirm economics --by "user"
+# 用户看到准确内容并明确确认后：
+mpres --root . task confirm economics --by user
 mpres --root . task materialize economics
 mpres --root . task jobs economics
 ```
 
-默认 runtime 延续原项目：planner = `gpt-5.6-sol/high`，author =
-`gpt-5.6-sol/medium`，reviewer = `gpt-5.6-sol/low`。这是旧项目对 sol 的具体标识，
-不代表程序替用户判断服务当前有哪些模型；用户须在确认前改为宿主实际支持的标识。
+确认后修改三份入口会阻止后续运行。数据库快照不会自动追随文件。只有顶层 TASK.md
+使用既有确认摘要；源码、配置快照和发布包不新增 hash。
 
-确认只对已展示的精确配置生效。确认后编辑文件会阻止后续写入，不会自动刷新运行
-配置。只有顶层 TASK.md 使用既有确认摘要；源码、模板、提交内容不生成额外 hash。
+## 6. 作业怎样执行
 
-### 作业执行接口（本阶段底层接口）
+### command 模式
 
-`job_id` 和 `attempt_id` 必须来自命令结果，不能把课次名称或任意 assignment 字符串
-拿来当 ID。先取得实际宿主创建会话的证据，再登记：
-
-```bash
-mpres --root . session register economics --handle HOST_HANDLE \
-  --family author --model gpt-5.6-sol --effort medium --receipt HOST_CREATION_RECEIPT
-mpres --root . job bind economics JOB_ID --handle HOST_HANDLE
-mpres --root . job started economics ATTEMPT_ID --receipt HOST_EXECUTION_RECEIPT
-mpres --root . job submit economics ATTEMPT_ID \
-  --result /path/to/result.json --source tasks/economics/content/l01
-```
-
-`result.json` 至少包含有意义的 `summary`。写作结果还必须提交实际 `presentation.md`；
-审核结果包含 `findings` 数组，每条需要 message 和 slide_ids。控制字段由程序记录。
-用户可在收到提交后删除传输用的结果文件，数据库才是结果真源。新 runner 的严格语义
-schema 和自动门禁会在下一阶段接通；底层提交成功不等于 source gate 通过。
-
-## 5. 一致性、独立性与恢复边界
-
-每个连接明确启用外键；领取作业和登记结果分别在短的 `BEGIN IMMEDIATE` 事务里完成。
-执行模型、渲染和准备文件修订在事务外进行。不会假称 SQLite 能回滚模型调用。
-
-同一会话只能有一个未结束 attempt。同轮五个审核通道不能复用同一个会话；参与过
-本稿写作的会话不能审核本稿。runtime 必须与已确认配置匹配。
-
-启动结果丢失时使用 `job uncertain` 保留容量占用；不会自动重新启动、假装关闭或伪造
-handoff。本版支持同一个创建／执行请求的回执对账；未明确的创建或执行会让 runner 停止
-继续发出请求。它不会通过修改数据库假装外部工作已停止。
-目录只读是防误写保护，不是对同一系统用户提供安全沙箱。
-
-## 6. 状态、耗时和 token 查询
-
-```bash
-mpres --root . task status economics
-mpres --root . job show economics JOB_ID
-mpres --root . task metrics economics
-```
-
-每个 usage call 直接关联 attempt，从而可以关联 job、课次、角色和配置。缺失计数保留
-null，重复 call ID 不重复计费，不同值不能静默覆盖。`attempt_coverage` 和
-`record_field_coverage` 分开；没有 usage 时显示未知，不显示零成本。金额没有价格
-依据时不推断。command／bridge 协议现已接收逐调用 token 回执，并按 attempt 关联。
-启动前必须有 `usage_reporting: true` 的真实能力声明；承诺回传却缺少回执时不接受
-该执行结果。某字段确实不可获得时仍允许明确的 null，不转换成零。底层 `job usage`
-也保留为回执导入接口。它不意味着模型会话在任务创建以前的消耗已全部被采集。
-
-`task backup-db` 使用 SQLite 备份 API，但只导出数据库，不包含被引用的内容文件；
-命令和结果都明确这一点。完整可搬运任务导出留待后续集成，不应只压缩一个活库文件。
-
-## 7. 旧任务如何迁移
-
-```bash
-mpres --root . task import-legacy /path/to/old-task --slug economics-imported
-```
-
-导入器优先只读访问旧 SQLite；没有数据库时才读取 task.json，并标记其来源未核验。
-旧目录不写入。已有源码复制为 `origin=import, verified=0` 的修订；不相信旧
-handoff_ready，不导入会话为可用句柄，也不伪造审核通过。没有足够语义依据的 brief
-留空，必须由用户或 planner 补齐并重新确认。模型配置可以带入草案，但不会自动批准。
-
-还没迁移的旧任务可以明确使用 `mpres legacy ...`。新任务调用旧服务会在任务路径
-入口失败，不能在旁边再建立一个 mutable-state.sqlite3。兼容模块不是永久双轨目标，
-后续每迁移一类能力就停止旧路径的默认使用并删除无用材料。
-
-## 8. 运行器怎样接管
-
-运行器不会创建一个新的模型协调员。`Runner.tick()` 在数据库中领取工作，编译该课
-brief 和必要的资料路径，返回精确的 `create` 或 `run` 请求；重复 tick 不会再次
-发出已领取请求。`Runner.run()` 则通过用户确认的外部适配器执行这些请求并接收结果。
-
-### 能力与容量
-
-容量不能只相信项目配置。宿主必须报告实际 handle 列表、上限、close/reset 和 token
-回传能力。报告有效期为 120 秒；过期或已登记会话从 inventory 中消失，会阻止继续
-准入，而不是推测容量已释放。
-
-持久池预算包含全部计划中不同 runtime 的作者池、每个 reviewer 通道的槽位、整稿
-编辑槽位，以及外部已有句柄和恢复余量。所有 reviewer 通道分占不同槽位。空间不足
-时，只把实际作者并发压到用户确认上限以下，不改模型或推理强度；最低配置仍放不下
-就不启动。任务还没有审核作业时，审核槽位只是预算预留，不提前创建五个空闲模型。
-
-本版保守地按“不释放、不重置”的池计算。即使宿主报告支持 close/reset，本版也不会
-靠未执行的 close 假装释放容量；句柄复用也不会被宣传成“上下文已清空”。跨作业历史
-消耗需要依靠 provider 实际回传的 token 判断，不能仅凭 packet 大小推断。
-
-### command 模式：程序直接执行
-
-用户在确认前填写 `task.yaml`：
-
-```yaml
-provider:
-  mode: command
-  command: [python, /absolute/path/to/your_provider_adapter.py]
-  handle_limit: 16
-  external_handles: 1
-  recovery_reserve: 2
-  supports_close: false
-  supports_reset: false
-context_budget_bytes: 262144
-provider_timeout_seconds: 1200
-```
-
-adapter 是宿主 API 的薄封装：从 stdin 读取一个 JSON 请求，在 stdout 返回一个
-JSON 响应，诊断文字写 stderr。项目使用 argv 调用，`shell=False`；不执行模型返回
-的任意命令。**仓库不内置某个供应商的账户、API key 或未经验证的 Codex 线程 API。**
+用户配置一个 JSON-stdio 宿主适配器 argv。`runner run` 前台循环查询能力、准入、
+派发、接收，无需 main 每二十分钟读日志决定下一条命令。
 
 ```bash
 mpres --root . runner run economics --cycles 100 --interval 1
 ```
 
-这是前台机械进程，不需要 main 定时巡检。它执行有界循环，在阻塞、待回执或无可运行
-作业时返回。后续可以由操作系统服务管理器托管，不需要另开模型监督线程。
+适配器必须真实实现三种请求：
 
-### bridge 模式：宿主只能从模型工具侧启动线程
+* `capabilities`：返回 handle_limit、handles、supports_close、supports_reset、
+  usage_reporting 和 receipt；它们来自宿主，不是复述 task.yaml。
+* `create`：输入 request_id、slot_id、runtime；返回实际 handle、model、
+  reasoning_effort、receipt。相同请求应幂等。
+* `run`：输入 attempt_id、session_id、runtime、packet；返回实际 runtime、receipt、
+  result、usage，以及作者才有的 source_dir。source_dir 必须位于本次 output 下。
+
+usage 是 `{call_id, counters}` 数组；counters 包含 input_tokens、cached_input_tokens、
+output_tokens、reasoning_tokens、total_tokens。缺失字段写 null，不得伪装零。
+
+### bridge 模式
+
+宿主只能从模型工具启动会话时，runner 返回精确请求，main 只转发，不重新规划：
 
 ```bash
-mpres --root . runner host economics --report host-report.json
-mpres --root . runner capacity economics
+mpres --root . runner host economics --report actual-host.json
 mpres --root . runner tick economics
+mpres --root . runner accept economics --request exact-request.json --response actual-response.json
 mpres --root . runner outstanding economics
 ```
 
-`host-report.json` 是工具实际返回的 inventory 转换结果，不能凭空编写。也可以
-使用 `--report -` 从 stdin 读入，不必保留过程文件。
+可用 `-` 从标准输入读取，传输 JSON 不是流程真源。bridge 仍有转发回合，不宣传为
+零模型控制成本。宿主适配器不是模型技能；仓库不假定未公开 API 存在。
 
-首次 tick 按需要返回创建请求，宿主以给定 runtime 创建会话，再回传实际 handle：
+## 7. 源码、检查和失败怎样流转
+
+作者提交目录至少包含 presentation.md 和 theme.css，以及实际使用的 assets。
+每页保留稳定 `slide-id`，class 为 core/support；源码头使用：
+
+```yaml
+---
+marp: true
+theme: mathist-academic
+paginate: true
+size: "16:9"
+math: mathjax
+---
+```
+
+`theme.css` 声明 `/* @theme mathist-academic */`。教材、题目、答案、条件与先修的
+质量仍需要 AI 语义审阅；机械 gate 不会证明数学结论或教学效果。
 
 ```bash
-mpres --root . runner attach economics --slot SLOT_ID --handle REAL_HANDLE \
-  --model gpt-5.6-sol --effort medium --receipt REAL_CREATION_RECEIPT
+mpres --root . artifact inspect economics REVISION_ID --level source
+mpres --root . artifact inspect economics REVISION_ID --level full
+mpres --root . artifact gates economics REVISION_ID
 ```
 
-刷新 host inventory 后，下次 tick 返回 `run` 请求。宿主只转发请求中的工作，不另写
-assignment 文档。通过 `runner accept --request REQUEST.json --response RESPONSE.json`
-回传结果；两个 JSON 是传输介质，不是 task 下必须生成的事实文件。不能读取、生成
-或者伪造不存在的 provider 回执。
+source 检查 frontmatter、canonical ID、core/support、密度、图像路径、常见 TeX
+控制词错误、数学环境、CSS/SVG 资源边界。full 先做相同检查，再验证固定 Marp 版本，
+运行临时 HTML/DOM 和数学节点检查，生成 PDF 并核验页数、文字边界、替换字符等。
+临时源码可写，检查后的 PDF 只读，报告在库中；没有截图、OCR 或模型视觉步骤。
 
-bridge 仍有宿主工具转发的模型回合，不能算“零模型调度成本”。输入包声明读写边界，
-但本项目不能替宿主实现工具沙箱。adapter 必须落实这些访问限制；当前协议明确输出
-`sandbox_enforced_by_project: false`，不会把 prompt 说成操作系统隔离。
+同修订同级别重复检查默认返回已有记录；更换源码必须生成新修订。要明确重跑机械
+工具可加 `--retry`，保留旧记录。仍在 running 的检查不会被重跑；确认其进程已经停止后：
 
-### 最小 adapter 协议
-
-`capabilities` 响应：
-
-```json
-{
-  "handle_limit": 16,
-  "handles": ["actual-main-handle"],
-  "supports_close": false,
-  "supports_reset": false,
-  "usage_reporting": true,
-  "receipt": "actual-inventory-receipt"
-}
+```bash
+mpres --root . artifact interrupt-gate economics GATE_ID --reason "已核实原检查进程停止"
+mpres --root . artifact inspect economics REVISION_ID --level full --retry
 ```
 
-`create` 请求含 `request_id`、`slot_id` 和固定 `runtime`；响应含实际
-`handle`、`model`、`reasoning_effort`、`receipt`。重复回传同一创建结果无副作用。
-创建是否成功无法确认时槽位保留为 uncertain，不再盲发第二次。
+检查和模型调用均在 SQLite 写事务外运行。程序不假称数据库能回滚外部调用。
+创建／执行回执丢失会保留不确定状态和占用；同请求对账前不盲目重试，不虚构 close。
 
-`run` 请求含 `request_id`（同 attempt）、`session_id`、固定 `runtime` 和
-`packet`。响应形状：
+## 8. 整稿流程怎样自动推进
 
-```json
-{
-  "receipt": "actual-execution-receipt",
-  "runtime": {"model": "gpt-5.6-sol", "reasoning_effort": "medium"},
-  "source_dir": "output",
-  "result": {"summary": "解释了坐标的单位，并写出例题与诊断问题。"},
-  "usage": [{"call_id": "actual-call-id", "counters": {
-    "input_tokens": 100, "cached_input_tokens": 80,
-    "output_tokens": 5, "reasoning_tokens": 0, "total_tokens": 105
-  }}]
-}
+`runner tick/run` 调用 `Workflow.advance()`。all 模式在共享、预留了下游资源的固定池内
+最多推进 current + next；pilot 首稿、each 每稿的用户暂停前都不启动下一稿。
+
+1. 每课新修订先做 source gate。内容错误生成一个有界、短时 edit 作业，直接提供失败
+   检查和可写源码副本；达到 max_attempts 后停止，不无限修稿。
+2. 全部课次合格后机械组装。按课程顺序连接页面；相同 theme/资产逐字节一致时共用，
+   冲突时停止，不猜测应当保留哪份。每课资产使用 assets/<unit-id>/，避免同名覆盖。
+3. 对组装稿启动一次短时整稿编辑作业。AI 只处理衔接、术语含义和教学叙事，不收文件、
+   写状态或常驻轮询。每次编辑直接得到可写副本，不必重抄整套源码。
+4. 完整原生 gate 通过后冻结。五个通道分别用五个不同、独立的 reviewer 读同一份
+   source/PDF；队列身份、容量、scope 和回执由程序管理。代码不把机械检查当作数学证明。
+5. 无 finding 则直接进入发布准备。有 finding 则交一个 revise 作业；每条 finding 必须
+   有 addressed 或 needs_decision 及解释。needs_decision 会停止；程序不自作主张否决 reviewer。
+6. 修订稿必须保留冻结 slide ID，再跑完整 gate。门禁修复也受次数上限约束。每条处置
+   与最终候选修订关联；旧稿的处置/门禁不能批准新稿。沿用一轮五通道审核，修订后不
+   自动添加新 reviewer 轮次；扩大教学范围或删除冻结页面需要新任务/新审核。
+7. 发布前再次验证五个审核回执、独立性、finding 和精确候选 gate。PDF 先暂存，最终
+   路径独占创建，prepared → committed；中断后同字节才能收敛，永不静默覆盖旧交付。
+
+```bash
+mpres --root . workflow status economics
+mpres --root . workflow advance economics
+# pilot/each 已交付后，用户明确反馈并允许继续：
+mpres --root . workflow continue economics --by user --note "按既定计划继续"
 ```
 
-数字只是协议示例，不是本项目的实际运行消耗。响应中的实际 runtime 不符时拒绝
-接受，不能默许 provider fallback。source_dir 必须位于本次 output 子树。
-AI 只提供语义结果和内容，时间戳、ID、回执、计数由宿主／控制程序提供。
+程序不因为定时器到期唤醒 main；main 只处理明确的配置确认、用户反馈、未解决语义
+问题或异常恢复。遇到环境修复而不是模型错误，可以机械重跑：
 
-## 9. 测试、实现边界和继续方向
+```bash
+mpres --root . workflow retry-checks economics --presentation p01 --note "已修复渲染环境"
+mpres --root . workflow retry-publish economics --presentation p01 --note "已核实原发布进程停止"
+mpres --root . workflow recover-assembly economics --job-id JOB_ID --note "已核实原组装进程停止"
+```
+
+这些接口不改变 runtime、内容或 finding。仍在运行的 gate 先使用 interrupt-gate 明确
+记录停止核验；AI attempt 回执不明时继续沿用同请求对账，不假称失败后重试。
+语义争议不会被 retry-checks 绕过；本版尚未提供原任务内任意语义变更/重新确认流程，
+这类变更需新建或导入新任务后确认。
+
+## 9. 状态、成本和迁移
+
+```bash
+mpres --root . task status economics
+mpres --root . task metrics economics
+mpres --root . job show economics JOB_ID
+mpres --root . task backup-db economics /safe/path/task.sqlite3
+mpres --root . task import-legacy /old/task/path --slug economics-imported
+```
+
+metrics 按 attempt/作业/课次归因；gross、cached、fresh 分开，字段覆盖和 attempt
+覆盖分开。没有全生命周期证据时不标成 100%；没有价格依据时不推算金额。
+`backup-db` 只备份一致的数据库，不包含资产，不等于完整可搬运任务包。
+
+旧任务导入不修改旧目录，不导入句柄为可用，不继承旧 gate 成功，不伪造 handoff。
+旧内容标为未验收；计划信息不足则需补 brief 并确认。schema 1/2/3 打开时短事务升级为 4，
+不修改已确认 runtime。quality 缺省采用 auto/1800，旧确认快照仍原样保存。缺少 workflow 字段的旧任务继续只写稿。
+
+## 10. 验证与已知边界
 
 ```bash
 PYTHONPATH=src python -m pytest tests/compact
 python scripts/validate_project.py
 ```
 
-新测试覆盖事务身份、固定 runtime、实际 inventory 准入、容量压缩、不同 reviewer
-槽位、重复 tick、并发 runner、未知创建、执行回执恢复、上下文上限、输出路径、token
-缺失及 JSON subprocess 适配器。`tests/compact/fake_provider.py` 是明确的确定性测试
-替身，**不是真实模型服务，也不能用于质量验证**。旧测试仍按模块隔离执行，没有删掉
-失败用例来制造通过结果。
+测试适配器仅是明确标识的确定性 fixture，不是真实模型。完整 gate 的自动化测试
+既覆盖“工具缺失必须失败”，也用注入的测试函数验证事务和分支；测试替身不属于任务
+配置。部署机器仍须安装固定渲染器并实际完成自己的 toolchain 验收。
 
-v0.6.8 数据库首次由本版访问时，在一个事务中升级到 schema 2；已确认配置和源码
-修订不改变。版本号属于源码版本，schema 版本单独维护。
+旧管理 skills 和常驻 author-coordinator 配置已经删除。旧模板、Python 兼容模块仍保留，
+但只服务显式 legacy；新任务不生成它们，也不把它们编入模型输入。它们的进一步删除需
+先完成旧任务迁移验收，不能仅为减少文件数而破坏导入和技术模块。
 
-这次连续交付两个阶段：v0.6.8（关系型运行事实）和 v0.6.9（机械作业执行循环）。
-下面的工作尚未宣布完成：整稿质量门禁的数据库化接入、自动冻结／五通道审核／修订／
-发布链、语义 schema 完整收敛、约六个语义 skills、其余旧管理模板与兼容模块的删除。
-它们会继续按可验收的独立阶段推进，不用未验证的中间结果冒充 v0.7.0。
+已安装环境下可直接运行 `./start.sh runner run economics`；Windows 使用
+`start.cmd runner run economics`。无参数显示 CLI 帮助。启动器不自动安装、不启动日志
+daemon、不调用 Codex、不注入旧长提示，也不禁用宿主的 approvals/sandbox。安装须先
+显式执行 `python scripts/bootstrap.py`；`mpres toolchain doctor` 检查真实渲染环境。
+Windows 脚本在本发布环境仅作文本/参数路径审查，未在 Windows 原生执行。
 
-### 本次更新摘要
+## 11. 六个语义 skills 怎样使用
 
-v0.6.9 增加短事务 runner、实际宿主回执、持久角色池容量准入、有界输入包、固定 runtime
-执行核对和逐调用 usage 回传。没有把源稿提交误报为完整课件交付。
+| Skill | AI 需要作出的判断 |
+|---|---|
+| course-planning | 受众、先修、按课次组织的计划、核心/补充和材料边界 |
+| marp-writing | 直觉、条件、例题、诊断题、学生语言与 Marp 内容表达 |
+| deck-editing | 跨课语义衔接、术语、finding 驱动的最小修订 |
+| specialist-review | 五个独立通道各自对完整冻结稿作语义判断 |
+| problem-diagnosis | 给定问题证据的根因假设、影响范围与不确定性 |
+| resource-design | 图示/资源的教学价值、表达方式与出处 |
+
+原来的 26 个 skills 已从自动发现目录移除，重新写成以上六类；没有把它们合并成
+一本更大的流程手册。作业身份、容量、绑定、gate、日志、token、发布不属于这些 skills。
+每次 write/edit/revise/review 作业由 runner 注入一份相应指南，不要求 AI 自行选择和
+阅读所有技能。规划、诊断、资源设计是语义能力，不意味着本版自动启动这六类全部作业；
+完整生产链自动调度的是写作、整稿编辑、五通道审核和修订。
+
+schema 是真正执行的边界，不只是说明文件。计划在确认前验证；结果在冻结源码或
+登记 finding 之前验证。`author-result` 允许 summary、可选 teaching_notes/open_questions，
+修订另有每条 finding 的 resolutions。review-result 要求 message/slide_ids/severity，
+诊断结果要求 hypotheses/confidence/affected_slide_ids/recommended_action。未知流程字段
+如 gate_passed、capacity_released 不被接受；程序不会相信 AI 自报机械状态。
+
+模型包只包含本作业 brief/课程概要、真实源稿/资产、必要 finding、对应指南/schema。
+机械报告只摘取失败、警告和页数，不重复塞入每页全文和每个 PDF 字符 span；完整报告
+仍在数据库内可查。二进制附件体积另记 attachment_bytes，不冒充文本 token 估计。
+这减少了强制重复输入，但不承诺未经真实模型任务对比验证的 token 节约比例。
+
+## 最近阶段
+
+v0.6.12 在已接通整稿流程的版本上删除管理 skills 与过时启动提示，加入四个实际验证的
+语义 schema，把一次作业的提示收敛为对应语义内容。数据库保持 schema 4；旧确认 runtime
+不变。下一步是实际宿主和原生 Marp 的小规模课程验收、完整任务导出及兼容层进一步清退，
+尚未标记整个重构为 v0.7.0 完成。

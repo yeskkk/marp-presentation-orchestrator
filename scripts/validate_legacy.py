@@ -196,17 +196,6 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         ".codex/agents/deck-revision-author.toml",
         ".codex/agents/diagnostic-reviewer.toml",
         # New skills.
-        ".agents/skills/courseware-production-profiling/SKILL.md",
-        ".agents/skills/legacy-presentation-migration/SKILL.md",
-        ".agents/skills/critical-path-production-scheduling/SKILL.md",
-        ".agents/skills/context-packet-compilation/SKILL.md",
-        ".agents/skills/workflow-engine-maintenance/SKILL.md",
-        ".agents/skills/deck-revision-authoring/SKILL.md",
-        ".agents/skills/role-runtime-profiling/SKILL.md",
-        ".agents/skills/transactional-workflow-state/SKILL.md",
-        ".agents/skills/operational-incident-mitigation/SKILL.md",
-        ".agents/skills/presentation-defect-triage/SKILL.md",
-        ".agents/skills/idempotent-assignment-lifecycle/SKILL.md",
         # Canonical structured records.
         "templates/structured/PRODUCTION-PROFILE.template.yaml",
         "templates/structured/REVIEW-AGGREGATION-JOB.template.yaml",
@@ -245,8 +234,6 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "templates/assignments/TASK-deck-revision-author.template.md",
         "templates/assignments/TASK-diagnostic-reviewer.template.md",
         # Retained inspection and maintenance gates.
-        ".agents/skills/mathematical-typesetting-inspection/SKILL.md",
-        ".agents/skills/presentation-corrective-maintenance/SKILL.md",
         "templates/structured/COURSE-TERMINOLOGY.template.yaml",
         "templates/structured/COURSE-SEMANTIC-OBJECTS.template.yaml",
         "templates/structured/CROSS-DECK-HANDOFFS.template.yaml",

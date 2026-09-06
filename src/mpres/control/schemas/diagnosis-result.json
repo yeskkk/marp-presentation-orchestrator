@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "summary",
+    "hypotheses",
+    "confidence",
+    "affected_slide_ids",
+    "recommended_action"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "required": [
+          "explanation",
+          "slide_ids"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slide_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
+      },
+      "minItems": 0
+    },
+    "confidence": {
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
+    "affected_slide_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0
+    },
+    "recommended_action": {
+      "enum": [
+        "no_change",
+        "scoped_revision",
+        "more_evidence",
+        "full_review"
+      ]
+    }
+  }
+}

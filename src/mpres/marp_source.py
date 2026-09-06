@@ -759,6 +759,7 @@ def _manifest_check(
 def lint_deck(
     source_root: Path,
     *,
+    process_records: bool = True,
     policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     source_root = source_root.resolve()
@@ -862,19 +863,24 @@ def lint_deck(
     duplicates = sorted({item for item in ids if ids.count(item) > 1})
     if duplicates:
         errors.append("Duplicate slide IDs: " + ", ".join(duplicates))
-    manifest = _manifest_check(source_root, deck, policy=policy)
+    manifest = (_manifest_check(source_root, deck, policy=policy) if process_records else
+                {"ok": True, "errors": [], "warnings": [], "origin": "canonical-source",
+                 "source_slide_count": len(deck.slides)})
     errors.extend(manifest["errors"])
     warnings.extend(manifest["warnings"])
-    geogebra = validate_presentation_geogebra_registry(
-        source_root,
-        deck_path.read_text(encoding="utf-8"),
-        maximum_selected_per_unit=int(
-            (((policy or {}).get("online_resources") or {}).get("geogebra") or {}).get(
-                "max_selected_links_per_unit", 3
-            )
-            or 3
-        ),
-    )
+    if process_records:
+        geogebra = validate_presentation_geogebra_registry(
+            source_root,
+            deck_path.read_text(encoding="utf-8"),
+            maximum_selected_per_unit=int(
+                (((policy or {}).get("online_resources") or {}).get("geogebra") or {}).get(
+                    "max_selected_links_per_unit", 3
+                )
+                or 3
+            ),
+        )
+    else:
+        geogebra = {"errors": [], "warnings": [], "scope": "semantic resource audit by reviewers"}
     errors.extend(geogebra["errors"])
     warnings.extend(geogebra["warnings"])
     interactions = manifest.get("interaction_contract", {})

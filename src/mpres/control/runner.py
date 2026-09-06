@@ -214,12 +214,56 @@ class Runner:
             artifact=self.store.rows('SELECT * FROM artifacts WHERE id=?',(job['input_artifact_id'],))[0]
             path=self.task/artifact['path']
             packet['frozen_source_directory']=str(path)
-            packet['input_files'].extend(str(p) for p in path.rglob('*') if p.is_file())
+            packet['input_files'].extend(str(p) for p in path.rglob('*') if p.is_file() and (p.name in {'presentation.md','theme.css'} or 'assets' in p.relative_to(path).parts))
             if job['kind']=='review':
                 packet['scope']='full_frozen_deck'
                 packet['required_result']['findings']='List of message, slide_ids and severity; [] is allowed'
                 packet['writable_directory']=None
-        count=len(encode(packet).encode('utf-8'))+sum(Path(p).stat().st_size for p in set(packet['input_files']))
+        if job['kind'] in {'write','edit','revise'}:
+            packet['source_contract'] = {'files': ['presentation.md','theme.css','assets/ as needed'],
+                'frontmatter': {'marp': True, 'theme': 'mathist-academic', 'paginate': True, 'size':'16:9', 'math':'mathjax'},
+                'slide_id': 'stable unique comment <!-- slide-id: pNN-lNN-sNN -->',
+                'classes': ['core','support'], 'no_process_documents': True}
+            packet['constraints'].extend(['Quote size: "16:9" in YAML',
+                'Use assets/<unit-id>/ namespaced asset paths; preserve the shared theme for unit submissions'])
+            if job['input_artifact_id']:
+                from .files import writable
+                for src in path.rglob('*'):
+                    if src.is_file() and (src.name in {'presentation.md','theme.css'} or 'assets' in src.relative_to(path).parts):
+                        target=output/src.relative_to(path)
+                        if not target.exists():
+                            target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(src.read_bytes())
+                writable(output)
+            elif not (output/'theme.css').exists():
+                (output/'theme.css').write_bytes(Path(__file__).with_name('theme.css').read_bytes())
+        if not job['plan_item_id']:
+            packet['course_outline'] = self.store.rows('SELECT unit,title,brief FROM plan_items WHERE presentation=? ORDER BY ordinal',(job['presentation'],))
+        if job['input_artifact_id']:
+            from .quality import Quality
+            from .semantic import gate_excerpt
+            q = Quality(self.task)
+            failed = self.store.rows("SELECT detail_json FROM gate_runs WHERE artifact_id=? AND state='failed' ORDER BY sequence DESC LIMIT 1", (job['input_artifact_id'],))
+            if failed:
+                packet['mechanical_findings'] = gate_excerpt(json.loads(failed[0]['detail_json']))
+            if job['kind']=='review':
+                full_gate = q.latest(job['input_artifact_id'],'full')
+                if full_gate and full_gate['state']=='passed':
+                    pdf = inside(self.task,full_gate['pdf_path'])
+                    packet['frozen_pdf'] = str(pdf)
+                    packet['input_files'].append(str(pdf))
+                    packet['mechanical_evidence'] = gate_excerpt(json.loads(full_gate['detail_json']))
+                packet['required_result']['findings'] = 'Exactly message, slide_ids (existing canonical IDs), severity (minor/major/critical); [] permitted'
+            if job['kind']=='revise':
+                decks=self.store.rows('SELECT frozen_id FROM decks WHERE presentation=?',(job['presentation'],))
+                frozen=decks[0]['frozen_id'] if decks else job['input_artifact_id']
+                packet['findings']=[{'finding_id':r['id'], 'channel':r['channel'], **json.loads(r['detail_json'])} for r in self.store.rows('SELECT * FROM findings WHERE artifact_id=?',(frozen,))]
+                packet['required_result']['resolutions'] = 'One per finding: finding_id, status addressed|needs_decision, explanation; retain frozen slide IDs'
+        from .semantic import schema, result_schema_name, guidance
+        packet['result_schema'] = schema(result_schema_name(job['kind']))
+        packet['semantic_guidance'] = guidance(self.root if hasattr(self, 'root') else self.task.parent.parent, job['kind'])
+        text_suffixes={'.md','.css','.txt','.json','.yaml','.yml','.csv','.svg'}
+        packet['attachment_bytes']=sum(Path(p).stat().st_size for p in set(packet['input_files']) if Path(p).suffix.lower() not in text_suffixes)
+        count=len(encode(packet).encode('utf-8'))+sum(Path(p).stat().st_size for p in set(packet['input_files']) if Path(p).suffix.lower() in text_suffixes)
         budget=config.get('context_budget_bytes',262144)
         if count>budget:
             raise MPresError(f'Context packet is {count} bytes, over confirmed budget {budget}; reduce authorized input, not runtime')
@@ -244,6 +288,15 @@ class Runner:
         Repeated ticks do not issue creating slots or claimed jobs again. The bridge
         must reconcile outstanding requests rather than treating them as new work.
         """
+        from .workflow import Workflow
+        workflow = Workflow(self.task)
+        workflow_report = workflow.advance()
+        full = workflow_report['enabled']
+        task_status = self.service.status()['status']
+        if task_status in {'paused', 'completed'}:
+            return {'status': task_status, 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': full}
+        if full and not workflow.allowed():
+            return {'status': 'blocked', 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': True}
         capacity=self.ensure_pool()
         if not capacity['ok']:
             return {'status':'blocked','capacity':capacity,'requests':[]}
@@ -252,16 +305,23 @@ class Runner:
             return {'status':'blocked','reason':'Uncertain external execution requires receipt reconciliation, not a retry',
                     'capacity':{k:v for k,v in capacity.items() if k!='slots'},'requests':[],'outstanding':outstanding}
         self.service.materialize()
+        from .quality import Quality
+        quality = Quality(self.task)
+        for artifact in self.store.rows("SELECT a.id FROM artifacts a WHERE a.origin='submission' AND NOT EXISTS (SELECT 1 FROM gate_runs g WHERE g.artifact_id=a.id AND g.level='source')"):
+            quality.inspect(artifact['id'])
+        admitted_presentations = workflow.allowed() if full else None
         requests=[]
         with self.store.transaction() as conn:
             jobs=conn.execute("SELECT j.* FROM jobs j LEFT JOIN plan_items p ON p.id=j.plan_item_id WHERE j.state='queued' AND j.family IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dependencies d JOIN jobs x ON x.id=d.needs_id WHERE d.job_id=j.id AND x.state<>'succeeded') ORDER BY CASE j.kind WHEN 'revise' THEN 0 WHEN 'review' THEN 1 WHEN 'edit' THEN 2 ELSE 3 END,p.ordinal,j.rowid").fetchall()
             deck_order=[d['id'] for d in json.loads(self.service.confirmed(conn)['settings_json'])['presentations']]
             unfinished={r[0] for r in conn.execute("SELECT DISTINCT presentation FROM jobs WHERE kind='write' AND state<>'succeeded'")}
             current=next((i for i,p in enumerate(deck_order) if p in unfinished),len(deck_order))
-            allowed=set(deck_order[current:current+2])
+            allowed=admitted_presentations if full else set(deck_order[current:current+2])
             active_writes=conn.execute("SELECT count(*) FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.kind='write' AND a.state IN ('reserved','running','uncertain')").fetchone()[0]
             pending_creates=conn.execute("SELECT count(*) FROM pool_slots WHERE kind='write' AND state IN ('creating','uncertain')").fetchone()[0]
             for job in jobs:
+                if full and job['presentation'] not in allowed:
+                    continue
                 if job['kind']=='write' and (job['presentation'] not in allowed or active_writes+pending_creates>=capacity['actual_author_concurrency']):
                     continue
                 expected=self.service.expected_runtime(conn,job)
@@ -280,8 +340,8 @@ class Runner:
                         break
         # Bound execution uses Service.bind's own short transaction. Races between
         # runners converge through database uniqueness and queued-state checks.
-        for job in self.service.jobs():
-            if job['state']!='queued' or not job['family'] or (job['kind']=='write' and job['presentation'] not in allowed):
+        for job in sorted(self.service.jobs(), key=lambda j: {'revise':0,'review':1,'edit':2,'write':3}.get(j['kind'],4)):
+            if (full and job['presentation'] not in allowed) or job['state']!='queued' or not job['family'] or (job['kind']=='write' and job['presentation'] not in allowed):
                 continue
             with self.store.transaction() as conn:
                 active=conn.execute("SELECT count(*) FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.kind='write' AND a.state IN ('reserved','running','uncertain')").fetchone()[0]
@@ -309,7 +369,7 @@ class Runner:
             except Exception as exc:
                 self._blocked_packet(attempt['id'],exc)
         return {'status':'requests_ready' if requests else 'idle_or_waiting','capacity':{k:v for k,v in capacity.items() if k!='slots'},'requests':requests,'outstanding':self.outstanding(),
-                'release_pipeline_enabled':False}
+                'release_pipeline_enabled':full, 'workflow':workflow_report}
 
     def accept(self, request: dict, response: dict) -> dict:
         if not isinstance(response,dict):
