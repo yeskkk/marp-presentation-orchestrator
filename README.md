@@ -3,7 +3,7 @@
 把教材、教学目标与用户确认的课程计划转化为 Marp 课件。Python 负责运行事实和机械
 检查，AI 负责教学语义；不要求 main agent 阅读大量过程文档后逐条操作流程。
 
-**版本 v0.6.13：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
+**版本 v0.6.15：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
 修订 → 再次完整门禁 → PDF 发布 → PDF/源码配对 ZIP。** 运行器不把源码提交等同于交付；缺少原生渲染工具、
 审核回执、finding 处置或明确宿主状态时都会停止。当前验收覆盖确定性适配器和失败分支，
 尚未在本交付环境验证真实模型与固定 Marp 浏览器的端到端输出质量。
@@ -16,12 +16,14 @@
 | 展示、确认配置 | 程序展示三份入口；用户明确确认后保存不可变配置快照 | 已实现 |
 | 创建作业 | 从已批准 plan item 生成数据库 job ID、依赖和课次坐标 | 已实现 |
 | 容量准入 | 宿主实际 inventory 与用户上限取更严格值；预算作者、五 reviewer、编辑者和恢复余量 | 已实现 |
+| 历史反馈回顾 | SQLite 保存用户原话、问题表现、验收期望；每次作者/编辑/reviewer 开工先短回执，随后才派发内容执行 | 已实现 |
 | 写作与提交 | runner 领取作业，发精确 JSON 请求，接实际回执、源码和 usage | 已实现 |
 | 单元源码门禁 | runner 下次 tick 对新修订运行源码、TeX 和资产边界检查 | 已实现 |
 | 整稿组装与语义编辑 | 程序组装，短时编辑作业判断叙事与教学衔接，不设常驻 coordinator | 已实现 |
 | 完整机械门禁 | 指定源码修订 → 临时 HTML/DOM → 数学渲染 → PDF 结构和文本边界检查 | 已实现 `artifact inspect --level full` |
 | 冻结与专项审核 | 五个不同且独立的 reviewer 阅读同一冻结稿；不做模型型审核协调 | 已实现 |
 | 修订与再次门禁 | findings 送给作者，生成新修订；旧稿门禁不能批准新稿 | 已实现 |
+| 用户指定返修 | 交付后先只读展开问题形式与相似问题 → 展示精确方案 → 等用户确认 → 仅修改指定稿件 → 重走审核发布 | 已实现 |
 | 发布、打包与暂停 | 仅对合格版本发布 PDF；从发布记录取对应源码，机械生成累计交付 ZIP；按 all/pilot/each 继续或暂停 | 已实现 |
 
 新建任务默认 `workflow: full`。程序只有将对应 PDF 发布记录提交为 committed 后才
@@ -50,12 +52,15 @@ src/mpres/
   control/
     cli.py                     参数解析和结构化输出，不包含语义判断
     schema.sql                 关系、外键、唯一约束和不可变配置
-    migrate_3.sql, migrate_4.sql 旧 schema 的原子增量迁移
+    migrate_*.sql              旧 schema 的原子增量迁移
     store.py                   短事务、查询、一致性数据库备份
     service.py                 确认、作业、绑定、提交、usage 和状态
     runner.py                  实际宿主证据、池准入、领取、输入包、JSON 适配器
     quality.py                 源码/full gate、修订绑定、并发幂等、失败与恢复
     workflow.py                固定整稿状态机、组装、审核证明、finding 处置、发布
+    repairs.py                 问题展开、方案版本/确认、指定返修、历史发布与专用 ZIP
+    feedback.py                用户反馈版本、开工回执、结果证据和旧审核失效检查
+    teaching_feedback.json     本项目用户明确指出的三项教学质量底线，自动进入任务数据库
     delivery.py                按已提交 release 配对 PDF/源码，累计 ZIP、校验与独立重试
     theme.css                  实际课件样式；写作输出预置同一份 theme
     semantic.py                四个语义 schema 的真实验证；每类作业只注入对应语义指南
@@ -81,7 +86,8 @@ tests/                       原有回归测试保留
 Session 与 attempt 关联；usage、finding、decision、event 也在 SQLite 中。
 `gate_runs` 引用 artifact ID 和级别，每次明确重查有单调 sequence；报告为数据库数据，
 不是作者必须填写的 YAML。decks 保存每稿当前阶段和候选/冻结修订；releases 保存
-prepared/committed 发布记录。保留旧模块是为了复用经过测试的技术能力和读取旧任务，
+prepared/committed 最新发布记录；release_versions 保留每个历史版本及其准确源码和门禁。
+repair_cases/repair_targets/repair_jobs 保存原话、方案版本、用户确认和指定目标关系。保留旧模块是为了复用经过测试的技术能力和读取旧任务，
 不是维护两个可写状态系统。
 
 ## 4. 用户看到的任务目录
@@ -157,8 +163,11 @@ mpres --root . task jobs economics
 mpres --root . runner run economics --cycles 100 --interval 1
 ```
 
-适配器必须真实实现三种请求：
+适配器必须真实实现四种请求：
 
+* `brief`：与内容作业使用同一固定 runtime、同一 session，先返回 receipt、runtime、usage 和
+  readback（每项 id/version/approach）。此时没有可写内容目录；全部回执接受后才派发 `run`。
+  不支持此操作的旧宿主需适配，不能自动跳过。
 * `capabilities`：返回 handle_limit、handles、supports_close、supports_reset、
   usage_reporting 和 receipt；它们来自宿主，不是复述 task.yaml。
 * `create`：输入 request_id、slot_id、runtime；返回实际 handle、model、
@@ -341,7 +350,7 @@ metrics 按 attempt/作业/课次归因；gross、cached、fresh 分开，字段
 `backup-db` 只备份一致的数据库，不包含资产，不等于完整可搬运任务包。
 
 旧任务导入不修改旧目录，不导入句柄为可用，不继承旧 gate 成功，不伪造 handoff。
-旧内容标为未验收；计划信息不足则需补 brief 并确认。schema 1/2/3 打开时短事务升级为 4，
+旧内容标为未验收；计划信息不足则需补 brief 并确认。schema 1/2/3/4/5 打开时短事务升级为 6，
 不修改已确认 runtime。quality 缺省采用 auto/1800，旧确认快照仍原样保存。缺少 workflow 字段的旧任务继续只写稿。
 
 ## 10. 验证与已知边界
@@ -379,8 +388,8 @@ Windows 脚本在本发布环境仅作文本/参数路径审查，未在 Windows
 原来的 26 个 skills 已从自动发现目录移除，重新写成以上六类；没有把它们合并成
 一本更大的流程手册。作业身份、容量、绑定、gate、日志、token、发布不属于这些 skills。
 每次 write/edit/revise/review 作业由 runner 注入一份相应指南，不要求 AI 自行选择和
-阅读所有技能。规划、诊断、资源设计是语义能力，不意味着本版自动启动这六类全部作业；
-完整生产链自动调度的是写作、整稿编辑、五通道审核和修订。
+阅读所有技能。规划、诊断、资源设计是语义能力，不意味着每个任务都会启动全部角色。
+完整生产链自动调度写作、整稿编辑、五通道审核和修订；repair open 后另外安排只读问题展开。
 
 schema 是真正执行的边界，不只是说明文件。计划在确认前验证；结果在冻结源码或
 登记 finding 之前验证。`author-result` 允许 summary、可选 teaching_notes/open_questions，
@@ -393,10 +402,147 @@ schema 是真正执行的边界，不只是说明文件。计划在确认前验�
 仍在数据库内可查。二进制附件体积另记 attachment_bytes，不冒充文本 token 估计。
 这减少了强制重复输入，但不承诺未经真实模型任务对比验证的 token 节约比例。
 
+## 12. 历史反馈怎样避免丢失
+
+聊天上下文不是质量要求的真源。`feedback_rules` 以版本保存用户原话、期望、可能表现、
+验收准则和适用课件；`attempt_briefings` 保存本次作业实际收到和回顾的版本。默认内置用户
+已经明确提出的三类问题：规范术语、近几年实际生活/经济场景、明示几何直观。
+新任务自动写入数据库，task present 会展示当前历史反馈；旧 compact 任务在下一次绑定/读取反馈时补入，不生成过程文档。
+
+每个 write/edit/revise/review（以及后续诊断）执行如下小循环：
+
+```text
+领取作业 → brief：原话+期望+问题表现 → 短 readback：本次如何应用/检查
+         → run：再次携带相同历史反馈 + 本次源码/资料
+         → feedback_checks：逐项处置 + 真实 slide ID/原文证据
+         → 独立审核和机械门禁 → 交付
+```
+
+没有 readback 不能启动内容执行。重复完全相同的回执幂等，不能事后补造或改写；
+新来源版本不覆盖旧反馈。正常新增反馈适用于随后领取的作业；在途作业维持收到的快照。
+但若已审稿的反馈版本已过时，发布检查拒绝沿用旧审核，需新审核/返修，不能静默降低要求。
+
+“satisfied”必须有实际存在的页内摘录；“issue”由 reviewer 同时写入可路由 finding。
+作者尚有 issue 不得冻结/发布。不适用允许给出具体理由，防止每页强塞故事和几何图。
+代码验证回顾顺序、条目完整性、出处对应与版本，并不能证明模型真正理解或保证数学质量；
+独立 reviewer 必须实质检查，不可把格式通过等同内容正确。
+
+近期例子优先最近三年（按包内 as_of_date），必须把场景—变量/单位—数学模型—现实解释接起来。
+作者可在批准主题内使用宿主提供的检索工具寻找可核验公共来源，并标注事件日期/出处。
+没有检索工具或资料不足时报告证据缺口；不能编造新闻、统计或出处。教学模拟数字必须明确标注。
+几何直观要实际体现在标注图示或可操作的构造与公式对应中，不是仅写“可用几何解释”。
+
+```bash
+mpres --root . feedback list economics
+mpres --root . feedback list economics --history
+# --rule 接受 JSON 文件或 -（标准输入）；它只是输入，不是运行时过程文档。
+mpres --root . feedback record economics --rule - --by "用户明确提出的反馈"
+mpres --root . feedback inherit next-course --from-task tasks/economics --by "用户同意沿用"
+# 手工 bridge 调试：正常 runner 会自动完成此握手。
+mpres --root . job briefing economics <attempt-id>
+mpres --root . job acknowledge economics <attempt-id> --readback - --receipt <真实回执>
+```
+
+一条自定义反馈使用 id/report/expectation/possible_forms/acceptance/presentations/enabled。
+同一 id 的修订追加版本；停用也必须有明确用户授权与 attribution，agent 不得自行停用。
+从其它任务沿用通过 inherit 显式导入，不依赖某次会话是否记得；定向 scope 必须属于新任务。
+确认配置与 runtime 不改变。`--by` 是审计归因，不是身份认证；宿主必须只转发真实用户授权。
+
+readback 会增加一次很短的模型调用；其 token 单独计入同一 attempt，绝不假装零成本。
+原来的 6 个语义 skills 和 4 个语义结果 schema 数量不变，新增的是其中的语义要求与数据库门禁。
+
+## 13. 用户指出一类问题后怎样返修一份或一批课件
+
+这是与正常课程生产共用运行器的返修模式，不是 agent 自行决定“重写全部”。它在已交付
+任务完成后，或 pilot/each 的交付暂停处启动；不覆盖正在运行的写作/审核。目标必须明确
+列为一份或多份已 committed 的课件。原任务的 runtime 始终不变。
+
+```text
+用户指出问题 + 指定 p01 / p03
+  → repair open：保存原话，锁定各稿当前已交付源码/PDF 版本
+  → runner：只读诊断作业，积极展开问题变体、相似问题、识别方法与修法
+  → repair present：展示精确方案版本、目标、非目标、验收条件和资料缺口
+  → 等待用户回复；初始投诉不是对 AI 展开方案的授权
+  → repair confirm：只确认刚展示的那个版本及其准确目标
+  → 作者逐份修订 → 完整门禁 → 五名独立 reviewer → 必要修订 → 再次门禁
+  → 新版本 PDF + 对应 Markdown/资产 ZIP，原版不被覆盖
+```
+
+### 先展开、再确认，而不是只把问题换一种说法
+
+diagnosis-result 的 expansion 要包含问题本质、至少一种实际发生形式、相邻/相似问题、
+各项识别方法与修正方向、非目标、验收准则、资料需求。例如“术语随意”不只查字面名称，
+还应考虑定义被比喻取代、同义乱用、符号漂移、适用条件缺失等可能形式。
+这些是需要 AI 结合用户问题作出的语义分析，不由关键词脚本决定。
+
+为避免确认之前就花费大量成本逐稿改写，展开阶段仅只读一份代表性目标稿件，返回实际
+检查过的稿件/源码 ID。未检查的目标不能声称已经发现缺陷；possible 与 observed 明确区分，
+observed 必须引用已经看到的页 ID。用户确认后，作者和 reviewer 才逐份全稿排查整个问题族。
+
+方案被补充或改写后，版本递增，之前的展示失效；必须重新呈现、重新确认。目标的已交付
+版本在此期间发生变化也会拒绝使用旧方案。确认以规范化快照比较，不新增 hash。
+用户确认会把这项问题及验收条件写成该批目标的持久反馈，后续作者和 reviewer 也会再次读到。
+
+### 示例命令
+
+```bash
+# 1. 用户选择一份或多份已交付课件；这里只授权读取并展开问题，不授权改稿。
+mpres --root . repair open economics \
+  --report "规范术语被随意的说法替代，请展开排查范围。" \
+  --presentation p01 --presentation p03 --by "用户提出"
+
+# 2. 自动执行只读展开；停止在 awaiting_confirmation。
+mpres --root . runner run economics
+mpres --root . repair present economics <case-id>
+
+# 3. 把展开结果给用户看。用户补充时可用 amend 接收完整修改后的 expansion JSON；
+#    --proposal - 从标准输入读取，不需要持久维护方案文件。
+mpres --root . repair amend economics <case-id> --proposal - --by "根据用户反馈调整方案"
+mpres --root . repair present economics <case-id>
+
+# 4. 只有用户明确确认这一版之后才能执行：
+mpres --root . repair confirm economics <case-id> --version 2 --by "用户明确确认"
+mpres --root . runner run economics
+mpres --root . repair status economics
+
+# 独立补打包，不重新写作/渲染：
+mpres --root . repair bundle economics <case-id>
+# 用户不批准时可取消未确认方案（有在途诊断时须先核对回执）：
+mpres --root . repair cancel economics <case-id> --by "用户" --note "此次不返修"
+```
+
+每个确认的问题变体和相似问题都需要 repair_checks：addressed、not_found 或 needs_decision，
+加说明与实际页 ID。仅修举例页却漏掉同类问题、漏项回执、编造页码，会被拦截或交给独立
+reviewer。无法判断/缺少来源的内容必须停在语义待决，不把空泛改写当成解决。
+
+### 新旧交付版本与打包
+
+原 `deliverables/p01.pdf` 和只读源码修订保持原样。首次返修生成 `p01-r002.pdf`，再次返修
+生成 `p01-r003.pdf`。releases 指向最新 committed 版本，release_versions 保留全历史。
+只有新发布提交后才切换当前版本；发布失败保留旧 PDF 和旧交付记录，可沿用
+`workflow retry-publish` 恢复，不必重新调用模型。
+
+正常累计 `<任务名>-delivery.zip` 更新为各稿最新版本。返修完成还自动生成
+`<任务名>-repair-<标识>.zip`，只包含此次指定稿件；包内仍为 `p01/p01.pdf`、`p01/p01.md`
+及该源码版本的主题/资产，同名配对。`repair status` 返回 ready 的实际 ZIP 路径；宿主只附
+已存在且 ready 的压缩包。打包失败可单独 repair bundle 重试，不能拿未交付稿冒充结果。
+两类 ZIP 都有精确 `.gitignore` 规则，不屏蔽项目源码发行包。
+
+批量返修仅执行指定目标，不启动未选择的后续课件；在 pilot/each 的暂停处返修，完成后
+恢复原暂停，继续下一稿仍要独立的用户反馈。数据全部入 SQLite，不新增一堆过程 Markdown。
+
+### 边界与部署
+
+本入口服务 compact SQLite 的已交付任务。只有 legacy 目录或一个外来 presentation.md
+而没有 compact 发布记录时，不会伪造其已审核状态；应先按原迁移/验收流程导入。
+宿主仍负责真正的模型调用、检索与沙箱：项目只提供契约和提交门禁，不声称实现 OS 级隔离。
+用户授权由宿主转发，--by 是审计归因，不是认证凭证。没有真实确认，main 不得自动执行 confirm。
+规范术语、现实案例与几何直观的质量不能由字符串或 JSON 验证器证明；必须由 reviewer 实质判断。
+
 ## 最近阶段
 
-v0.6.13 增加机械化交付 ZIP：每份正式 PDF 与该版本的 `presentation.md` 在包内同名，
-附带原源码资源，支持累计交付、补打包、独立失败重试，并加入精确 `.gitignore` 规则。
-数据库仍为 schema 4，六个语义 skills 和固定 runtime 不变。本次测试验证 ZIP 真实写入、
-读取和源码配对，端到端测试仍使用明确标识的宿主/原生渲染替身；不代表真实模型和浏览器
-生产质量验收，也不把本版标记为整个重构的 v0.7.0 完成。
+v0.6.14 加入历史用户反馈的持久化、开工短回执和页内证据检查；v0.6.15 加入先展开再确认
+的单稿/批量返修，重走独立审核、保留历史交付、自动配对 ZIP。schema 为 6，仍是 6 个语义
+skills、4 类语义结果 schema、3 份用户配置入口。模型与推理强度没有改变。
+测试覆盖真实 SQLite、源码快照、文件和 ZIP；模型与 full-render 部分使用明确标识的替身，
+不把协议测试当成真实数学教学质量或原生 Marp 浏览器的端到端验收。

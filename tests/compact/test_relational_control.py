@@ -23,6 +23,8 @@ def compact_root(tmp_path):
 
 def prepare(root, slug='sample', count=2):
     service=Service.create(root,slug,'Vectors')
+    from feedback_fixtures import infrastructure_only
+    infrastructure_only(service)
     settings=read_yaml(service.task/'task.yaml'); settings['workflow']='authoring'
     settings['presentations']=[{'id':'p01','title':'Vectors','units':[
         {'id':f'l{i+1:02d}','title':f'Meeting {i+1}', 'brief':'Explain quantities, units and a worked example.','sources':[]}

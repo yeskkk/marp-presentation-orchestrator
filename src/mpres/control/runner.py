@@ -95,6 +95,10 @@ class Runner:
                 spec=resolve_runtime(runtime,'specialist-reviewer',channel=channel,presentation_id=deck['id'])
                 key=('review',channel,spec['model'],spec['reasoning_effort'],0)
                 fixed[key]={'kind':'review','channel':channel,'family':'reviewer','model':spec['model'],'effort':spec['reasoning_effort'],'ordinal':0}
+        for job in conn.execute("SELECT j.* FROM jobs j JOIN repair_jobs r ON r.job_id=j.id JOIN repair_cases c ON c.id=r.case_id WHERE r.stage='proposal' AND c.state='diagnosing'"):
+            spec=resolve_runtime(runtime,'diagnostic-reviewer',presentation_id=job['presentation'])
+            key=('review','diagnosis',spec['model'],spec['reasoning_effort'],0)
+            fixed[key]={'kind':'review','channel':'diagnosis','family':'reviewer','model':spec['model'],'effort':spec['reasoning_effort'],'ordinal':0}
         existing_slots=conn.execute('SELECT * FROM pool_slots').fetchall()
         attached={s['session_id'] for s in existing_slots if s['session_id']}
         # Unattached registered handles still occupy capacity; they are never
@@ -188,7 +192,7 @@ class Runner:
         packet={'job_id':job['id'],'kind':job['kind'],'presentation':job['presentation'],
                 'channel':job['channel'] or None,'writable_directory':str(output),
                 'required_result':{'summary':'Concrete semantic outcome, not a process report'},
-                'constraints':['Use only provided input material','Do not change task config, DB, evidence or runtime',
+                'constraints':['Use provided material and verifiable public sources within the approved topic; cite event dates and sources, label hypothetical data. If tools/evidence are unavailable report the gap, never fabricate','Do not change task config, DB, evidence or runtime',
                                'No screenshots, OCR or model-vision PDF checking',
                                'Do not author workflow status, assignment files or gate receipts'],
                 'input_files':[]}
@@ -258,7 +262,22 @@ class Runner:
                 frozen=decks[0]['frozen_id'] if decks else job['input_artifact_id']
                 packet['findings']=[{'finding_id':r['id'], 'channel':r['channel'], **json.loads(r['detail_json'])} for r in self.store.rows('SELECT * FROM findings WHERE artifact_id=?',(frozen,))]
                 packet['required_result']['resolutions'] = 'One per finding: finding_id, status addressed|needs_decision, explanation; retain frozen slide IDs'
+        from .repairs import Repairs
+        repair=Repairs(self.task).context(job)
+        if repair:
+            packet['repair_scope']=repair
+            packet['constraints'].append('Preserve unrelated correct material and original slide IDs. Apply only the user-confirmed issue family and related forms, never unrelated polishing.')
+            if job['kind']=='diagnose':
+                packet['writable_directory']=None
+                packet['scope']='read_only_problem_expansion_not_authorized_repair'
+                packet['required_result']['expansion']='Actively describe variants AND related problems; for each give detection/correction guidance. Distinguish observed from possible. Include non-goals, acceptance criteria and evidence/source needs. This is a proposal for user confirmation, not authorization.'
+            else:
+                packet['required_result']['repair_checks']='Every confirmed variant and related problem: problem_id, addressed|not_found|needs_decision, explanation, actual slide_ids. Independently inspect the whole selected deck; do not accept the author readback as proof.'
         from .semantic import schema, result_schema_name, guidance
+        from .feedback import Feedback
+        packet['historical_feedback'] = Feedback(self.task).briefing(attempt_id)['feedback']
+        packet['as_of_date'] = datetime.now(timezone.utc).date().isoformat()
+        packet['required_result']['feedback_checks'] = 'One disposition for every historical feedback id/version, with actual slide excerpts; issue is not a pass; no automatic not_applicable by channel'
         packet['result_schema'] = schema(result_schema_name(job['kind']))
         packet['semantic_guidance'] = guidance(self.root if hasattr(self, 'root') else self.task.parent.parent, job['kind'])
         text_suffixes={'.md','.css','.txt','.json','.yaml','.yml','.csv','.svg'}
@@ -295,10 +314,14 @@ class Runner:
         if workflow_report.get('delivery_package', {}).get('state') == 'failed':
             return {'status': 'blocked', 'reason': 'Delivery ZIP could not be generated; retry packaging, not content production',
                     'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': full}
+        from .repairs import Repairs
+        repairs=Repairs(self.task)
+        proposals=repairs.pending_presentations()
+        repair_status=repairs.status()
         task_status = self.service.status()['status']
-        if task_status in {'paused', 'completed'}:
-            return {'status': task_status, 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': full}
-        if full and not workflow.allowed():
+        if task_status in {'paused', 'completed'} and not proposals:
+            return {'status': 'awaiting_confirmation' if repair_status['awaiting_confirmation'] else task_status, 'repairs':repair_status, 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': full}
+        if full and not (workflow.allowed() | proposals):
             return {'status': 'blocked', 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': True}
         capacity=self.ensure_pool()
         if not capacity['ok']:
@@ -312,7 +335,7 @@ class Runner:
         quality = Quality(self.task)
         for artifact in self.store.rows("SELECT a.id FROM artifacts a WHERE a.origin='submission' AND NOT EXISTS (SELECT 1 FROM gate_runs g WHERE g.artifact_id=a.id AND g.level='source')"):
             quality.inspect(artifact['id'])
-        admitted_presentations = workflow.allowed() if full else None
+        admitted_presentations = (workflow.allowed() | proposals) if full else None
         requests=[]
         with self.store.transaction() as conn:
             jobs=conn.execute("SELECT j.* FROM jobs j LEFT JOIN plan_items p ON p.id=j.plan_item_id WHERE j.state='queued' AND j.family IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dependencies d JOIN jobs x ON x.id=d.needs_id WHERE d.job_id=j.id AND x.state<>'succeeded') ORDER BY CASE j.kind WHEN 'revise' THEN 0 WHEN 'review' THEN 1 WHEN 'edit' THEN 2 ELSE 3 END,p.ordinal,j.rowid").fetchall()
@@ -328,8 +351,8 @@ class Runner:
                 if job['kind']=='write' and (job['presentation'] not in allowed or active_writes+pending_creates>=capacity['actual_author_concurrency']):
                     continue
                 expected=self.service.expected_runtime(conn,job)
-                kind='review' if job['kind']=='review' else 'write' if job['kind']=='write' else 'edit'
-                channel=job['channel'] if kind=='review' else ''
+                kind='review' if job['kind'] in {'review','diagnose'} else 'write' if job['kind']=='write' else 'edit'
+                channel=('diagnosis' if job['kind']=='diagnose' else job['channel']) if kind=='review' else ''
                 slots=conn.execute('SELECT * FROM pool_slots WHERE kind=? AND channel=? AND model=? AND effort=? ORDER BY ordinal,id',
                                    (kind,channel,expected['model'],expected['reasoning_effort'])).fetchall()
                 for slot in slots:
@@ -352,8 +375,8 @@ class Runner:
                 if job['kind']=='write' and active+creating>=capacity['actual_author_concurrency']:
                     continue
                 expected=self.service.expected_runtime(conn,job)
-                kind='review' if job['kind']=='review' else 'write' if job['kind']=='write' else 'edit'
-                channel=job['channel'] if kind=='review' else ''
+                kind='review' if job['kind'] in {'review','diagnose'} else 'write' if job['kind']=='write' else 'edit'
+                channel=('diagnosis' if job['kind']=='diagnose' else job['channel']) if kind=='review' else ''
                 slots=conn.execute("SELECT s.* FROM pool_slots p JOIN sessions s ON s.id=p.session_id WHERE p.state='ready' AND p.kind=? AND p.channel=? AND p.model=? AND p.effort=? ORDER BY p.ordinal,p.id",
                                    (kind,channel,expected['model'],expected['reasoning_effort'])).fetchall()
                 handle=next((s['id'] for s in slots if self.service.eligible(conn,job,s)),None)
@@ -364,21 +387,78 @@ class Runner:
             except MPresError:
                 continue
             try:
-                packet=self.packet(job,attempt['id'])
-                request={'operation':'run','request_id':attempt['id'],'attempt_id':attempt['id'],'session_id':handle,'runtime':expected,'packet':packet}
-                with self.store.transaction() as conn:
-                    event(conn,'provider.run_requested',{'attempt_id':attempt['id'],'context_bytes':packet['context_bytes']},job['id'])
-                requests.append(request)
+                request=self.execution_request(job,attempt)
+                if request: requests.append(request)
+            except Exception as exc:
+                self._blocked_packet(attempt['id'],exc)
+        for attempt in self.store.rows("SELECT a.* FROM attempts a JOIN attempt_briefings b ON b.attempt_id=a.id WHERE a.state='reserved' AND b.acknowledgement_json IS NOT NULL AND b.run_dispatched=0"):
+            try:
+                request=self.execution_request(self.service.job(attempt['job_id']),attempt)
+                if request: requests.append(request)
             except Exception as exc:
                 self._blocked_packet(attempt['id'],exc)
         return {'status':'requests_ready' if requests else 'idle_or_waiting','capacity':{k:v for k,v in capacity.items() if k!='slots'},'requests':requests,'outstanding':self.outstanding(),
                 'release_pipeline_enabled':full, 'workflow':workflow_report}
+
+    def execution_request(self, job: dict, attempt: dict) -> dict | None:
+        from .feedback import Feedback
+        brief=Feedback(self.task).briefing(attempt['id'])
+        operation='run' if brief['acknowledged'] else 'brief'
+        flag='run_dispatched' if operation=='run' else 'brief_dispatched'
+        if brief[flag]: return None
+        with self.store.transaction() as conn:
+            runtime=self.service.expected_runtime(conn,job)
+        if operation=='run':
+            packet=self.packet(job,attempt['id'])
+        else:
+            packet={'kind':job['kind'],'presentation':job['presentation'],
+                    'channel':job['channel'],'historical_feedback':brief['feedback'],
+                    'instructions':'Before any writing/review: restate how each feedback item will be applied or checked in this job. Return readback [{id,version,approach}]. Do not edit source or produce findings yet.',
+                    'writable_directory':None}
+            if job['plan_item_id']:
+                packet['unit']=self.store.rows('SELECT unit,title,brief FROM plan_items WHERE id=?',(job['plan_item_id'],))[0]
+            from .repairs import Repairs
+            scope=Repairs(self.task).context(job)
+            if scope: packet['repair_scope']=scope
+        if len(encode(packet).encode()) > self.settings().get('context_budget_bytes',262144):
+            raise MPresError('Historical feedback exceeds the context budget; never silently truncate it')
+        with self.store.transaction() as conn:
+            current=conn.execute('SELECT * FROM attempt_briefings WHERE attempt_id=?',(attempt['id'],)).fetchone()
+            if current[flag]: return None
+            conn.execute('UPDATE attempt_briefings SET '+flag+'=1 WHERE attempt_id=?',(attempt['id'],))
+            event(conn,'provider.'+operation+'_requested',{'attempt_id':attempt['id'],'context_bytes':packet.get('context_bytes',len(encode(packet).encode()))},job['id'])
+        return {'operation':operation,'request_id':('brief:' if operation=='brief' else '')+attempt['id'],
+                'attempt_id':attempt['id'],'session_id':attempt['session_id'],'runtime':runtime,'packet':packet}
 
     def accept(self, request: dict, response: dict) -> dict:
         if not isinstance(response,dict):
             raise MPresError('Provider response must be a JSON object')
         if request['operation']=='create':
             return self.attach(request['slot_id'],response['handle'],response['model'],response['reasoning_effort'],response['receipt'])
+        if request['operation']=='brief':
+            from .feedback import Feedback
+            attempt_id=request['attempt_id']
+            job=self.service.job(self.service.attempt(attempt_id)['job_id'])
+            with self.store.transaction() as conn: expected=self.service.expected_runtime(conn,job)
+            actual=response.get('runtime',{})
+            if (actual.get('model'),actual.get('reasoning_effort'))!=(expected['model'],expected['reasoning_effort']):
+                raise MPresError('Pre-work readback runtime differs from the confirmed profile')
+            if response.get('source_dir') is not None:
+                raise MPresError('Pre-work readback may not submit source')
+            usage=response.get('usage')
+            if not isinstance(usage,list) or not usage: raise MPresError('Pre-work readback requires genuine usage receipts')
+            for call in usage:
+                self.service.record_usage(attempt_id,call['call_id'],call['counters'])
+            result=Feedback(self.task).acknowledge(attempt_id,response.get('readback'),response.get('receipt'))
+            # A late, exact readback can resolve an uncertain *brief* only. A lost
+            # content execution still follows the existing receipt reconciliation.
+            with self.store.transaction() as conn:
+                a=conn.execute('SELECT * FROM attempts WHERE id=?',(attempt_id,)).fetchone()
+                b=conn.execute('SELECT run_dispatched FROM attempt_briefings WHERE attempt_id=?',(attempt_id,)).fetchone()
+                if a['state']=='uncertain' and not a['provider_receipt'] and not b['run_dispatched']:
+                    conn.execute("UPDATE attempts SET state='reserved',error=NULL WHERE id=?",(attempt_id,))
+                    conn.execute("UPDATE sessions SET state='open' WHERE id=?",(a['session_id'],))
+            return result
         if request['operation']!='run':
             raise MPresError('Unknown external operation')
         attempt_id=request['attempt_id']

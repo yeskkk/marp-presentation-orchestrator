@@ -105,6 +105,9 @@ class Workflow:
             if task['status'] != 'running':
                 return set()
             settings = json.loads(cfg['settings_json'])
+            case=conn.execute("SELECT id FROM repair_cases WHERE state='running'").fetchone()
+            if case:
+                return {r['presentation'] for r in conn.execute("SELECT d.presentation FROM decks d JOIN repair_targets t ON t.presentation=d.presentation WHERE t.case_id=? AND d.phase NOT IN ('delivered','blocked') ORDER BY d.ordinal LIMIT 2",(case['id'],))}
             decks = conn.execute("SELECT * FROM decks WHERE phase<>'delivered' ORDER BY ordinal").fetchall()
             # Failed/uncertain current work does not speculate more downstream work.
             if not decks or decks[0]['phase'] == 'blocked':
@@ -225,7 +228,9 @@ class Workflow:
             if not changed:
                 break
         package = Delivery(self.task).ensure()
-        return {**self.status(), 'delivery_package': package,
+        from .repairs import RepairDelivery
+        repair_packages=[{'case_id':c['id'],**RepairDelivery(self.task,c['id']).ensure()} for c in self.store.rows("SELECT id FROM repair_cases WHERE state='completed' ORDER BY created_at")]
+        return {**self.status(), 'delivery_package': package, 'repair_packages':repair_packages,
                 'changed': before != self.store.rows('SELECT * FROM decks ORDER BY ordinal')}
 
     def _advance_deck(self, deck: dict) -> bool:
@@ -273,6 +278,10 @@ class Workflow:
                     raise MPresError('Author requested a semantic decision; unresolved findings cannot be released')
             return self._set(deck, 'preflight' if phase=='editing' else 'postflight', candidate_id=output['id'], active_job_id=None)
         if phase in {'preflight','postflight'}:
+            from .feedback import Feedback
+            Feedback(self.task).require_author_clear(deck['candidate_id'])
+            from .repairs import Repairs
+            Repairs(self.task).require_clear(deck['candidate_id'])
             gate=self.quality.inspect(deck['candidate_id'], 'full')
             if gate['state']=='running':
                 return False
@@ -292,12 +301,12 @@ class Workflow:
                 if current['phase']!='preflight' or current['candidate_id']!=deck['candidate_id']:
                     return False
                 for channel in CHANNELS:
-                    self.service.ensure_job(conn,key=f"review:{deck['candidate_id']}:{channel}",presentation=deck['presentation'],kind='review',round=1,channel=channel,artifact=deck['candidate_id'])
+                    self.service.ensure_job(conn,key=f"review:{deck['candidate_id']}:{channel}",presentation=deck['presentation'],kind='review',round=deck['review_round'],channel=channel,artifact=deck['candidate_id'])
                 conn.execute("UPDATE decks SET phase='reviewing',frozen_id=candidate_id,repair_count=0 WHERE presentation=?",(deck['presentation'],))
                 event(conn,'deck.frozen',{'presentation':deck['presentation'],'artifact_id':deck['candidate_id'],'gate_id':gate['id']})
             return True
         if phase=='reviewing':
-            jobs=self.store.rows("SELECT * FROM jobs WHERE kind='review' AND input_artifact_id=? AND round=1", (deck['frozen_id'],))
+            jobs=self.store.rows("SELECT * FROM jobs WHERE kind='review' AND input_artifact_id=? AND round=?", (deck['frozen_id'],deck['review_round']))
             if len(jobs)!=5 or any(j['state']!='succeeded' for j in jobs):
                 return False
             self._review_proof(deck)
@@ -366,7 +375,7 @@ class Workflow:
             raise
 
     def _review_proof(self, deck: dict) -> None:
-        rows=self.store.rows("SELECT j.channel,a.session_id FROM jobs j JOIN attempts a ON a.job_id=j.id WHERE j.kind='review' AND j.input_artifact_id=? AND j.round=1 AND j.state='succeeded' AND a.state='succeeded'", (deck['frozen_id'],))
+        rows=self.store.rows("SELECT j.channel,a.session_id FROM jobs j JOIN attempts a ON a.job_id=j.id WHERE j.kind='review' AND j.input_artifact_id=? AND j.round=? AND j.state='succeeded' AND a.state='succeeded'", (deck['frozen_id'],deck['review_round']))
         if len(rows)!=5 or {r['channel'] for r in rows}!=set(CHANNELS) or len({r['session_id'] for r in rows})!=5:
             raise MPresError('Release requires five distinct successful full-deck reviewer sessions')
         for row in rows:
@@ -374,32 +383,49 @@ class Workflow:
             if conflicts:
                 raise MPresError('Reviewer independence was violated')
         self.quality.require_pass(deck['frozen_id'])
+        from .feedback import Feedback
+        Feedback(self.task).require_current_reviews(deck['frozen_id'])
 
     def publish(self, deck: dict) -> dict:
-        """An exclusive final path + prepared DB row reconcile interrupted copies."""
+        """Publish exact revisions; a repair never overwrites a historical PDF."""
+        from .feedback import Feedback
+        from .repairs import Repairs
         self._review_proof(deck)
+        Feedback(self.task).require_author_clear(deck['candidate_id'])
+        Repairs(self.task).require_clear(deck['candidate_id'])
         gate=self.quality.require_pass(deck['candidate_id'])
-        if not gate['pdf_path']:
-            raise MPresError('Successful full gate did not retain a PDF')
-        findings=self.store.rows('SELECT * FROM findings WHERE artifact_id=?',(deck['frozen_id'],))
-        for finding in findings:
+        if not gate['pdf_path']: raise MPresError('Successful full gate did not retain a PDF')
+        for finding in self.store.rows('SELECT * FROM findings WHERE artifact_id=?',(deck['frozen_id'],)):
             resolution=json.loads(finding['resolution_json'] or '{}')
             if resolution.get('status')!='addressed' or resolution.get('artifact_id')!=deck['candidate_id']:
                 raise MPresError('Every finding needs an author response bound to the exact release revision')
         source=inside(self.task,gate['pdf_path'])
         if not source.is_file():raise MPresError('Full-gate PDF is missing')
-        target=inside(self.task,f"deliverables/{deck['presentation']}.pdf")
+        case_id=deck.get('repair_case')
+        revision=1
+        if case_id:
+            target_row=self.store.rows('SELECT * FROM repair_targets WHERE case_id=? AND presentation=?',(case_id,deck['presentation']))
+            if not target_row: raise MPresError('Repair target is outside the approved campaign')
+            revision=target_row[0]['release_revision']
+        relative=f"deliverables/{deck['presentation']}.pdf" if not case_id else f"deliverables/{deck['presentation']}-r{revision:03d}.pdf"
+        target=inside(self.task,relative)
         with self.store.transaction() as conn:
             cfg=self.service.confirmed(conn)
-            old=conn.execute('SELECT * FROM releases WHERE presentation=?',(deck['presentation'],)).fetchone()
-            if old and (old['artifact_id'],old['gate_id'])!=(deck['candidate_id'],gate['id']):
+            old=conn.execute('SELECT * FROM release_versions WHERE presentation=? AND revision=?',(deck['presentation'],revision)).fetchone()
+            if old and (old['artifact_id'],old['gate_id'],old['case_id'])!=(deck['candidate_id'],gate['id'],case_id):
                 raise MPresError('A different revision already owns this delivery path')
             if not old:
-                conn.execute("INSERT INTO releases VALUES(?,?,?,?,'prepared',?,NULL)",(deck['presentation'],deck['candidate_id'],gate['id'],target.relative_to(self.task).as_posix(),utc_now()))
+                conn.execute("INSERT INTO release_versions VALUES(?,?,?,?,?,'prepared',?,NULL,?)",(deck['presentation'],revision,deck['candidate_id'],gate['id'],relative,utc_now(),case_id))
+            if not case_id:
+                previous=conn.execute('SELECT * FROM releases WHERE presentation=?',(deck['presentation'],)).fetchone()
+                if previous and (previous['artifact_id'],previous['gate_id'])!=(deck['candidate_id'],gate['id']):
+                    raise MPresError('A different revision already owns this delivery path')
+                if not previous:
+                    conn.execute("INSERT INTO releases VALUES(?,?,?,?,'prepared',?,NULL)",(deck['presentation'],deck['candidate_id'],gate['id'],relative,utc_now()))
         if old and old['state']=='committed':
             if not target.is_file() or target.read_bytes()!=source.read_bytes():
                 raise MPresError('Committed delivery is missing or changed; never silently recreate it')
-            return {'presentation':deck['presentation'],'pdf':str(target),'artifact_id':deck['candidate_id'],'already_published':True}
+            return {'presentation':deck['presentation'],'pdf':str(target),'artifact_id':deck['candidate_id'],'revision':revision,'already_published':True}
         pending=self.task/'.mpres'/'publish'/uid('p')
         pending.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(source,pending);pending.chmod(0o444)
@@ -409,24 +435,40 @@ class Workflow:
             with self.store.transaction() as conn:
                 self.service.confirmed(conn)
                 current=conn.execute('SELECT * FROM decks WHERE presentation=?',(deck['presentation'],)).fetchone()
-                if current['candidate_id']!=deck['candidate_id'] or current['phase'] not in {'releasing','delivered'}:
+                if current['candidate_id']!=deck['candidate_id'] or current['phase'] not in {'releasing','delivered'} or current['repair_case']!=case_id:
                     raise MPresError('Deck changed before publication')
                 self.quality.require_pass(deck['candidate_id'],conn=conn)
                 try:os.link(pending,target)
                 except FileExistsError:
                     if target.read_bytes()!=source.read_bytes():raise MPresError('Conflicting concurrent delivery')
-                conn.execute("UPDATE releases SET state='committed',committed_at=COALESCE(committed_at,?) WHERE presentation=?",(utc_now(),deck['presentation']))
-                conn.execute("UPDATE decks SET phase='delivered',delivered_at=COALESCE(delivered_at,?) WHERE presentation=?",(utc_now(),deck['presentation']))
-                settings=json.loads(cfg['settings_json'])
-                remaining=conn.execute("SELECT count(*) FROM decks WHERE phase<>'delivered'").fetchone()[0]
-                delivered=conn.execute("SELECT count(*) FROM decks WHERE phase='delivered'").fetchone()[0]
-                if not remaining:
-                    conn.execute("UPDATE task SET status='completed'")
-                elif settings['delivery']=='each' or (settings['delivery']=='pilot' and delivered==1):
-                    conn.execute("UPDATE task SET status='paused'")
-                    if not conn.execute("SELECT 1 FROM decisions WHERE kind='delivery-feedback' AND presentation=?",(deck['presentation'],)).fetchone():
-                        conn.execute('INSERT INTO decisions(kind,presentation,detail_json) VALUES(?,?,?)',('delivery-feedback',deck['presentation'],encode({'pdf':str(target.relative_to(self.task))})))
-                event(conn,'deck.delivered',{'presentation':deck['presentation'],'artifact_id':deck['candidate_id'],'pdf':str(target.relative_to(self.task))})
+                now=utc_now()
+                conn.execute("UPDATE release_versions SET state='committed',committed_at=COALESCE(committed_at,?) WHERE presentation=? AND revision=?",(now,deck['presentation'],revision))
+                if case_id:
+                    previous=conn.execute('SELECT * FROM releases WHERE presentation=?',(deck['presentation'],)).fetchone()
+                    baseline=conn.execute('SELECT * FROM repair_targets WHERE case_id=? AND presentation=?',(case_id,deck['presentation'])).fetchone()
+                    if previous['artifact_id'] not in {baseline['baseline_artifact_id'],deck['candidate_id']}:
+                        raise MPresError('The baseline release changed before repair publication')
+                    conn.execute("UPDATE releases SET artifact_id=?,gate_id=?,pdf_path=?,state='committed',created_at=?,committed_at=? WHERE presentation=?",(deck['candidate_id'],gate['id'],relative,now,now,deck['presentation']))
+                else:
+                    conn.execute("UPDATE releases SET state='committed',committed_at=COALESCE(committed_at,?) WHERE presentation=?",(now,deck['presentation']))
+                conn.execute("UPDATE decks SET phase='delivered',delivered_at=COALESCE(delivered_at,?) WHERE presentation=?",(now,deck['presentation']))
+                if case_id:
+                    conn.execute('UPDATE repair_targets SET delivered_at=? WHERE case_id=? AND presentation=?',(now,case_id,deck['presentation']))
+                    if not conn.execute('SELECT 1 FROM repair_targets WHERE case_id=? AND delivered_at IS NULL',(case_id,)).fetchone():
+                        case=conn.execute('SELECT * FROM repair_cases WHERE id=?',(case_id,)).fetchone()
+                        conn.execute("UPDATE repair_cases SET state='completed' WHERE id=?",(case_id,))
+                        conn.execute('UPDATE task SET status=?',(case['previous_task_status'],))
+                        event(conn,'repair.completed',{'case_id':case_id})
+                else:
+                    settings=json.loads(cfg['settings_json'])
+                    remaining=conn.execute("SELECT count(*) FROM decks WHERE phase<>'delivered'").fetchone()[0]
+                    delivered=conn.execute("SELECT count(*) FROM decks WHERE phase='delivered'").fetchone()[0]
+                    if not remaining:conn.execute("UPDATE task SET status='completed'")
+                    elif settings['delivery']=='each' or (settings['delivery']=='pilot' and delivered==1):
+                        conn.execute("UPDATE task SET status='paused'")
+                        if not conn.execute("SELECT 1 FROM decisions WHERE kind='delivery-feedback' AND presentation=?",(deck['presentation'],)).fetchone():
+                            conn.execute('INSERT INTO decisions(kind,presentation,detail_json) VALUES(?,?,?)',('delivery-feedback',deck['presentation'],encode({'pdf':relative})))
+                event(conn,'deck.delivered',{'presentation':deck['presentation'],'artifact_id':deck['candidate_id'],'pdf':relative,'revision':revision,'repair_case':case_id})
         finally:
             pending.unlink(missing_ok=True)
-        return {'presentation':deck['presentation'],'pdf':str(target),'artifact_id':deck['candidate_id']}
+        return {'presentation':deck['presentation'],'pdf':str(target),'artifact_id':deck['candidate_id'],'revision':revision}

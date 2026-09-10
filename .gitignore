@@ -20,3 +20,6 @@ tasks/*/downloads/
 
 # Generated PDF + matching Markdown delivery bundles (not source release ZIPs).
 **/deliverables/*-delivery.zip
+
+# User-confirmed, versioned repair delivery ZIPs
+**/deliverables/*-repair-*.zip

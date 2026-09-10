@@ -64,7 +64,7 @@ class Delivery:
         if not releases:
             return {**base, 'state': 'not_applicable'}
         rows = self.store.rows(
-            "SELECT detail_json FROM events WHERE kind='delivery.bundled' ORDER BY id DESC LIMIT 1")
+            "SELECT detail_json FROM events WHERE kind='delivery.bundled' AND json_extract(detail_json,'$.path')=? ORDER BY id DESC LIMIT 1", (self.relative,))
         last = json.loads(rows[0]['detail_json']) if rows else {}
         try:
             path = inside(self.task, self.relative)
@@ -188,7 +188,7 @@ class Delivery:
                 info = target.stat()
                 receipt = {'path': self.relative, 'releases': releases,
                            'file_count': len(entries), 'bytes': info.st_size, 'mtime_ns': info.st_mtime_ns}
-                old = conn.execute("SELECT detail_json FROM events WHERE kind='delivery.bundled' ORDER BY id DESC LIMIT 1").fetchone()
+                old = conn.execute("SELECT detail_json FROM events WHERE kind='delivery.bundled' AND json_extract(detail_json,'$.path')=? ORDER BY id DESC LIMIT 1", (self.relative,)).fetchone()
                 if not old or json.loads(old['detail_json']) != receipt:
                     event(conn, 'delivery.bundled', receipt)
             return {'state': 'ready', 'path': str(target), 'bytes': info.st_size,

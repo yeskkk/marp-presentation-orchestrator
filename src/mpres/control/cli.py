@@ -60,6 +60,22 @@ def build_parser() -> argparse.ArgumentParser:
         if name=='continue':cmd.add_argument('--by',required=True);cmd.add_argument('--note',required=True)
         if name in {'retry-checks','retry-publish'}:cmd.add_argument('--presentation',required=True);cmd.add_argument('--note',required=True)
         if name=='recover-assembly':cmd.add_argument('--job-id',required=True);cmd.add_argument('--note',required=True)
+    feedback=sub.add_parser('feedback').add_subparsers(dest='operation',required=True)
+    ls=feedback.add_parser('list');ls.add_argument('slug');ls.add_argument('--history',action='store_true')
+    rec=feedback.add_parser('record');rec.add_argument('slug');rec.add_argument('--rule',required=True);rec.add_argument('--by',required=True)
+    inherit=feedback.add_parser('inherit');inherit.add_argument('slug');inherit.add_argument('--from-task',type=Path,required=True);inherit.add_argument('--by',required=True)
+    for op in ('briefing','acknowledge'):
+        cmd=job.add_parser(op);cmd.add_argument('slug');cmd.add_argument('attempt_id')
+        if op=='acknowledge':cmd.add_argument('--readback',required=True);cmd.add_argument('--receipt',required=True)
+    repair=sub.add_parser('repair').add_subparsers(dest='operation',required=True)
+    op=repair.add_parser('open');op.add_argument('slug');op.add_argument('--report',required=True);op.add_argument('--presentation',action='append',required=True);op.add_argument('--by',required=True)
+    op=repair.add_parser('status');op.add_argument('slug')
+    for action in ('present','confirm','amend','cancel','bundle'):
+        op=repair.add_parser(action);op.add_argument('slug');op.add_argument('case_id')
+        if action in {'confirm','amend','cancel'}:op.add_argument('--by',required=True)
+        if action=='confirm':op.add_argument('--version',type=int,required=True)
+        if action=='amend':op.add_argument('--proposal',required=True)
+        if action=='cancel':op.add_argument('--note',required=True)
     toolchain=sub.add_parser('toolchain').add_subparsers(dest='operation',required=True)
     doctor=toolchain.add_parser('doctor');doctor.add_argument('--timeout',type=int,default=120)
     return parser
@@ -83,7 +99,27 @@ def main(argv: list[str] | None = None) -> int:
         else:
             safe_id(args.slug,label='task slug')
             service=Service(root/'tasks'/args.slug)
-            if args.command=='workflow':
+            if args.command=='repair':
+                from .repairs import Repairs, RepairDelivery
+                repair=Repairs(service.task)
+                if args.operation=='open':result=repair.open(args.report,args.presentation,args.by)
+                elif args.operation=='status':result=repair.status()
+                elif args.operation=='present':result=repair.present(args.case_id)
+                elif args.operation=='confirm':result=repair.confirm(args.case_id,args.version,args.by)
+                elif args.operation=='amend':result=repair.amend(args.case_id,json_input(args.proposal),args.by)
+                elif args.operation=='cancel':result=repair.cancel(args.case_id,args.by,args.note)
+                else:
+                    if repair.case(args.case_id)['state']!='completed':raise MPresError('All selected repair targets must be delivered before exporting the repair bundle')
+                    result=RepairDelivery(service.task,args.case_id).bundle()
+            elif args.command=='feedback':
+                from .feedback import Feedback
+                feedback=Feedback(service.task)
+                if args.operation=='list':result=feedback.list(args.history)
+                elif args.operation=='record':result=feedback.record(json_input(args.rule),args.by)
+                else:
+                    prior=Feedback(args.from_task)
+                    result=[feedback.record({k:v for k,v in r.items() if k!='version'},args.by) for r in prior.list()]
+            elif args.command=='workflow':
                 from .workflow import Workflow
                 workflow=Workflow(service.task)
                 if args.operation=='bundle':
@@ -116,6 +152,12 @@ def main(argv: list[str] | None = None) -> int:
                 else:result=getattr(service,args.operation)()
             elif args.command=='session':
                 result=service.register_session(args.handle,args.family,args.model,args.effort,args.receipt)
+            elif args.operation=='briefing':
+                from .feedback import Feedback
+                result=Feedback(service.task).briefing(args.attempt_id)
+            elif args.operation=='acknowledge':
+                from .feedback import Feedback
+                result=Feedback(service.task).acknowledge(args.attempt_id,json_input(args.readback),args.receipt)
             elif args.operation=='show':result=service.job(args.job_id)
             elif args.operation=='bind':result=service.bind(args.job_id,args.handle)
             elif args.operation=='started':result=service.started(args.attempt_id,args.receipt)

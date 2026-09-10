@@ -128,6 +128,8 @@ class Service:
                 (task/folder).mkdir()
             service = cls(task)
             service.store.initialize(title)
+            from .feedback import Feedback
+            Feedback(service.task).seed()
             return service
         except Exception:
             remove_tree(task)
@@ -153,7 +155,8 @@ class Service:
                 self.confirmed(conn)
             conn.execute('UPDATE task SET presented_json=?', (encode(doc),))
             event(conn,'task.presented',{})
-        return doc
+        from .feedback import Feedback
+        return {**doc, 'historical_feedback': Feedback(self.task).list()}
 
     def confirm(self, actor: str) -> dict:
         actor = require_text(actor,'explicit user confirmation attribution')
@@ -277,13 +280,17 @@ class Service:
         return True
 
     def bind(self, job_id: str, handle: str) -> dict:
+        from .feedback import Feedback
+        Feedback(self.task).seed()
         with self.store.transaction() as conn:
             self.confirmed(conn)
             job = conn.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
             if job is None:
                 raise MPresError('Unknown job ID; no state has been written')
             if conn.execute('SELECT status FROM task').fetchone()[0] != 'running':
-                raise MPresError('Task is paused or completed')
+                from .repairs import Repairs
+                if not Repairs.proposal_job(conn, job_id):
+                    raise MPresError('Task is paused or completed')
             if job['state'] != 'queued':
                 raise MPresError('Job is not queued')
             if job['kind']=='write':
@@ -302,6 +309,7 @@ class Service:
             attempt = uid('a')
             conn.execute("INSERT INTO attempts(id,job_id,session_id,sequence,state,started_at) VALUES(?,?,?,?,'reserved',?)",
                          (attempt,job_id,handle,seq,utc_now()))
+            Feedback.reserve(conn,attempt,job['presentation'])
             conn.execute("UPDATE jobs SET state='running' WHERE id=?",(job_id,))
             conn.execute('INSERT OR IGNORE INTO participation VALUES(?,?,?,?,?)',
                          (handle,job['presentation'],job['kind'],job['round'],job['channel']))
@@ -323,6 +331,8 @@ class Service:
                 return dict(row)
             if not row or row['state'] not in {'reserved','running','uncertain'}:
                 raise MPresError('Attempt is not reserved/running/uncertain')
+            from .feedback import Feedback
+            Feedback.require_readback(conn, attempt_id)
             if row['provider_receipt'] and row['provider_receipt'] != receipt:
                 raise MPresError('Provider receipt is immutable')
             conn.execute("UPDATE attempts SET state='running',provider_receipt=? WHERE id=?",(receipt,attempt_id))
@@ -376,6 +386,10 @@ class Service:
             raise MPresError('Author/edit result requires its source directory with presentation.md')
         if not needs_source and source is not None:
             raise MPresError('A reviewer or diagnostic worker cannot replace source')
+        from .feedback import Feedback
+        Feedback(self.task).validate_result(attempt_id, job, result, source)
+        from .repairs import Repairs
+        Repairs(self.task).validate_result(job, result, source)
         from .workflow import validate_result
         validate_result(self, job, result, source)
         artifact = None
@@ -425,6 +439,8 @@ class Service:
                     for resolution in result['resolutions']:
                         conn.execute('UPDATE findings SET resolution_json=? WHERE id=?',
                                      (encode({**resolution, 'artifact_id': artifact[0], 'attempt_id': attempt_id}), resolution['finding_id']))
+                if job['kind']=='diagnose':
+                    Repairs(self.task).accept_proposal(conn, job, result)
                 conn.execute("UPDATE attempts SET state='succeeded',result_json=?,finished_at=? WHERE id=?",(canonical,utc_now(),attempt_id))
                 conn.execute("UPDATE jobs SET state='succeeded' WHERE id=?",(job['id'],))
                 conn.execute("UPDATE sessions SET state='open' WHERE id=? AND state='uncertain'",(row['session_id'],))
@@ -485,4 +501,6 @@ class Service:
                       'unresolved_decisions':self.store.rows('SELECT * FROM decisions WHERE resolved_at IS NULL'),
                       'artifacts':self.store.rows('SELECT id,presentation,unit,origin,verified FROM artifacts'),
                       'model_control_roles':[], 'delivery_package': Delivery(self.task).status()})
+        from .repairs import Repairs
+        state['repairs']=Repairs(self.task).status()
         return state

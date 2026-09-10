@@ -21,6 +21,8 @@ from test_revision_quality import HEADER
 
 def full_task(root, *, delivery='all', decks=2, units=2):
     s=Service.create(root,'full','Full workflow fixture')
+    from feedback_fixtures import infrastructure_only
+    infrastructure_only(s)
     cfg=read_yaml(s.task/'task.yaml')
     cfg.update(workflow='full',delivery=delivery,author_concurrency=2)
     cfg['provider'].update(mode='command',command=['fixture-not-a-real-provider'],handle_limit=12,external_handles=1)
