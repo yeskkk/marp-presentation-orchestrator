@@ -13,9 +13,8 @@ COMMAND_RE = re.compile(r"\\(?P<name>[A-Za-z]+)")
 
 
 def _masked(source: str) -> str:
-    text = COMMENT_RE.sub(lambda match: "\n" * match.group(0).count("\n"), source)
-    text = FENCED_CODE_RE.sub(lambda match: "\n" * match.group(0).count("\n"), text)
-    return INLINE_CODE_RE.sub("", text)
+    from mpres.marp_source import _mask_non_math_regions
+    return _mask_non_math_regions(source)
 
 
 def inspect_math_source(source: Path) -> dict[str, Any]:
@@ -26,12 +25,20 @@ def inspect_math_source(source: Path) -> dict[str, Any]:
     for slide in deck.slides:
         masked = _masked(slide.source)
         fragments = list(MATH_FRAGMENT_RE.finditer(masked))
-        begins = [match.group("name") for match in BEGIN_RE.finditer(masked)]
-        ends = [match.group("name") for match in END_RE.finditer(masked)]
-        if begins != ends:
-            errors.append(
-                f"Slide {slide.slide_id or slide.index} has mismatched TeX environments: begin={begins}, end={ends}."
-            )
+        begins = []
+        for fragment in fragments:
+            body=fragment.group(0)
+            body=re.sub(r'(?<!\\)%[^\n]*','',body)
+            stack=[]
+            for match in re.finditer(r'(?<!\\)\\(?P<kind>begin|end)\s*\{(?P<name>[A-Za-z*]+)\}',body):
+                name=match.group('name')
+                if match.group('kind')=='begin':stack.append(name);begins.append(name)
+                elif not stack or stack[-1]!=name:
+                    errors.append(f"Slide {slide.slide_id or slide.index} has mismatched TeX environments: unexpected end {name}; stack={stack}.")
+                    break
+                else:stack.pop()
+            if stack:
+                errors.append(f"Slide {slide.slide_id or slide.index} has unclosed TeX environments: {stack}.")
         residue = MATH_FRAGMENT_RE.sub("", masked)
         suspicious = []
         for marker in ("$$", "\\[", "\\]", "\\(", "\\)"):

@@ -580,8 +580,8 @@ def prepare_author_source(root: Path, slug: str, task: Path, *, kind: str = "cou
     fill_placeholders(header)
     header.write_text(
         "---\nmarp: true\ntheme: mathist-academic\npaginate: true\nsize: '16:9'\n"
-        "math: mathjax\nbackgroundColor: '#ffffff'\n---\n\n"
-        "<!-- _class: lead core -->\n<!-- slide-id: p01-title -->\n\n"
+        "math: mathjax\n---\n\n"
+        "<!-- _class: core -->\n<!-- slide-id: p01-title -->\n\n"
         "# 第一份课件\n\n测试课程\n",
         encoding="utf-8",
     )

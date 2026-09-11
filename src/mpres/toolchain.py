@@ -73,10 +73,8 @@ def smoke_toolchain(root: Path, *, timeout: int = 120) -> dict[str, Any]:
         temp = Path(raw)
         source = temp / "source"
         source.mkdir()
-        (source / "theme.css").write_text(
-            "/* @theme mathist-academic */\nsection{font-family:Arial,sans-serif;}\n",
-            encoding="utf-8",
-        )
+        from mpres.source_policy import install_theme, render_options
+        install_theme(source)
         (source / "presentation.md").write_text(
             "---\nmarp: true\ntheme: mathist-academic\npaginate: true\nsize: 16:9\nmath: mathjax\n---\n"
             "<!-- slide-id: smoke-01 -->\n# Smoke test\n\nInline math $x^2+1$.\n\n---\n"
@@ -97,9 +95,7 @@ def smoke_toolchain(root: Path, *, timeout: int = 120) -> dict[str, Any]:
             str(source / "presentation.md"),
             "--pdf",
             "--allow-local-files",
-            "--html",
-            "--theme-set",
-            str(source / "theme.css"),
+            *render_options(),
             "--output",
             str(pdf),
         ]

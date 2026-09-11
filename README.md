@@ -3,10 +3,44 @@
 把教材、教学目标与用户确认的课程计划转化为 Marp 课件。Python 负责运行事实和机械
 检查，AI 负责教学语义；不要求 main agent 阅读大量过程文档后逐条操作流程。
 
-**版本 v0.6.15：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
+**版本 v0.6.17：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
 修订 → 再次完整门禁 → PDF 发布 → PDF/源码配对 ZIP。** 运行器不把源码提交等同于交付；缺少原生渲染工具、
 审核回执、finding 处置或明确宿主状态时都会停止。当前验收覆盖确定性适配器和失败分支，
 尚未在本交付环境验证真实模型与固定 Marp 浏览器的端到端输出质量。
+
+## 0. 怎样开始工作
+
+首次安装：`python scripts/bootstrap.py --with-figures`。Codex 需单独安装并登录；
+启动器不会替你登录、付费调用、安装依赖或关闭审批和沙箱。
+
+```bash
+./start.sh --check                    # 只做本地环境检查，不调用模型、不改任务
+./start.sh                            # 在本项目根目录启动交互 Codex，开始需求/规划
+./start.sh --task economics           # 继续已存在任务，固定其 main-planner 模型/强度
+./start.sh --task economics -- --no-alt-screen
+./start.sh --cli task status economics  # 只查数据库，不启动 Codex
+./start.sh --cli toolchain doctor     # 原生 Marp/浏览器检查
+```
+
+Windows 对应 `./start.ps1`，`start-safe` 与普通入口使用相同安全设置。
+也可先进入项目目录手动开启 Codex；它仍读取根 `AGENTS.md` 和同一数据库。
+指定 `--task` 表示恢复任务工作，不是猜测或自动重用某个宿主 conversation ID。
+
+无 task 的会话使用用户自己的 Codex 默认设置，**仅用于选择任务和确认前规划**。
+选定后在任务配置中自行修改 planner/author/reviewer，再以 `--task` 重开。
+有 task 时从文件和已确认数据库快照交叉验证 runtime，传递 `--model` 与
+`model_reasoning_effort`；不允许 CLI 的 model/profile/config 参数再覆盖它。
+worker 的实际 runtime 仍由 runner 的真实回执校验，不由启动器保证。
+
+启动先检查 Python 核心模块、Codex 的实际 `--help`、本地 Node/Marp 版本和绘图库。
+核心模块/Codex/指定任务错误会直接退出；渲染依赖未就绪会明确告警，但不拦截初始规划。
+生产前完整 `toolchain doctor` 仍是必要检查；预检不是浏览器验收。
+无终端环境不会偷偷改用非交互模型调用，脚本请用 `--check` 或 `--cli`。
+
+`PYTHON_BIN`、`CODEX_BIN` 都是一条可执行文件路径，不是含参数的 shell 命令。
+源码启动优先导入本目录 `src`，可从其他工作目录调用，路径中含空格也受支持。
+退出码与终端保留；POSIX 使用 exec 传递中断信号。老的 `start.sh workflow ...`
+形式仍兼容，但新文档统一使用 `--cli`，避免误认为它会开启工作会话。
 
 ## 1. 完整流程：每一步做什么
 
@@ -17,7 +51,7 @@
 | 创建作业 | 从已批准 plan item 生成数据库 job ID、依赖和课次坐标 | 已实现 |
 | 容量准入 | 宿主实际 inventory 与用户上限取更严格值；预算作者、五 reviewer、编辑者和恢复余量 | 已实现 |
 | 历史反馈回顾 | SQLite 保存用户原话、问题表现、验收期望；每次作者/编辑/reviewer 开工先短回执，随后才派发内容执行 | 已实现 |
-| 写作与提交 | runner 领取作业，发精确 JSON 请求，接实际回执、源码和 usage | 已实现 |
+| 写作与提交 | runner 注入只读项目主题；接收 Markdown/外部资产，在入库前拒绝作者 CSS/HTML | 已实现 |
 | 单元源码门禁 | runner 下次 tick 对新修订运行源码、TeX 和资产边界检查 | 已实现 |
 | 整稿组装与语义编辑 | 程序组装，短时编辑作业判断叙事与教学衔接，不设常驻 coordinator | 已实现 |
 | 完整机械门禁 | 指定源码修订 → 临时 HTML/DOM → 数学渲染 → PDF 结构和文本边界检查 | 已实现 `artifact inspect --level full` |
@@ -48,6 +82,7 @@ main agent 只处理需求、教学范围和不能机械解决的语义问题。
 
 ```text
 src/mpres/
+  startup.py                   只读启动检查、task planner runtime、交互终端与 Codex 进程
   cli.py                       默认新入口；显式 legacy 才加载旧入口
   control/
     cli.py                     参数解析和结构化输出，不包含语义判断
@@ -62,11 +97,12 @@ src/mpres/
     feedback.py                用户反馈版本、开工回执、结果证据和旧审核失效检查
     teaching_feedback.json     本项目用户明确指出的三项教学质量底线，自动进入任务数据库
     delivery.py                按已提交 release 配对 PDF/源码，累计 ZIP、校验与独立重试
-    theme.css                  实际课件样式；写作输出预置同一份 theme
+    theme.css                  唯一权威全局主题；由代码维护，author/editor 均不得改
     semantic.py                四个语义 schema 的真实验证；每类作业只注入对应语义指南
     schemas/                   plan、author-result、review-result、diagnosis-result
     files.py                   安全相对路径、只读快照、可写副本
     migration.py               旧任务只读导入
+  source_policy.py             全项目 Markdown 子集、主题所有权、统一渲染参数；无任务豁免
   marp_source.py               Marp 解析、内容 lint；compact 不要求旧过程记录
   html_layout.py              临时 HTML + DOM 几何检查；canonical ID 优先
   math_inspection.py          TeX 结构与渲染节点检查，不证明数学正确性
@@ -77,7 +113,7 @@ src/mpres/
 
 templates/compact/            三份用户配置模板
 .agents/skills/               仅六个语义 skills；旧管理 skills 已删除
-scripts/                     显式安装、静态验证；启动器只调用 compact CLI
+scripts/                     显式安装、静态验证；启动器启动交互 Codex 或显式转发 CLI
 tests/compact/               新控制面、适配器与门禁测试
 tests/                       原有回归测试保留
 ```
@@ -194,10 +230,27 @@ mpres --root . runner outstanding economics
 
 ## 7. 源码、检查和失败怎样流转
 
-作者提交目录至少包含 presentation.md 和 theme.css，以及实际使用的 assets。
-每页保留稳定 `slide-id`，class 为 core/support；源码头使用：
+作者只交 `presentation.md` 和实际引用的外部资产；`theme.css` 由 runner 预置只读副本。
+省略 theme 时程序在新快照内补齐，不改作者原稿；带入主题时必须与项目版本逐字节相同。
+任意其它 CSS/SCSS、raw HTML、页面样式或自动 Marp 配置文件都会在**接受修订之前**被拒绝。
+不是把违规片段默默删除，也不是渲染失败后再请作者改主题。
 
-```yaml
+### 全项目表达约束
+
+全局主题位于 `src/mpres/control/theme.css`，字体、字号、页边距、图示边界属于代码。
+`core/support` 是仅有的语义页面类型，不开放额外 class。内容过满就删冗余、拆推导、
+拆宽表、分离题目和答案或新增页；不缩字、挪公式、拼主题或把正文做成图片。
+主题确有缺陷应在项目维护版本修正，不在课件任务中按页面修补。
+
+本项目采用受限 CommonMark + 表格 + 数学子集。CommonMark 自身允许 HTML，本项目
+故意不允许：HTML block、inline HTML、内嵌 SVG、div/span/style/img/br 均禁止。
+外部 SVG/PNG 等可用标准 Markdown 图片引用；图片 alt 不得使用 Marp 的大小、背景、
+滤镜指令。数学中的尺寸、CSS 注入、宏定义指令也禁止；标准数学字体、矩阵、定界符
+和常规数学间距不受影响。可见教学内容不能混入制作回执。
+
+机器元数据只接受如下封闭注释，代码围栏或反引号中的 HTML 示例属于教学字面量：
+
+````markdown
 ---
 marp: true
 theme: mathist-academic
@@ -205,32 +258,61 @@ paginate: true
 size: "16:9"
 math: mathjax
 ---
-```
+<!-- slide-id: p01-l01-s01 -->
+<!-- _class: core -->
+# 两条直线的公共解
 
-`theme.css` 声明 `/* @theme mathist-academic */`。教材、题目、答案、条件与先修的
-质量仍需要 AI 语义审阅；机械 gate 不会证明数学结论或教学效果。
+$A\mathbf{x}=\mathbf{b}$ 的解需要同时满足两行方程。
+
+![两条直线及其计算得到的交点](assets/l01/intersection.svg)
+
+---
+
+<!-- slide-id: p01-l01-s02 -->
+<!-- _class: support -->
+# 代回原方程检查
+
+把求出的点分别代入两个方程。
+````
+
+分页使用顶层 Markdown 分隔线；代码围栏中的 `---` 不会拆页。标题与公式需要具体含义。
+frontmatter 只接受上述固定布局值，以及 title/description/author/keywords/lang 描述元数据。
+不提供 task.yaml 或 runtime profile 开关来放宽这些全项目规则。
+
+### 检查怎样运行
 
 ```bash
+mpres source check path/to/output                  # 无需任务、模型或 Marp 即可检查表达契约
 mpres --root . artifact inspect economics REVISION_ID --level source
 mpres --root . artifact inspect economics REVISION_ID --level full
 mpres --root . artifact gates economics REVISION_ID
 ```
 
-source 检查 frontmatter、canonical ID、core/support、密度、图像路径、常见 TeX
-控制词错误、数学环境、CSS/SVG 资源边界。full 先做相同检查，再验证固定 Marp 版本，
-运行临时 HTML/DOM 和数学节点检查，生成 PDF 并核验页数、文字边界、替换字符等。
-临时源码可写，检查后的 PDF 只读，报告在库中；没有截图、OCR 或模型视觉步骤。
+`source check` 以 Markdown token 区分代码、数学、图片和 HTML，而不是把小于号或字面
+HTML 示例一律判错；它不等于完整 source gate。后者另查 stable ID、core/support、密度、
+TeX 拼写/嵌套环境、图像路径和资产边界。full 再执行固定 Marp、HTML/DOM、数学节点和
+PDF 结构检查。实际渲染忽略工作目录 Marp 配置，关闭作者 raw HTML，并强制使用项目
+theme、尺寸和 mathjax。渲染器内部产生 HTML/MathJax SVG 不受作者 HTML 禁令影响。
 
-同修订同级别重复检查默认返回已有记录；更换源码必须生成新修订。要明确重跑机械
-工具可加 `--retry`，保留旧记录。仍在 running 的检查不会被重跑；确认其进程已经停止后：
+同一稿各 lesson 的主题不再合并；只复制内容资产，并安装一份项目主题。
+DOM 页面与数学报告按页序、页数对应 canonical slide ID，避免数字 DOM ID 隐藏真实页号。
+正确嵌套的 aligned/bmatrix 使用栈式匹配，不再把 begin/end 列表顺序不同误判为错。
+这些检查不证明数学结论正确，也不依赖视觉模型纠正 PDF。首次五通道语义审核保留；
+审后由作者自修并通过机械门禁，本版本没有增加 reviewer 验收修复的轮次。
+
+检查和模型调用在 SQLite 写事务外运行。报告绑定源码修订和 source-policy version；旧版
+通过记录不能批准新规约的发布，要重新检查。更换稿件生成新修订，不覆盖旧源稿。
+要明确重跑工具可加 `--retry`，保留旧结果。仍在 running 的检查不重复领取；确认原进程
+已经停止后使用：
 
 ```bash
 mpres --root . artifact interrupt-gate economics GATE_ID --reason "已核实原检查进程停止"
 mpres --root . artifact inspect economics REVISION_ID --level full --retry
 ```
 
-检查和模型调用均在 SQLite 写事务外运行。程序不假称数据库能回滚外部调用。
-创建／执行回执丢失会保留不确定状态和占用；同请求对账前不盲目重试，不虚构 close。
+已有交付 PDF 和配对 ZIP 不会自动重写。旧任务若含自定义主题、HTML 或单页样式，继续
+编辑/发布时会被明确拦截；需由作者保留教学内容、改为受支持的 Markdown/外部图，再
+形成新修订。不能通过 legacy 入口或复制旧 gate 绕过规则。配置/runtime/数据库 schema 不变。
 
 ## 8. 整稿流程怎样自动推进
 
@@ -368,11 +450,11 @@ python scripts/validate_project.py
 但只服务显式 legacy；新任务不生成它们，也不把它们编入模型输入。它们的进一步删除需
 先完成旧任务迁移验收，不能仅为减少文件数而破坏导入和技术模块。
 
-已安装环境下可直接运行 `./start.sh runner run economics`；Windows 使用
-`start.cmd runner run economics`。无参数显示 CLI 帮助。启动器不自动安装、不启动日志
-daemon、不调用 Codex、不注入旧长提示，也不禁用宿主的 approvals/sandbox。安装须先
-显式执行 `python scripts/bootstrap.py`；`mpres toolchain doctor` 检查真实渲染环境。
-Windows 脚本在本发布环境仅作文本/参数路径审查，未在 Windows 原生执行。
+交互与机械入口分开：`./start.sh` 进入 Codex；`./start.sh --cli runner run economics`
+只运行控制命令。Windows 使用 `start.cmd` 或 `start.ps1`。启动器不自动安装、不开日志
+daemon、不注入旧长提示、不禁用宿主 approvals/sandbox；任务历史仍由 SQLite 保存。
+Linux 的本发布测试实际启动 shell/PTY 并验证 Codex 协议替身的参数、终端、退出码和信号。
+没有真实 Codex 登录/模型调用，Windows 未作原生执行；两者都不能被替身结果冒充。
 
 ## 11. 六个语义 skills 怎样使用
 
@@ -546,3 +628,16 @@ v0.6.14 加入历史用户反馈的持久化、开工短回执和页内证据检
 skills、4 类语义结果 schema、3 份用户配置入口。模型与推理强度没有改变。
 测试覆盖真实 SQLite、源码快照、文件和 ZIP；模型与 full-render 部分使用明确标识的替身，
 不把协议测试当成真实数学教学质量或原生 Marp 浏览器的端到端验收。
+
+## 本次版本：v0.6.17
+
+在 v0.6.16 启动入口修复的基础上，固定主题所有权并把受限 Markdown 作为源稿提交、
+组装和渲染的共同边界。修正代码围栏/引用图片解析、TeX 环境嵌套、DOM 数字 ID 对齐；
+没有新增 skill、过程模板、数据库表或 reviewer 复修验收状态。
+
+专项测试直接覆盖 v6 的 inline SVG + Markdown 和裸 svg 定位 CSS 失败形态，要求其在
+原生工具启动前被拒绝；也检查合法矩阵、代码示例与引用图片不会被误杀。source parser
+测试使用已安装 markdown-it-py 4.2.0，原生 Marp 参数对照固定 v4.5.0 源码。
+本发布环境仍未取得原生 Marp CLI，也未执行真实 Codex 登录/Windows 交互；协议和渲染
+替身测试不能代替部署环境真实模型、真实渲染验收。部署前执行 bootstrap、toolchain doctor。
+后续计算式图示、分步学生试读、有界自动恢复仍是独立阶段，未混入本版。

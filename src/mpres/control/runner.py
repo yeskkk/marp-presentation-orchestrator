@@ -224,22 +224,22 @@ class Runner:
                 packet['required_result']['findings']='List of message, slide_ids and severity; [] is allowed'
                 packet['writable_directory']=None
         if job['kind'] in {'write','edit','revise'}:
-            packet['source_contract'] = {'files': ['presentation.md','theme.css','assets/ as needed'],
+            packet['source_contract'] = {'files': ['presentation.md','assets/ as needed'], 'read_only_project_files':['theme.css'],
                 'frontmatter': {'marp': True, 'theme': 'mathist-academic', 'paginate': True, 'size':'16:9', 'math':'mathjax'},
                 'slide_id': 'stable unique comment <!-- slide-id: pNN-lNN-sNN -->',
-                'classes': ['core','support'], 'no_process_documents': True}
+                'classes': ['core','support'], 'no_process_documents': True, 'raw_html':'forbidden', 'local_style':'forbidden'}
             packet['constraints'].extend(['Quote size: "16:9" in YAML',
-                'Use assets/<unit-id>/ namespaced asset paths; preserve the shared theme for unit submissions'])
+                'Use assets/<unit-id>/ paths. Never edit CSS/theme/frontmatter layout. No raw HTML, inline SVG or image size/background directives. Split/rewrite content to fit fixed layout. Run mpres source check on output before submission'])
             if job['input_artifact_id']:
                 from .files import writable
                 for src in path.rglob('*'):
-                    if src.is_file() and (src.name in {'presentation.md','theme.css'} or 'assets' in src.relative_to(path).parts):
+                    if src.is_file() and (src.name in {'presentation.md'} or 'assets' in src.relative_to(path).parts):
                         target=output/src.relative_to(path)
                         if not target.exists():
                             target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(src.read_bytes())
                 writable(output)
-            elif not (output/'theme.css').exists():
-                (output/'theme.css').write_bytes(Path(__file__).with_name('theme.css').read_bytes())
+            from mpres.source_policy import install_theme
+            install_theme(output)
         if not job['plan_item_id']:
             packet['course_outline'] = self.store.rows('SELECT unit,title,brief FROM plan_items WHERE presentation=? ORDER BY ordinal',(job['presentation'],))
         if job['input_artifact_id']:

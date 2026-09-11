@@ -49,7 +49,7 @@ def copy_tree(source: Path, target: Path, *, read_only: bool) -> None:
             path.chmod(path.stat().st_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
 
 
-def snapshot(task: Path, source: Path) -> tuple[str, str]:
+def snapshot(task: Path, source: Path, *, fixed_theme: bool = False) -> tuple[str, str]:
     """Prepare a revision outside a DB transaction; caller removes it on rollback.
 
     UUID revision identities replace hashes. Directory permissions are an accident
@@ -62,7 +62,13 @@ def snapshot(task: Path, source: Path) -> tuple[str, str]:
     stage = parent / (artifact_id + '.pending')
     target = task / relative
     try:
-        copy_tree(source, stage, read_only=True)
+        copy_tree(source, stage, read_only=not fixed_theme)
+        if fixed_theme:
+            from mpres.source_policy import install_theme, require_source
+            require_source(stage)
+            install_theme(stage)
+            for path in [*stage.rglob('*'),stage]:
+                path.chmod(path.stat().st_mode & ~(stat.S_IWUSR|stat.S_IWGRP|stat.S_IWOTH))
         os.replace(stage, target)
     except Exception:
         remove_tree(stage)

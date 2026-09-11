@@ -15,6 +15,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='mpres',description='One task database; semantic AI jobs; mechanical workflow control.')
     parser.add_argument('--root',type=Path)
     sub = parser.add_subparsers(dest='command',required=True)
+    source = sub.add_parser('source').add_subparsers(dest='operation',required=True)
+    source_check=source.add_parser('check');source_check.add_argument('directory',type=Path)
     task = sub.add_parser('task').add_subparsers(dest='operation',required=True)
     init = task.add_parser('init'); init.add_argument('slug'); init.add_argument('--title',required=True)
     for action in ('present','confirm','status','metrics','jobs','materialize'):
@@ -89,7 +91,10 @@ def main(argv: list[str] | None = None) -> int:
     parser=build_parser();args=parser.parse_args(argv)
     try:
         root=args.root.resolve() if args.root else find_repo_root()
-        if args.command=='toolchain':
+        if args.command=='source':
+            from mpres.source_policy import inspect_source
+            result=inspect_source(args.directory.resolve())
+        elif args.command=='toolchain':
             from mpres.toolchain import smoke_toolchain
             result=smoke_toolchain(root,timeout=args.timeout)
         elif args.command=='task' and args.operation=='init':

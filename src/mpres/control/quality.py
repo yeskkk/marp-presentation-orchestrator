@@ -38,6 +38,10 @@ class Quality:
         row = conn.execute(query, (artifact_id, level)).fetchone() if conn else self.latest(artifact_id, level)
         if not row or row['state'] != 'passed':
             raise MPresError(f'Revision {artifact_id} lacks a current successful {level} gate')
+        from mpres.source_policy import POLICY_VERSION
+        detail=json.loads(row['detail_json'] or '{}')
+        if detail.get('source_policy_version') != POLICY_VERSION:
+            raise MPresError('Gate predates the current source contract; run artifact inspect --retry before reuse')
         return dict(row)
 
     def inspect(self, artifact_id: str, level: str = 'source', *, retry: bool = False) -> dict:
@@ -50,7 +54,9 @@ class Quality:
                 raise MPresError('Unknown source revision')
             artifact = dict(artifact)
             old = conn.execute('SELECT * FROM gate_runs WHERE artifact_id=? AND level=? ORDER BY sequence DESC LIMIT 1', (artifact_id, level)).fetchone()
-            if old and (old['state'] == 'running' or not retry):
+            from mpres.source_policy import POLICY_VERSION
+            current_policy = old and json.loads(old['detail_json'] or '{}').get('source_policy_version') == POLICY_VERSION
+            if old and (old['state'] == 'running' or (not retry and current_policy)):
                 return {**dict(old), 'already_recorded': True}
             gate_id = uid('g')
             conn.execute("INSERT INTO gate_runs(id,artifact_id,level,sequence,state,started_at) VALUES(?,?,?,?,'running',?)",
@@ -62,6 +68,8 @@ class Quality:
             report = self._run(artifact, gate_id, level, settings)
         except Exception as exc:
             report = {'success': False, 'checks': {}, 'errors': [f'{type(exc).__name__}: {exc}'], 'failure_kind': 'tool_or_input'}
+        from mpres.source_policy import POLICY_VERSION
+        report['source_policy_version'] = POLICY_VERSION
         report['seconds'] = time.monotonic()-start
         report['artifact_id'] = artifact_id
         report['gate_id'] = gate_id
@@ -157,10 +165,12 @@ def asset_boundary(source: Path) -> dict:
         if not path.is_file() or path.suffix.lower() not in {'.md', '.css', '.svg', '.html'}:
             continue
         text = path.read_text(encoding='utf-8')
-        if re.search(r'@import|expression\s*\(', text, re.I):
+        if path.suffix.lower()!='.md' and re.search(r'@import|expression\s*\(', text, re.I):
             errors.append(f'CSS import/active expression forbidden: {path.name}')
-        for ref in re.findall(r'url\(\s*([^)]*?)\s*\)', text, re.I):
+        for ref in ([] if path.suffix.lower()=='.md' else re.findall(r'url\(\s*([^)]*?)\s*\)', text, re.I)):
             resource(ref, path.parent)
+        if path.suffix.lower()=='.md':
+            continue  # parsed Markdown/source policy owns HTML and image detection
         html = BeautifulSoup(text, 'html.parser')
         for element in html.find_all(True):
             if element.name.lower() in {'script', 'iframe', 'object', 'embed', 'base', 'link', 'foreignobject'}:

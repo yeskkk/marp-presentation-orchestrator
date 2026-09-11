@@ -268,11 +268,17 @@ def _mask_preserving_newlines(value: str) -> str:
 
 
 def _mask_non_math_regions(source: str) -> str:
-    """Hide regions where TeX-looking examples are not rendered as mathematics."""
-
-    masked = COMMENT_RE.sub(lambda match: _mask_preserving_newlines(match.group(0)), source)
-    masked = FENCED_CODE_RE.sub(lambda match: _mask_preserving_newlines(match.group(0)), masked)
-    return INLINE_CODE_RE.sub(lambda match: _mask_preserving_newlines(match.group(0)), masked)
+    """Preserve line/offsets while masking actual code tokens, not triple ticks."""
+    from mpres.source_policy import parser
+    lines = source.splitlines(keepends=True)
+    for token in parser().parse(source):
+        if token.type in {"fence", "code_block"} and token.map:
+            for index in range(*token.map):
+                lines[index] = _mask_preserving_newlines(lines[index])
+    masked = COMMENT_RE.sub(lambda match: _mask_preserving_newlines(match.group(0)), "".join(lines))
+    # CommonMark code spans may use any backtick run; closing run must match.
+    spans = re.compile(r"(?<!`)(`+)(?!`)([\s\S]*?)(?<!`)\1(?!`)")
+    return spans.sub(lambda match: _mask_preserving_newlines(match.group(0)), masked)
 
 
 def _is_unescaped(value: str, position: int) -> bool:
@@ -465,23 +471,16 @@ def _split_frontmatter(lines: list[str]) -> tuple[dict[str, Any], list[str]]:
 
 
 def _split_slides(lines: list[str]) -> list[str]:
-    slides: list[list[str]] = [[]]
-    fence_marker: str | None = None
-    for line in lines:
-        stripped = line.lstrip()
-        if stripped.startswith("```") or stripped.startswith("~~~"):
-            marker = stripped[:3]
-            if fence_marker is None:
-                fence_marker = marker
-            elif marker == fence_marker:
-                fence_marker = None
-            slides[-1].append(line)
-            continue
-        if fence_marker is None and line.strip() == "---":
-            slides.append([])
-        else:
-            slides[-1].append(line)
-    return ["".join(chunk).strip() for chunk in slides if "".join(chunk).strip()]
+    # Marp uses top-level Markdown thematic breaks. Never treat a delimiter in
+    # fenced/indented code, mathematics, or a setext heading as a new slide.
+    from mpres.source_policy import parser
+    breaks = [token.map[0] for token in parser().parse("".join(lines))
+              if token.type == "hr" and token.level == 0 and token.map]
+    spans = []; start = 0
+    for stop in breaks:
+        spans.append("".join(lines[start:stop]).strip()); start = stop + 1
+    spans.append("".join(lines[start:]).strip())
+    return [span for span in spans if span]
 
 
 def _visible_text(source: str) -> str:
@@ -509,15 +508,10 @@ def _table_rows(source: str) -> int:
     return count
 
 
-def _image_paths(source: str) -> list[str]:
-    values = [*MARKDOWN_IMAGE_RE.findall(source), *HTML_IMAGE_RE.findall(source)]
-    result: list[str] = []
-    for value in values:
-        cleaned = value.strip().strip("<>")
-        if " " in cleaned and not cleaned.startswith(("data:", "http://", "https://", "//")):
-            cleaned = cleaned.split()[0]
-        result.append(unquote(cleaned))
-    return result
+def _image_paths(source: str, references: dict | None = None) -> list[str]:
+    from mpres.source_policy import parser, walk
+    return [unquote(token.attrGet('src') or '')
+            for token, _ in walk(parser().parse(source, references or {})) if token.type=='image']
 
 
 def parse_deck(path: Path) -> Deck:
@@ -525,11 +519,18 @@ def parse_deck(path: Path) -> Deck:
     text = path.read_text(encoding="utf-8")
     frontmatter, body_lines = _split_frontmatter(text.splitlines(keepends=True))
     raw_slides = _split_slides(body_lines)
+    from mpres.source_policy import parser
+    references: dict = {}
+    parser().parse("".join(body_lines), references)
     slides: list[Slide] = []
     for index, source in enumerate(raw_slides, start=1):
-        slide_id_match = SLIDE_ID_RE.search(source)
-        class_match = CLASS_RE.search(source)
-        heading_match = HEADING_RE.search(source)
+        from mpres.source_policy import walk
+        tokens = parser().parse(source, references)
+        metadata = "\n".join(token.content for token, _ in walk(tokens)
+                             if token.type in {"html_block", "html_inline"})
+        slide_id_match = SLIDE_ID_RE.search(metadata)
+        class_match = CLASS_RE.search(metadata)
+        heading_match = HEADING_RE.search(_mask_non_math_regions(source))
         visible = _visible_text(source)
         classes = class_match.group(1).split() if class_match else []
         slides.append(
@@ -543,7 +544,7 @@ def parse_deck(path: Path) -> Deck:
                 visible_characters=len(visible),
                 bullets=len(BULLET_RE.findall(source)),
                 table_rows=_table_rows(source),
-                image_paths=_image_paths(source),
+                image_paths=_image_paths(source, references),
             )
         )
     if not slides:
@@ -769,6 +770,9 @@ def lint_deck(
     deck = parse_deck(deck_path)
     errors: list[str] = []
     warnings: list[str] = []
+    from mpres.source_policy import inspect_source
+    source_policy = inspect_source(source_root)
+    errors.extend(source_policy["errors"])
     front = deck.frontmatter
     required = {
         "marp": True,
@@ -781,7 +785,7 @@ def lint_deck(
         if front.get(key) != expected:
             errors.append(f"Frontmatter {key!r} must be {expected!r}, got {front.get(key)!r}.")
     if "style" in front:
-        errors.append("Inline frontmatter CSS is forbidden; use theme.css.")
+        errors.append("Inline frontmatter CSS is forbidden; layout is project-owned.")
 
     limits = (policy or {}).get("source_limits", {}) if isinstance(policy, dict) else {}
     warning_chars = int(limits.get("warning_visible_characters_per_slide", 650) or 650)
@@ -815,10 +819,6 @@ def lint_deck(
             slide_warnings.append(f"Slide has {slide.bullets} bullet/list items.")
         if slide.table_rows > warning_rows:
             slide_warnings.append(f"Slide table has {slide.table_rows} content rows.")
-        if re.search(r"<\s*(?:script|iframe|object|embed)\b", slide.source, re.IGNORECASE):
-            slide_errors.append("Executable or embedded HTML elements are forbidden.")
-        if "<style" in slide.source.lower():
-            slide_errors.append("Per-slide <style> blocks are forbidden; use theme.css.")
         for issue in _bare_tex_control_word_issues(slide.source):
             recorded = {
                 "slide": slide.index,
@@ -884,17 +884,12 @@ def lint_deck(
     errors.extend(geogebra["errors"])
     warnings.extend(geogebra["warnings"])
     interactions = manifest.get("interaction_contract", {})
-    theme = source_root / "theme.css"
-    if not theme.is_file():
-        errors.append("theme.css is missing.")
-    else:
-        theme_text = theme.read_text(encoding="utf-8", errors="replace")
-        if "@theme mathist-academic" not in theme_text:
-            errors.append("theme.css does not declare @theme mathist-academic.")
-        if re.search(r"font-size\s*:\s*(?:[0-9]|1[0-5])px", theme_text, re.IGNORECASE):
-            warnings.append(
-                "theme.css contains a font size below 16px; verify it is not student text."
-            )
+    # The runtime supplies the project theme; author sources need not duplicate
+    # it. inspect_source already rejected any noncanonical theme copy.
+    from mpres.source_policy import theme_bytes
+    theme_text = theme_bytes().decode("utf-8")
+    if "@theme mathist-academic" not in theme_text:
+        errors.append("Installed project theme does not declare @theme mathist-academic.")
     return {
         "schema_version": 1,
         "source": str(deck_path),

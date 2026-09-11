@@ -52,13 +52,20 @@ def test_repeated_check_is_noop(compact_root):
 ])
 def test_invalid_content_never_passes(compact_root,body):
     service=prepare(compact_root);source=good_source(service);(source/'presentation.md').write_text(body)
-    aid=revision(service,source);q=Quality(service.task)
+    try:
+        aid=revision(service,source)
+    except MPresError as exc:
+        assert 'source contract' in str(exc)
+        assert not service.store.rows('SELECT * FROM artifacts')
+        return  # v0.6.17 rejects forbidden syntax before accepting a revision.
+    q=Quality(service.task)
     assert q.inspect(aid)['state']=='failed'
     with pytest.raises(MPresError):q.require_pass(aid,'source')
 
 
 def test_asset_css_svg_cannot_load_external_resources(compact_root):
     service=prepare(compact_root);source=good_source(service)
+    (source/'theme.css').chmod(0o644)
     (source/'theme.css').write_text('/* @theme mathist-academic */ @import "https://bad.invalid/style";')
     assert not asset_boundary(source)['success']
     (source/'theme.css').write_text('/* @theme mathist-academic */')

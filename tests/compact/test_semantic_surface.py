@@ -61,13 +61,13 @@ def test_invalid_semantic_fields_never_replace_accepted_result(compact_root):
     assert 'gate_passed' not in service.attempt(attempt['id'])['result_json']
 
 
-def test_launchers_are_cli_only_and_preserve_arguments():
+def test_explicit_cli_launchers_preserve_arguments_without_model():
     import sys
     for name in ['start.sh','start-safe.sh','start.ps1','start-safe.ps1']:
         text=(ROOT/name).read_text()
         assert '--dangerously' not in text and 'log_daemon' not in text
         assert 'PROMPT=' not in text and '$Prompt' not in text
-    result=subprocess.run(['bash',str(ROOT/'start.sh'),'workflow','--help'],env={**os.environ,'PYTHON_BIN':sys.executable,'PYTHONPATH':str(ROOT/'src')},capture_output=True,text=True)
+    result=subprocess.run(['bash',str(ROOT/'start.sh'),'--cli','workflow','--help'],env={**os.environ,'PYTHON_BIN':sys.executable,'PYTHONPATH':str(ROOT/'src')},capture_output=True,text=True)
     assert result.returncode==0 and 'retry-publish' in result.stdout
 
 

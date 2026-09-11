@@ -350,7 +350,7 @@ class Workflow:
                         raise MPresError(f'Duplicate slide ID across units: {slide.slide_id}')
                     ids.add(slide.slide_id);slides.append(slide.source.strip())
                 for src in source.rglob('*'):
-                    if not src.is_file() or src.name=='presentation.md':
+                    if not src.is_file() or src.name in {'presentation.md','theme.css'}:
                         continue
                     dst=work/src.relative_to(source)
                     if dst.exists():
@@ -359,7 +359,7 @@ class Workflow:
                     else:
                         dst.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(src,dst)
             (work/'presentation.md').write_text('---\n'+yaml.safe_dump(front,allow_unicode=True,sort_keys=False)+'---\n'+'\n\n---\n\n'.join(slides)+'\n',encoding='utf-8')
-            created=snapshot(self.task,work)
+            created=snapshot(self.task,work,fixed_theme=True)
             with self.store.transaction() as conn:
                 self.service.confirmed(conn)
                 conn.execute("INSERT INTO artifacts(id,attempt_id,presentation,path,created_at,origin) VALUES(?,?,?,?,?,'assembly')",(created[0],attempt,deck['presentation'],created[1],utc_now()))

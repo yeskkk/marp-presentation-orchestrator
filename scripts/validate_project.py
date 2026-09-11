@@ -26,6 +26,11 @@ def main():
     if len(list((root/'.agents/skills').glob('*/SKILL.md'))) != 6:errors.append('Expected six semantic-only skills')
     if (root/'.codex/agents/author-coordinator.toml').exists():errors.append('Resident author coordinator must be absent')
     if len(list((root/'src/mpres/control/schemas').glob('*.json'))) != 4:errors.append('Expected four semantic schemas')
+    theme=(root/'src/mpres/control/theme.css').read_bytes()
+    for theme_copy in (root/'themes').glob('*.css'):
+        if theme_copy.read_bytes()!=theme:errors.append(f'Noncanonical project theme copy: {theme_copy}')
+    if not (root/'src/mpres/source_policy.py').is_file():errors.append('Missing mandatory source contract')
+    if '--html"' in (root/'src/mpres/rendering.py').read_text():errors.append('Author HTML enabled in rendering')
     print(json.dumps({'version':version,'success':not errors,'errors':errors},indent=2))
     return 1 if errors else 0
 if __name__=='__main__':raise SystemExit(main())

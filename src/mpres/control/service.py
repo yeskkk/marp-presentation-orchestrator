@@ -366,6 +366,9 @@ class Service:
             inside(self.task,relative.as_posix())
             if not source.is_dir() or any(p.is_symlink() for p in source.rglob('*')):
                 raise MPresError('Submission requires a directory without symlinks')
+        if source is not None:
+            from mpres.source_policy import require_source
+            require_source(source)
         if attempt['state'] == 'succeeded':
             if attempt['result_json'] != canonical:
                 raise MPresError('Duplicate submission differs; accepted results are immutable')
@@ -374,8 +377,9 @@ class Service:
                 if not prior:
                     raise MPresError('Duplicate submission unexpectedly includes source')
                 frozen = self.task/prior[0]['path']
-                old_files={p.relative_to(frozen).as_posix():p.read_bytes() for p in frozen.rglob('*') if p.is_file()}
-                new_files={p.relative_to(source).as_posix():p.read_bytes() for p in source.rglob('*') if p.is_file()}
+                from mpres.source_policy import comparable_files
+                old_files=comparable_files(frozen)
+                new_files=comparable_files(source)
                 if old_files != new_files:
                     raise MPresError('Duplicate submission source differs from its accepted revision')
             return {'attempt_id':attempt_id,'already_submitted':True}
@@ -398,7 +402,7 @@ class Service:
                 raise MPresError('Submission source must be under this task')
             if source.resolve().is_relative_to(self.task/'.mpres'/'artifacts'):
                 raise MPresError('Submit from a writable work/content directory, not a frozen artifact')
-            artifact = snapshot(self.task,source)
+            artifact = snapshot(self.task,source,fixed_theme=True)
         try:
             with self.store.transaction() as conn:
                 self.confirmed(conn)

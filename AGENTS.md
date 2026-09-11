@@ -10,8 +10,13 @@ its result schema and bounded inputs. Do not read all skills or legacy instructi
 Do not generate process records, assign job identities, schedule work or assert
 mechanical success. Provider receipts and token counters must be genuine.
 
-Use the installed compact CLI or start scripts. They do not launch a model or
-turn off approval/sandbox policy. Main responds to semantic decisions or explicit
+Use ./start.sh for interactive Codex or ./start.sh --cli / mpres for mechanical commands.
+The launcher never turns off approval/sandbox policy. Manual Codex in this project
+uses this same entry: select the task, read its three configuration inputs and
+query its database before acting; do not infer the task from an old conversation.
+With --task the launcher passes the task planner runtime. Without --task finish
+planning only, then let the user reopen --task before production. Starting Codex
+is not evidence that worker creation, capabilities or usage reporting work. Main responds to semantic decisions or explicit
 user feedback, not healthy polling events. Unknown execution must be reconciled.
 A deterministic fixture test is not native-browser or model-quality validation.
 
@@ -30,3 +35,10 @@ and STOP for the user's reply. Do not auto-confirm an AI proposal or infer conse
 from the initial complaint. Once confirmed, let the runner edit/review/release only
 those targets. Attach the completed repair ZIP, not an unreviewed draft. Record
 additional user requirements as new feedback versions; never edit runtime choices.
+
+Project source contract applies to every entry, including manually launched Codex:
+layout belongs to the installed project theme, never author/editor output. Do not
+edit CSS, add HTML/inline SVG, per-slide styles/classes or image sizing tricks.
+Use Markdown, mathematics and external assets; split/rewrite dense content. Run
+`mpres source check <output>` before submitting. Theme copies are read-only; the
+service verifies them and rejects violations before accepting a revision.

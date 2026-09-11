@@ -4,10 +4,9 @@ theme: mathist-academic
 paginate: true
 size: '16:9'
 math: mathjax
-backgroundColor: '#ffffff'
 ---
 
-<!-- _class: lead core -->
+<!-- _class: core -->
 <!-- slide-id: [[PRESENTATION_ID]]-title -->
 
 # [[PRESENTATION_TITLE]]

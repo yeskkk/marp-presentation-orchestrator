@@ -77,6 +77,9 @@ def main() -> int:
     )
     if not args.no_doctor:
         run([str(python), "-m", "mpres", "toolchain", "doctor"], root)
+    print("Python/Marp setup complete. Codex is installed and authenticated separately.")
+    print("Next: ./start.sh --check, then ./start.sh (or ./start.sh --task <slug>).")
+    print("Production still requires the real host adapter and toolchain doctor.")
     return 0
 
 

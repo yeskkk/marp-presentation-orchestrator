@@ -44,7 +44,8 @@ def source_for(service):
     source=service.task/'content'/'unit'
     source.mkdir(parents=True,exist_ok=True)
     (source/'presentation.md').write_text('---\nmarp: true\n---\n<!-- slide-id: p01-l01-s1 -->\n# Example\n')
-    (source/'theme.css').write_text('/* @theme mathist-academic */')
+    from mpres.source_policy import install_theme
+    install_theme(source)
     return source
 
 

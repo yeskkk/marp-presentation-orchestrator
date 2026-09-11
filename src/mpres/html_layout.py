@@ -18,6 +18,8 @@ SLIDE_SELECTOR = (
 
 
 def _marp_html_command(root: Path, source: Path, output: Path, policy: dict[str, Any]) -> list[str]:
+    from mpres.source_policy import require_source, render_options
+    require_source(source)
     binary = local_marp_binary(root)
     if binary is None:
         raise MPresError("Marp CLI is not installed.")
@@ -29,9 +31,7 @@ def _marp_html_command(root: Path, source: Path, output: Path, policy: dict[str,
         [
             str(source / "presentation.md"),
             "--allow-local-files",
-            "--html",
-            "--theme-set",
-            str(source / "theme.css"),
+            *render_options(),
             "--output",
             str(output),
         ]
@@ -301,6 +301,33 @@ def _inspect_with_playwright(html_path: Path, asset_root: Path, *, timeout: int)
     }
 
 
+def canonical_report_ids(report: dict, source: Path) -> dict:
+    from mpres.marp_source import parse_deck
+    expected=parse_deck(source/'presentation.md').slides
+    rows=report.get('slides',[])
+    errors=report.setdefault('errors',[])
+    if len(rows)!=len(expected):
+        errors.append(f'Source/DOM slide count mismatch: {len(expected)} vs {len(rows)}')
+        report['success']=False
+        return report
+    for index,(row,slide) in enumerate(zip(rows,expected),1):
+        if row.get('index',index)!=index:
+            errors.append('DOM slide order is inconsistent with source order')
+            report['success']=False
+            return report
+        row['dom_id']=row.get('id')
+        row['id']=slide.slide_id or f'slide-{index}'
+    maths=report.get('math_renderer')
+    if maths is not None:
+        if len(maths)!=len(expected):
+            errors.append('Source/math-renderer slide count mismatch')
+            report['success']=False
+        else:
+            for index,(row,slide) in enumerate(zip(maths,expected),1):
+                row['dom_id']=row.get('id');row['id']=slide.slide_id or f'slide-{index}'
+    return report
+
+
 def inspect_marp_html_layout(
     root: Path,
     source: Path,
@@ -337,6 +364,7 @@ def inspect_marp_html_layout(
             browser_report = _inspect_with_playwright(output, source_copy, timeout=timeout)
         else:
             browser_report = browser_runner(output, source_copy)
+        browser_report=canonical_report_ids(browser_report,source_copy)
         return {
             **browser_report,
             "command": command,

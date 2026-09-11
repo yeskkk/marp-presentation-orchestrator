@@ -66,6 +66,8 @@ def source_and_build_paths(
 
 
 def _marp_command(root: Path, source: Path, output: Path, policy: dict[str, Any]) -> list[str]:
+    from mpres.source_policy import require_source, render_options
+    require_source(source)
     binary = local_marp_binary(root)
     if binary is None:
         raise MPresError("Marp CLI is not installed. Run `npm install` or the bootstrap script.")
@@ -83,9 +85,7 @@ def _marp_command(root: Path, source: Path, output: Path, policy: dict[str, Any]
             str(source / "presentation.md"),
             "--pdf",
             "--allow-local-files",
-            "--html",
-            "--theme-set",
-            str(source / "theme.css"),
+            *render_options(),
             "--output",
             str(output),
         ]
