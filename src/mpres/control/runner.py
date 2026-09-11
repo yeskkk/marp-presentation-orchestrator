@@ -76,13 +76,22 @@ class Runner:
         sessions=conn.execute("SELECT * FROM sessions WHERE state<>'closed'").fetchall()
         absent=[s['id'] for s in sessions if s['id'] not in host['handles']]
         if absent:
-            return {'ok':False,'reason':'Known live sessions are absent from host inventory; reconcile, do not assume released','missing_sessions':absent,'needs_host_observation':True}
+            return {'ok':False,'reason':'Known live sessions are absent from host inventory; reconcile, do not assume released','missing_sessions':absent,'needs_host_observation':False}
         known={s['id'] for s in sessions}
         external=max(provider['external_handles'],len(set(host['handles'])-known))
         limit=min(provider['handle_limit'],host['handle_limit'])
         # A pool definition is a reservation, not an actual model handle. Writer
         # slots are adjustable within the user upper bound; runtimes never change.
         decks=settings['presentations']
+        repairing=conn.execute("SELECT id FROM repair_cases WHERE state IN ('diagnosing','proposed','presented','running') ORDER BY created_at DESC LIMIT 1").fetchone()
+        repair_scope={x[0] for x in conn.execute('SELECT presentation FROM repair_targets WHERE case_id=?',(repairing['id'],))} if repairing else set()
+        if repair_scope:
+            decks=[d for d in decks if d['id'] in repair_scope]
+        elif settings['delivery'] in {'pilot','each'}:
+            continued=conn.execute("SELECT count(*) FROM events WHERE kind='task.delivery_continued'").fetchone()[0]
+            if settings['delivery']=='each' or not continued:
+                delivered={x[0] for x in conn.execute("SELECT presentation FROM decks WHERE phase='delivered'")}
+                decks=[d for d in decks if d['id'] not in delivered][:1]
         fixed={};writers={}
         for deck in decks:
             spec=resolve_runtime(runtime,'lesson-author',presentation_id=deck['id'])
@@ -120,7 +129,7 @@ class Runner:
         existing={s['key'] for s in existing_slots}
         reserved=len(planned|existing)
         required=reserved+external+provider['recovery_reserve']+unattached
-        return {'ok':required<=limit,'reason':None if required<=limit else 'Full-lifecycle persistent pool cannot fit; no new handle may start',
+        return {'presentations_budgeted':[d['id'] for d in decks],'ok':required<=limit,'reason':None if required<=limit else 'Full-lifecycle persistent pool cannot fit; no new handle may start',
                 'limit':limit,'external_handles':external,'recovery_reserve':provider['recovery_reserve'],
                 'unattached_registered_handles':unattached,'reserved_pool_handles':reserved,'required_peak_handles':required,
                 'actual_author_concurrency':cap,'requested_author_concurrency':settings['author_concurrency'],
@@ -181,7 +190,8 @@ class Runner:
 
     def outstanding(self) -> dict:
         return {'creations':self.store.rows("SELECT * FROM pool_slots WHERE state IN ('creating','uncertain')"),
-                'executions':self.store.rows("SELECT id,job_id,session_id,state,provider_receipt,error FROM attempts WHERE state IN ('reserved','running','uncertain')")}
+                'executions':self.store.rows("SELECT id,job_id,session_id,state,provider_receipt,error FROM attempts WHERE state IN ('reserved','running','uncertain')"),
+                'audience_steps':self.store.rows("SELECT attempt_id,sequence,phase,artifact_id,slide_ids_json,state FROM audience_steps WHERE state<>'completed' ORDER BY attempt_id,sequence")}
 
     def packet(self, job: dict, attempt_id: str) -> dict:
         config=self.settings()
@@ -227,7 +237,8 @@ class Runner:
             packet['source_contract'] = {'files': ['presentation.md','assets/ as needed'], 'read_only_project_files':['theme.css'],
                 'frontmatter': {'marp': True, 'theme': 'mathist-academic', 'paginate': True, 'size':'16:9', 'math':'mathjax'},
                 'slide_id': 'stable unique comment <!-- slide-id: pNN-lNN-sNN -->',
-                'classes': ['core','support'], 'no_process_documents': True, 'raw_html':'forbidden', 'local_style':'forbidden'}
+                'classes': ['core','support'], 'no_process_documents': True, 'raw_html':'forbidden', 'local_style':'forbidden',
+                'computed_geometry':'mpres figure build assets/<unit-id>/<name>.plot.json; paired SVG and Python are retained' }
             packet['constraints'].extend(['Quote size: "16:9" in YAML',
                 'Use assets/<unit-id>/ paths. Never edit CSS/theme/frontmatter layout. No raw HTML, inline SVG or image size/background directives. Split/rewrite content to fit fixed layout. Run mpres source check on output before submission'])
             if job['input_artifact_id']:
@@ -273,6 +284,23 @@ class Runner:
                 packet['required_result']['expansion']='Actively describe variants AND related problems; for each give detection/correction guidance. Distinguish observed from possible. Include non-goals, acceptance criteria and evidence/source needs. This is a proposal for user confirmation, not authorization.'
             else:
                 packet['required_result']['repair_checks']='Every confirmed variant and related problem: problem_id, addressed|not_found|needs_decision, explanation, actual slide_ids. Independently inspect the whole selected deck; do not accept the author readback as proof.'
+        rejected=self.store.rows("SELECT a.* FROM attempts a WHERE a.job_id=? AND a.state='failed' AND a.id<>? AND EXISTS (SELECT 1 FROM events e WHERE e.kind='attempt.content_rejected' AND json_extract(e.detail_json,'$.attempt_id')=a.id) ORDER BY a.sequence DESC LIMIT 1",(job['id'],attempt_id))
+        if rejected and job['kind'] in {'write','edit','revise'}:
+            previous=rejected[0]
+            packet['submission_correction']={'attempt_id':previous['id'],'error':previous['error'],
+                'previous_result':json.loads(previous['result_json']),
+                'instruction':'Correct this known completed response within the same approved scope. Do not change runtime/theme or claim a passed gate.'}
+            # Only copy bounded regular content assets, never execute prior scripts.
+            prior=self.task/'.mpres'/'work'/previous['id']/'output'
+            if prior.is_dir():
+                for src in prior.rglob('*'):
+                    if src.is_symlink(): raise MPresError('Prior draft contains a symlink')
+                    rel=src.relative_to(prior)
+                    if src.is_file() and (rel.as_posix()=='presentation.md' or rel.parts[0]=='assets'):
+                        target=output/rel;target.parent.mkdir(parents=True,exist_ok=True)
+                        if target.exists(): target.chmod(0o644)
+                        target.write_bytes(src.read_bytes())
+                        packet['input_files'].append(str(target))
         from .semantic import schema, result_schema_name, guidance
         from .feedback import Feedback
         packet['historical_feedback'] = Feedback(self.task).briefing(attempt_id)['feedback']
@@ -325,6 +353,10 @@ class Runner:
             return {'status': 'blocked', 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': True}
         capacity=self.ensure_pool()
         if not capacity['ok']:
+            if capacity.get('needs_host_observation'):
+                # Capabilities is a safe read-only observation, not permission to spawn.
+                return {'status':'needs_host_observation','capacity':capacity,
+                        'requests':[{'operation':'capabilities','request_id':'host-observation'}]}
             return {'status':'blocked','capacity':capacity,'requests':[]}
         outstanding=self.outstanding()
         if any(x['state']=='uncertain' for x in outstanding['creations']+outstanding['executions']):
@@ -391,7 +423,7 @@ class Runner:
                 if request: requests.append(request)
             except Exception as exc:
                 self._blocked_packet(attempt['id'],exc)
-        for attempt in self.store.rows("SELECT a.* FROM attempts a JOIN attempt_briefings b ON b.attempt_id=a.id WHERE a.state='reserved' AND b.acknowledgement_json IS NOT NULL AND b.run_dispatched=0"):
+        for attempt in self.store.rows("SELECT a.* FROM attempts a JOIN attempt_briefings b ON b.attempt_id=a.id WHERE a.state='reserved' AND (b.acknowledgement_json IS NOT NULL OR b.snapshot_json='[]') AND b.run_dispatched=0"):
             try:
                 request=self.execution_request(self.service.job(attempt['job_id']),attempt)
                 if request: requests.append(request)
@@ -409,7 +441,14 @@ class Runner:
         with self.store.transaction() as conn:
             runtime=self.service.expected_runtime(conn,job)
         if operation=='run':
+            from .audience import Audience, applies
+            audience=Audience(self.task)
+            if applies(job) and audience.pending(attempt['id']):
+                return audience.request(job,attempt,runtime)
             packet=self.packet(job,attempt['id'])
+            if applies(job):
+                packet['audience_reading']=audience.final_context(attempt['id'])
+                packet['instructions']='Final historical-feedback comparison and finding synthesis. Preserve the earlier student/production-language findings verbatim; do not claim author self-reports are evidence. Do not re-review author repairs.'
         else:
             packet={'kind':job['kind'],'presentation':job['presentation'],
                     'channel':job['channel'],'historical_feedback':brief['feedback'],
@@ -433,6 +472,11 @@ class Runner:
     def accept(self, request: dict, response: dict) -> dict:
         if not isinstance(response,dict):
             raise MPresError('Provider response must be a JSON object')
+        if request['operation']=='capabilities':
+            return self.observe_host(response)
+        if request['operation']=='audience_step':
+            from .audience import Audience
+            return Audience(self.task).accept(request,response)
         if request['operation']=='create':
             return self.attach(request['slot_id'],response['handle'],response['model'],response['reasoning_effort'],response['receipt'])
         if request['operation']=='brief':
@@ -462,7 +506,10 @@ class Runner:
         if request['operation']!='run':
             raise MPresError('Unknown external operation')
         attempt_id=request['attempt_id']
-        self.service.started(attempt_id,require_text(response.get('receipt'),'execution receipt'))
+        previous=self.service.attempt(attempt_id)
+        rejected_replay=previous['state']=='failed' and bool(self.store.rows("SELECT id FROM events WHERE kind='attempt.content_rejected' AND json_extract(detail_json,'$.attempt_id')=?",(attempt_id,)))
+        if not rejected_replay:
+            self.service.started(attempt_id,require_text(response.get('receipt'),'execution receipt'))
         job=self.service.job(self.service.attempt(attempt_id)['job_id'])
         with self.store.transaction() as conn:
             expected=self.service.expected_runtime(conn,job)
@@ -485,7 +532,18 @@ class Runner:
             if not isinstance(call,dict) or not isinstance(call.get('counters'),dict):
                 raise MPresError('Malformed provider usage receipt')
             self.service.record_usage(attempt_id,call['call_id'],call['counters'])
-        return self.service.submit(attempt_id,result,source=source)
+        if rejected_replay:
+            if previous['provider_receipt']!=response.get('receipt') or previous['result_json']!=encode(result):
+                raise MPresError('Conflicting duplicate rejected execution')
+            return {'attempt_id':attempt_id,'submission_rejected':True,'already_recorded':True}
+        from mpres.util import SubmissionRejected
+        try:
+            return self.service.submit(attempt_id,result,source=source)
+        except SubmissionRejected as exc:
+            # Only authored source/result schema errors are automatically corrected.
+            # Review claims, scope changes and uncertain provider execution stay fail-closed.
+            if job['kind'] not in {'write','edit','revise'}: raise
+            return self.service.reject_completed(attempt_id,str(exc),result)
 
     def invoke(self, payload: dict) -> dict:
         settings=self.settings();provider=settings['provider']
@@ -500,8 +558,18 @@ class Runner:
 
     def run_once(self) -> dict:
         """Command adapter mode. External I/O runs with no SQLite write lock held."""
-        host=self.invoke({'operation':'capabilities'})
-        self.observe_host(host)
+        from .recovery import policy
+        retries=policy(self.settings())['host_observation_retries']
+        for index in range(retries+1):
+            try:
+                self.observe_host(self.invoke({'operation':'capabilities'}))
+                break
+            except Exception as exc:
+                with self.store.transaction() as conn:
+                    event(conn,'host.observation_failed',{'attempt':index+1,'limit':retries+1,'error':str(exc)})
+                if index==retries:
+                    return {'status':'blocked','reason':'Host observation retry budget exhausted',
+                            'error':str(exc),'requests':[],'results':[]}
         tick=self.tick()
         def execute(request):
             started=time.monotonic()
@@ -511,7 +579,7 @@ class Runner:
                 return {'request_id':request['request_id'],'status':'accepted','result':result}
             except Exception as exc:
                 if request['operation']=='create':self.creation_uncertain(request['slot_id'],str(exc))
-                else:self.service.uncertain(request['attempt_id'],str(exc))
+                elif request['operation']!='capabilities':self.service.uncertain(request['attempt_id'],str(exc))
                 return {'request_id':request['request_id'],'status':'uncertain','error':str(exc)}
             finally:
                 with self.store.transaction() as conn:

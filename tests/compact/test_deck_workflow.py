@@ -71,6 +71,13 @@ class Host:
         if op=='create':
             handle='h-'+req['request_id'];self.handles[handle]=req['runtime']
             return {'handle':handle,'model':req['runtime']['model'],'reasoning_effort':req['runtime']['reasoning_effort'],'receipt':'fixture-created:'+handle}
+        if op=='audience_step':
+            packet=req['packet'];self.calls.append(req)
+            return {'runtime':req['runtime'],'receipt':'fixture-step:'+req['request_id'],
+                    'result':{'phase':packet['phase'],'read_slide_ids':packet['read_slide_ids'],
+                              'summary':'Deterministic bounded reading fixture, not a student study.',
+                              'observations':[],'findings':[]},
+                    'usage':[{'call_id':'step','counters':{'input_tokens':100,'cached_input_tokens':80,'output_tokens':5,'reasoning_tokens':0,'total_tokens':105}}]}
         packet=req['packet'];self.calls.append(req)
         kind=packet['kind'];result={'summary':'Explained quantities with units and preserved the intended lesson scope.'}
         source=None

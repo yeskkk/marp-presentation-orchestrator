@@ -46,7 +46,7 @@ def attach_requests(runner,result):
 def test_unknown_host_never_spawns(compact_root):
     service=prepare(compact_root)
     result=Runner(service.task).tick()
-    assert result['status']=='blocked' and result['requests']==[]
+    assert result['status']=='needs_host_observation' and result['requests'][0]['operation']=='capabilities'
     assert service.store.rows('SELECT * FROM pool_slots')==[]
 
 
@@ -187,15 +187,15 @@ def test_actual_provider_inventory_can_reduce_configured_capacity(compact_root):
 def test_stale_capability_receipt_blocks_admission(compact_root):
     service,runner=ready(compact_root)
     with service.store.transaction() as c:c.execute("UPDATE runtime_host SET observed_at='2000-01-01T00:00:00Z'")
-    assert runner.tick()['status']=='blocked'
+    assert runner.tick()['requests'][0]['operation']=='capabilities'
 
 
 def test_database_v1_upgrade_preserves_confirmed_profile(compact_root):
     service=prepare(compact_root)
     before=service.store.rows('SELECT * FROM configs')
-    c=service.store.connect();c.execute('DROP TABLE release_versions');c.execute('DROP TABLE repair_jobs');c.execute('DROP TABLE repair_targets');c.execute('DROP TABLE attempt_briefings');c.execute('DROP TABLE feedback_rules');c.execute('DROP TABLE releases');c.execute('DROP TABLE decks');c.execute('DROP TABLE repair_cases');c.execute('DROP TABLE gate_runs');c.execute('DROP TABLE runtime_host');c.execute('DROP TABLE pool_slots');c.execute('ALTER TABLE task DROP COLUMN author_slots_limit');c.execute('PRAGMA user_version=1');c.close()
+    c=service.store.connect();c.execute('DROP TABLE audience_steps');c.execute('DROP TABLE release_versions');c.execute('DROP TABLE repair_jobs');c.execute('DROP TABLE repair_targets');c.execute('DROP TABLE attempt_briefings');c.execute('DROP TABLE feedback_rules');c.execute('DROP TABLE releases');c.execute('DROP TABLE decks');c.execute('DROP TABLE repair_cases');c.execute('DROP TABLE gate_runs');c.execute('DROP TABLE runtime_host');c.execute('DROP TABLE pool_slots');c.execute('ALTER TABLE task DROP COLUMN author_slots_limit');c.execute('PRAGMA user_version=1');c.close()
     assert service.store.rows('SELECT * FROM configs')==before
-    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==6;c.close()
+    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==7;c.close()
 
 
 def test_command_adapter_runs_jobs_without_main_scheduling(compact_root,tmp_path):

@@ -23,6 +23,17 @@ class MPresError(RuntimeError):
     """A user-facing workflow error."""
 
 
+class SubmissionRejected(MPresError):
+    """A completed response failed a deterministic content/result check.
+
+    Not a transport error, permission grant, or evidence of an unresolved model call.
+    """
+
+
+class TransientToolError(MPresError):
+    """Recognized local checker process/browser failure; safe to rerun same input."""
+
+
 def utc_now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 

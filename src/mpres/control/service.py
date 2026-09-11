@@ -31,7 +31,7 @@ def require_text(value: Any, label: str) -> str:
 def settings_document(value: Any) -> dict:
     if not isinstance(value, dict):
         raise MPresError('task.yaml must be a mapping')
-    allowed = {'schema_version','engine','title','delivery','author_concurrency','max_attempts','provider','presentations','context_budget_bytes','provider_timeout_seconds','quality','workflow'}
+    allowed = {'schema_version','engine','title','delivery','author_concurrency','max_attempts','provider','presentations','context_budget_bytes','provider_timeout_seconds','quality','workflow','recovery'}
     if set(value) - allowed:
         raise MPresError(f'Unknown task settings: {sorted(set(value)-allowed)}')
     if value.get('schema_version') != 1 or value.get('engine') != 'compact':
@@ -72,6 +72,12 @@ def settings_document(value: Any) -> dict:
             raise MPresError('Unsupported Marp browser')
         if type(quality['timeout_seconds']) is not int or not 1 <= quality['timeout_seconds'] <= 7200:
             raise MPresError('quality.timeout_seconds must be 1..7200')
+    recovery = value.get('recovery', {})
+    from .recovery import DEFAULTS
+    if not isinstance(recovery, dict) or set(recovery)-set(DEFAULTS):
+        raise MPresError('recovery accepts transient_tool_retries and host_observation_retries only')
+    if any(type(x) is not int or not 0 <= x <= 3 for x in recovery.values()):
+        raise MPresError('Recovery retries must be integers from 0 to 3')
     decks = value.get('presentations')
     if not isinstance(decks, list) or not decks:
         raise MPresError('Supply a semantic course plan in task.yaml before presenting')
@@ -349,15 +355,49 @@ class Service:
             conn.execute("UPDATE sessions SET state='uncertain' WHERE id=?",(row['session_id'],))
             event(conn,'attempt.uncertain',{'reason':reason},row['job_id'])
 
+    def reject_completed(self, attempt_id: str, reason: str, result: dict) -> dict:
+        """Requeue only a known-completed, acknowledged content response.
+
+        The exact configured max_attempts bounds all executions of this job. Retrying
+        the HTTP/stdio run itself is forbidden: correction has a NEW attempt identity.
+        """
+        with self.store.transaction() as conn:
+            cfg=self.confirmed(conn)
+            a=conn.execute('SELECT * FROM attempts WHERE id=?',(attempt_id,)).fetchone()
+            if not a or a['state']!='running' or not a['provider_receipt']:
+                raise MPresError('A content rejection needs a known completed execution receipt')
+            limit=json.loads(cfg['settings_json'])['max_attempts']
+            queued=a['sequence'] < limit
+            state='queued' if queued else 'blocked'
+            conn.execute("UPDATE attempts SET state='failed',finished_at=?,error=?,result_json=? WHERE id=?",
+                         (utc_now(),reason,encode(result),attempt_id))
+            conn.execute('UPDATE jobs SET state=? WHERE id=?',(state,a['job_id']))
+            conn.execute("UPDATE sessions SET state='open' WHERE id=?",(a['session_id'],))
+            detail={'attempt_id':attempt_id,'reason':reason,'sequence':a['sequence'],
+                    'limit':limit,'action':'correct_content' if queued else 'budget_exhausted'}
+            event(conn,'attempt.content_rejected',detail,a['job_id'])
+            if not queued:
+                presentation=conn.execute('SELECT presentation FROM jobs WHERE id=?',(a['job_id'],)).fetchone()[0]
+                conn.execute('INSERT INTO decisions(kind,presentation,detail_json) VALUES(?,?,?)',
+                             ('content-retry-budget',presentation,encode(detail)))
+        return {'attempt_id':attempt_id,'submission_rejected':True,'next_action':detail['action']}
+
     def submit(self, attempt_id: str, result: dict, *, source: Path | None = None) -> dict:
+        from mpres.util import SubmissionRejected
         if not isinstance(result,dict):
-            raise MPresError('Result must be a JSON object')
-        require_text(result.get('summary'),'semantic summary')
+            raise SubmissionRejected('Result must be a JSON object')
+        try:
+            require_text(result.get('summary'),'semantic summary')
+        except MPresError as exc:
+            raise SubmissionRejected(str(exc)) from exc
         attempt = self.attempt(attempt_id)
         job = self.job(attempt['job_id'])
         from .semantic import validate, result_schema_name
         if job['family'] is not None:
             validate(result_schema_name(job['kind']), result)
+        from .audience import Audience, applies
+        if applies(job) and (attempt['state']!='succeeded' or Audience(self.task).rows(attempt_id)):
+            Audience(self.task).require_final(attempt_id,result)
         canonical = encode(result)
         if source is not None:
             if not source.resolve().is_relative_to(self.task):
@@ -387,7 +427,8 @@ class Service:
             raise MPresError('An acknowledged execution receipt is required before submitting')
         needs_source = job['kind'] in {'write','edit','revise'}
         if needs_source and (source is None or not (source/'presentation.md').is_file()):
-            raise MPresError('Author/edit result requires its source directory with presentation.md')
+            from mpres.util import SubmissionRejected
+            raise SubmissionRejected('Author/edit result requires its source directory with presentation.md')
         if not needs_source and source is not None:
             raise MPresError('A reviewer or diagnostic worker cannot replace source')
         from .feedback import Feedback

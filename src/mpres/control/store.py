@@ -98,7 +98,18 @@ class Store:
             except Exception:
                 conn.rollback(); conn.close(); raise
             version = 6
-        if version != 6:
+        if version == 6:
+            try:
+                conn.execute('BEGIN IMMEDIATE')
+                if conn.execute('PRAGMA user_version').fetchone()[0] == 6:
+                    for statement in Path(__file__).with_name('migrate_7.sql').read_text().split(';'):
+                        if statement.strip(): conn.execute(statement)
+                    conn.execute('PRAGMA user_version=7')
+                conn.commit()
+            except Exception:
+                conn.rollback(); conn.close(); raise
+            version = 7
+        if version != 7:
             conn.close()
             raise MPresError('Unsupported compact database schema; do not auto-recreate it')
         return conn

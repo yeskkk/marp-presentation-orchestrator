@@ -124,8 +124,8 @@ def test_full_workflow_readbacks_all_authors_editors_reviewers(compact_root,nati
     brief=s.store.rows('SELECT * FROM attempt_briefings')
     assert len(brief)==len(live)==8
     assert all(r['acknowledgement_json'] and r['run_dispatched'] for r in brief)
-    assert s.metrics()['calls_observed']==16  # short readback + work, genuine fixture counters
-    assert all(c['packet']['historical_feedback'] for c in h.calls)
+    assert s.metrics()['calls_observed']==18  # readback/work plus two bounded audience reading steps
+    assert all(c['packet']['historical_feedback'] for c in h.calls if c['operation']=='run')
     assert s.store.rows("SELECT * FROM events WHERE kind='feedback.readback'")
 
 

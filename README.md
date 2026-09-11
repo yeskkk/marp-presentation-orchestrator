@@ -3,7 +3,7 @@
 把教材、教学目标与用户确认的课程计划转化为 Marp 课件。Python 负责运行事实和机械
 检查，AI 负责教学语义；不要求 main agent 阅读大量过程文档后逐条操作流程。
 
-**版本 v0.6.17：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
+**当前工作方式：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
 修订 → 再次完整门禁 → PDF 发布 → PDF/源码配对 ZIP。** 运行器不把源码提交等同于交付；缺少原生渲染工具、
 审核回执、finding 处置或明确宿主状态时都会停止。当前验收覆盖确定性适配器和失败分支，
 尚未在本交付环境验证真实模型与固定 Marp 浏览器的端到端输出质量。
@@ -92,6 +92,8 @@ src/mpres/
     service.py                 确认、作业、绑定、提交、usage 和状态
     runner.py                  实际宿主证据、池准入、领取、输入包、JSON 适配器
     quality.py                 源码/full gate、修订绑定、并发幂等、失败与恢复
+    recovery.py                有界只读重试策略和明确的工具错误分类
+    audience.py                同一 reviewer 的学生阅读、制作口吻检查及最终汇总
     workflow.py                固定整稿状态机、组装、审核证明、finding 处置、发布
     repairs.py                 问题展开、方案版本/确认、指定返修、历史发布与专用 ZIP
     feedback.py                用户反馈版本、开工回执、结果证据和旧审核失效检查
@@ -102,6 +104,7 @@ src/mpres/
     schemas/                   plan、author-result、review-result、diagnosis-result
     files.py                   安全相对路径、只读快照、可写副本
     migration.py               旧任务只读导入
+  geometry.py                  同一数学定义求解、验算、绘图及资产/生成脚本一致性检查
   source_policy.py             全项目 Markdown 子集、主题所有权、统一渲染参数；无任务豁免
   marp_source.py               Marp 解析、内容 lint；compact 不要求旧过程记录
   html_layout.py              临时 HTML + DOM 几何检查；canonical ID 优先
@@ -199,7 +202,7 @@ mpres --root . task jobs economics
 mpres --root . runner run economics --cycles 100 --interval 1
 ```
 
-适配器必须真实实现四种请求：
+适配器必须真实实现五种请求：
 
 * `brief`：与内容作业使用同一固定 runtime、同一 session，先返回 receipt、runtime、usage 和
   readback（每项 id/version/approach）。此时没有可写内容目录；全部回执接受后才派发 `run`。
@@ -208,6 +211,7 @@ mpres --root . runner run economics --cycles 100 --interval 1
   usage_reporting 和 receipt；它们来自宿主，不是复述 task.yaml。
 * `create`：输入 request_id、slot_id、runtime；返回实际 handle、model、
   reasoning_effort、receipt。相同请求应幂等。
+* `audience_step`：在 audience 首次审核中分段完成学生阅读和制作口吻检查，回传精确页范围、引用、findings 与真实 usage；见下文分步协议。
 * `run`：输入 attempt_id、session_id、runtime、packet；返回实际 runtime、receipt、
   result、usage，以及作者才有的 source_dir。source_dir 必须位于本次 output 下。
 
@@ -279,6 +283,34 @@ $A\mathbf{x}=\mathbf{b}$ 的解需要同时满足两行方程。
 frontmatter 只接受上述固定布局值，以及 title/description/author/keywords/lang 描述元数据。
 不提供 task.yaml 或 runtime profile 开关来放宽这些全项目规则。
 
+### 计算式几何图：数学数据 → 验算 → 资产
+
+数学图的点位属于工具计算，不属于 author 的像素布局。`geometry.py` 提供三个
+小型、固定样式的生成器：`lines`（两直线，含垂直／平行／重合）、`projection`
+（向量到过原点直线的投影）、`transform`（二维矩阵与一至四个向量）。
+它们用有理数计算，曲线、标记和数值标签共用结果；投影验算正交残差。
+Matplotlib 在一个数据坐标系中绘图，并采用等比例坐标，不能通过 spec 传 CSS、
+像素点或预写的“正确答案”。
+
+```bash
+# 首次安装时启用绘图依赖；不在任务运行中隐式安装。
+python scripts/bootstrap.py --with-figures
+mpres figure build examples/computed-figures/intersection.plot.json
+mpres figure check path/to/output
+mpres source check path/to/output
+```
+
+数学输入例如 `{"version":1,"kind":"lines","lines":[[1,1,2],[1,-1,0]]}`，
+表示 `x+y=2` 与 `x-y=0`。生成同名 `.svg` 和重建入口 `.py`。将三者一起放进
+`assets/<unit-id>/`，以普通 Markdown 图片引用 SVG。它们都是可复现的内容资产，
+不是需要 agent 维护的过程文档；发布 ZIP 已保留整个源码快照，因此三者一起交付。
+
+源码提交和 gate 重算 `.plot.json` 并比较规范化 SVG（不使用额外文件 checksum，
+不执行作者脚本）。改了数据未重新出图、手工挪动标记、缺少重建入口都会失败。
+图示工具不证明教学概念选得正确，也不把任意外部 SVG／照片冒称为验算通过；
+未支持的图种仍需有明确数学来源与作者工具验算，首次语义审核保持不变。
+切换 Matplotlib 版本造成生成差异时，重新运行配套脚本，而不是放宽规约。
+
 ### 检查怎样运行
 
 ```bash
@@ -312,7 +344,55 @@ mpres --root . artifact inspect economics REVISION_ID --level full --retry
 
 已有交付 PDF 和配对 ZIP 不会自动重写。旧任务若含自定义主题、HTML 或单页样式，继续
 编辑/发布时会被明确拦截；需由作者保留教学内容、改为受支持的 Markdown/外部图，再
-形成新修订。不能通过 legacy 入口或复制旧 gate 绕过规则。配置/runtime/数据库 schema 不变。
+形成新修订。不能通过 legacy 入口或复制旧 gate 绕过规则。既有配置/runtime 不会被覆盖；schema 6→7 仅增加分步阅读表。
+
+### 正常错误怎样自动恢复，什么时候才停
+
+`runner` 不从报错文字猜测用户授权，不增设恢复模型。处理按已知事实分流：
+
+| 情况 | 运行器的动作 |
+|---|---|
+| 本地浏览器确认为 TargetClosed，或检查子进程超时 | 同一不可变源码重新跑检查；不创建作者、不消耗修稿额度 |
+| Marp/依赖缺失、未知检查器异常 | 明确标记环境故障；不命令作者改正确的数学去迎合检查器 |
+| 内容已确实执行并回传 receipt/runtime/usage，但结果 schema 或源码契约失败 | 原 attempt 记为 failed，保留用量；同一 job 开新 attempt，给固定配置作者原稿和精确错误 |
+| 普通源码/full gate 报告真实内容问题 | 沿既有作者自修链处理，仍使用既有有限修稿预算 |
+| host inventory 缺失或过期 | bridge 返回只读 capabilities 请求；command 自动刷新真实观测 |
+| 新 inventory 与已知 live handles 矛盾 | 要求对账，不擅自认为旧句柄已关闭 |
+| create/run/brief 的回执丢失、runtime 不符、缺少承诺的 usage | 保留不确定状态，不能盲目重发外部执行或伪造完成 |
+| 语义范围、权限、反馈仍未解决或预算耗尽 | 明确待决；不改 runtime、不放宽主题/HTML/门禁规则 |
+
+同一 `task.yaml` 可在确认前设定：
+
+```yaml
+max_attempts: 2
+recovery:
+  transient_tool_retries: 2
+  host_observation_retries: 2
+```
+
+两项 recovery 值接受 0..3，省略时各按 2；没有新配置文件。
+`max_attempts` 限制同一 job 的总内容执行次数，源码契约拒绝也消耗次数；原有单元修正
+与整稿 gate 修正预算同时保留。工具重试另计，已经失败的 durable gate 行使下一次
+`tick` 不能重新获得一份自动预算；并发运行器也不能倍增重试。0 表示不自动重试。
+重试不会删除旧失败记录或变更已确认配置。
+
+已完成的错误源码保存在原 attempt 工作区，下一次派发只复制相关正文/资产并说明
+精确契约错误。不是自动删除违规片段，更不是执行作者提交的脚本。修正生成新 attempt、
+需要新的真实回执和 usage，并再次通过正常门禁；不会新增 reviewer 验修轮次。
+目前这一自动重交路径只适用于作者类结果 schema 和源码契约，语义争议、越权路径、
+错误审核证据与第三方协议异常不会被当成可无限重试的普通格式错误。
+
+如果先前因环境问题阻断完整检查，安装工具后 `workflow retry-checks` 现在也可在发现
+真实内容问题时恢复到原检查阶段，由既有作者修正链接手，而非再次要求用户决定。
+它不把失败 gate 改为通过，只关闭与本次恢复的原 phase/reason 精确对应的一条决策。
+
+### pilot 与容量预留
+
+pilot 首次反馈之前，只预算首个目标稿件的 runtime 池；each 只预算当前稿件。
+已确认返修优先使用本次选定目标；all 或 pilot 已获用户继续确认后，才考虑其余任务。
+任何已经创建的池与真实句柄仍占容量，不能因为范围缩小就从计数中抹去。
+每个当前稿件的五名 reviewer、编辑者与恢复余量仍提前预留，实际作者并发只在用户上限
+内调整。容量不足不触发模型降档、假关闭或跳过审核。
 
 ## 8. 整稿流程怎样自动推进
 
@@ -357,6 +437,31 @@ mpres --root . workflow recover-assembly economics --job-id JOB_ID --note "已�
 记录停止核验；AI attempt 回执不明时继续沿用同请求对账，不假称失败后重试。
 语义争议不会被 retry-checks 绕过；本版尚未提供原任务内任意语义变更/重新确认流程，
 这类变更需新建或导入新任务后确认。
+
+### audience reviewer 如何分步试读
+
+首次五通道审核不变，audience 不再一次承担所有阅读目标：
+
+1. **学生阅读**：按顺序每段最多 12 页、正文最多 48 KB，只描述能学到什么、
+   具体困惑及页内证据。包中不含作者回执、自检记录、整份任务目录或 PDF。
+2. **制作口吻检查**：再次分段检查对管理者的自证、制作状态和资料请求。
+   不能误删真实模型条件、模拟数据披露和适用限制。
+3. **历史反馈对照与汇总**：已有结果作为有限上下文，与原冻结稿、反馈版本
+   一起汇总最终 findings。前序问题不能在汇总时无声消失。
+
+`control/audience.py` 管理顺序和证据；SQLite `audience_steps` 保存派发、精确页码、
+结果和 usage。schema 从 6 加法升级为 7，确认配置及旧已交付记录不变。
+没有新增独立 reviewer、模型档次或过程文档；中间调用与最终调用归于同一 attempt。
+表中覆盖记录证明输入已派发并回执，不证明模型真正理解，教学质量仍需实际测试。
+
+宿主适配器现在须处理 `operation: audience_step`：请求携带 `sequence`、phase、
+受限页面和 review-result schema 中的子结构；回传实际 runtime、receipt、usage，
+以及 summary、read_slide_ids、observations 和 findings。只有当前步骤成功入库，
+runner 才发下一步，最后才发原来的 `run`。丢失回执不自动重做外部调用，迟到的
+精确回执可恢复步骤。`runner outstanding` 可查看等待中的步骤。
+
+开工前历史反馈 briefing 仍然存在，因此试读不是严格的认知盲测；它隔离的是
+作者自评，而不是假装模型遗忘历史。默认不增加任何“修复验收 reviewer”轮次。
 
 ### 交付压缩包：PDF 与对应的 Markdown 同名
 
@@ -623,21 +728,7 @@ reviewer。无法判断/缺少来源的内容必须停在语义待决，不把�
 
 ## 最近阶段
 
-v0.6.14 加入历史用户反馈的持久化、开工短回执和页内证据检查；v0.6.15 加入先展开再确认
-的单稿/批量返修，重走独立审核、保留历史交付、自动配对 ZIP。schema 为 6，仍是 6 个语义
-skills、4 类语义结果 schema、3 份用户配置入口。模型与推理强度没有改变。
-测试覆盖真实 SQLite、源码快照、文件和 ZIP；模型与 full-render 部分使用明确标识的替身，
-不把协议测试当成真实数学教学质量或原生 Marp 浏览器的端到端验收。
-
-## 本次版本：v0.6.17
-
-在 v0.6.16 启动入口修复的基础上，固定主题所有权并把受限 Markdown 作为源稿提交、
-组装和渲染的共同边界。修正代码围栏/引用图片解析、TeX 环境嵌套、DOM 数字 ID 对齐；
-没有新增 skill、过程模板、数据库表或 reviewer 复修验收状态。
-
-专项测试直接覆盖 v6 的 inline SVG + Markdown 和裸 svg 定位 CSS 失败形态，要求其在
-原生工具启动前被拒绝；也检查合法矩阵、代码示例与引用图片不会被误杀。source parser
-测试使用已安装 markdown-it-py 4.2.0，原生 Marp 参数对照固定 v4.5.0 源码。
-本发布环境仍未取得原生 Marp CLI，也未执行真实 Codex 登录/Windows 交互；协议和渲染
-替身测试不能代替部署环境真实模型、真实渲染验收。部署前执行 bootstrap、toolchain doctor。
-后续计算式图示、分步学生试读、有界自动恢复仍是独立阶段，未混入本版。
+v0.6.20 加入有界工具/观测恢复、已完成不合规源码的作者重交、pilot 作用域容量预算和
+精确恢复决策；数据库继续使用 schema 7。v0.6.19 的分步学生试读、v0.6.18 的计算式
+图示以及固定全局布局/禁用 HTML 均保留。真实宿主/固定 Marp 的端到端质量仍须在部署
+环境验证，单元和替身集成测试不冒充生产教学质量验收。

@@ -78,3 +78,15 @@ This is the first independently testable step toward v0.7.0.
 - Added the `role-runtime-profiling` skill and regression tests.
 
 Not included yet: mechanical review/release coordinators, scheduler overlap repair, transactional mutable state, incident circuit breakers, or slide-subset diagnostics.
+
+## 0.6.18
+
+Computed lines, projections and transformations; exact relationships, reproducible SVG/Python assets, source-contract enforcement, CLI and examples. No new semantic reviewer or runtime changes.
+
+## 0.6.19
+
+Sequential bounded audience reading on one session, exact coverage/evidence receipts, SQLite schema 7, recovery-safe stage delivery, first-review only.
+
+## 0.6.20
+
+Bounded typed local-checker recovery, safe host observations, precise completed-author-result correction, pilot/repair scope capacity, exact blocked-check resumption. No runtime mutation, gate relaxation or post-repair reviewer.

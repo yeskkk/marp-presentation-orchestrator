@@ -17,6 +17,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest='command',required=True)
     source = sub.add_parser('source').add_subparsers(dest='operation',required=True)
     source_check=source.add_parser('check');source_check.add_argument('directory',type=Path)
+    figure = sub.add_parser('figure').add_subparsers(dest='operation',required=True)
+    fb=figure.add_parser('build');fb.add_argument('spec',type=Path)
+    fc=figure.add_parser('check');fc.add_argument('directory',type=Path)
     task = sub.add_parser('task').add_subparsers(dest='operation',required=True)
     init = task.add_parser('init'); init.add_argument('slug'); init.add_argument('--title',required=True)
     for action in ('present','confirm','status','metrics','jobs','materialize'):
@@ -94,6 +97,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command=='source':
             from mpres.source_policy import inspect_source
             result=inspect_source(args.directory.resolve())
+        elif args.command=='figure':
+            from mpres.geometry import build, inspect_figures
+            result=build(args.spec.resolve()) if args.operation=='build' else inspect_figures(args.directory.resolve())
         elif args.command=='toolchain':
             from mpres.toolchain import smoke_toolchain
             result=smoke_toolchain(root,timeout=args.timeout)

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from mpres.util import MPresError
+from mpres.util import MPresError, SubmissionRejected
 
 SCHEMAS = {'plan','author-result','review-result','diagnosis-result'}
 GUIDES = {'write':'marp-writing','edit':'deck-editing','revise':'deck-editing',
@@ -28,7 +28,7 @@ def validate(name: str, value) -> None:
     if errors:
         first=errors[0]
         where='/'.join(str(x) for x in first.path) or '<result>'
-        raise MPresError(f'Semantic schema {name} at {where}: {first.message}')
+        raise SubmissionRejected(f'Semantic schema {name} at {where}: {first.message}')
 
 
 def result_schema_name(kind: str) -> str:

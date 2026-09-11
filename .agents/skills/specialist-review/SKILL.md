@@ -42,3 +42,15 @@ inline HTML、内嵌 SVG、临时 class/字号/图片尺寸。只用规范 Markd
 外部图片引用；仅 slide-id 与 core/support 是机器注释白名单。内容放不下就删冗余、
 拆推导、拆页，不能缩字、挪公式、修改主题或把正文截图成图片。源码提交前运行
 `mpres source check <output>`。制作回执只写结果 JSON，不写学生页。
+
+## audience 的窄步骤学生试读
+
+runner 分别派发 student、production_language 和最终历史反馈汇总；不要提前跨步骤。
+student 阶段只说明学生能学到什么、哪里需要猜变量／条件／图与公式的关系。
+production_language 阶段只找制作者对管理者的自述、自证合规与资料请求。
+“本页已按要求补充案例”属于制作口吻；“这些数值为教学模拟，不能用于预测”
+可能是重要建模条件，不能通过关键词一律删掉。两阶段逐段覆盖全部页面。
+引用实际页内片段及其学习影响；没有观察到问题可返回空 observations/findings。
+最终对照历史批评并汇总，保留前序已提出的问题，不依据 author 自评宣布无问题。
+同一 reviewer、同一固定 runtime；这是模拟学生阅读，不是真实学生实验，也不是
+认知盲测。只完成首次审核，不加入作者修复后的 reviewer 验收。

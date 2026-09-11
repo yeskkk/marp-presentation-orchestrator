@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "kind": "projection",
+  "point": [
+    2,
+    1
+  ],
+  "direction": [
+    1,
+    1
+  ]
+}

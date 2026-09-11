@@ -44,7 +44,7 @@ class Quality:
             raise MPresError('Gate predates the current source contract; run artifact inspect --retry before reuse')
         return dict(row)
 
-    def inspect(self, artifact_id: str, level: str = 'source', *, retry: bool = False) -> dict:
+    def inspect(self, artifact_id: str, level: str = 'source', *, retry: bool = False, _automatic: bool = False) -> dict:
         if level not in {'source', 'full'}:
             raise MPresError('Gate level must be source or full')
         with self.store.transaction() as conn:
@@ -58,6 +58,12 @@ class Quality:
             current_policy = old and json.loads(old['detail_json'] or '{}').get('source_policy_version') == POLICY_VERSION
             if old and (old['state'] == 'running' or (not retry and current_policy)):
                 return {**dict(old), 'already_recorded': True}
+            if _automatic:
+                from .recovery import policy
+                limit=policy(json.loads(cfg['settings_json']))['transient_tool_retries']
+                failures=conn.execute("SELECT count(*) FROM gate_runs WHERE artifact_id=? AND level=? AND json_extract(detail_json,'$.failure_kind')='transient_tool'",(artifact_id,level)).fetchone()[0]
+                if not old or old['state']!='failed' or json.loads(old['detail_json'] or '{}').get('failure_kind')!='transient_tool' or failures>limit:
+                    return {**dict(old), 'already_recorded': True}
             gate_id = uid('g')
             conn.execute("INSERT INTO gate_runs(id,artifact_id,level,sequence,state,started_at) VALUES(?,?,?,?,'running',?)",
                          (gate_id, artifact_id, level, 1 if not old else old['sequence']+1, utc_now()))
@@ -67,7 +73,9 @@ class Quality:
         try:
             report = self._run(artifact, gate_id, level, settings)
         except Exception as exc:
-            report = {'success': False, 'checks': {}, 'errors': [f'{type(exc).__name__}: {exc}'], 'failure_kind': 'tool_or_input'}
+            from .recovery import transient
+            report = {'success': False, 'checks': {}, 'errors': [f'{type(exc).__name__}: {exc}'],
+                      'failure_kind': 'transient_tool' if transient(exc) else 'tool_or_input'}
         from mpres.source_policy import POLICY_VERSION
         report['source_policy_version'] = POLICY_VERSION
         report['seconds'] = time.monotonic()-start
@@ -87,6 +95,25 @@ class Quality:
             event(conn, 'gate.finished', {'gate_id': gate_id, 'artifact_id': artifact_id, 'state': state, 'seconds': report['seconds']})
         return {**self.latest(artifact_id, level), 'already_recorded': False}
 
+    def inspect_recovering(self, artifact_id: str, level: str = 'source') -> dict:
+        """Bounded same-revision local retries, outside write transactions.
+
+        Counting durable gate rows prevents a fresh tick from resetting the budget.
+        A running gate is never reclaimed just because an exception looked temporary.
+        """
+        from .recovery import policy
+        with self.store.transaction() as conn:
+            limit=policy(json.loads(self.service.confirmed(conn)['settings_json']))['transient_tool_retries']
+        result=self.inspect(artifact_id,level)
+        while result['state']=='failed' and json.loads(result.get('detail_json') or '{}').get('failure_kind')=='transient_tool':
+            count=sum(json.loads(g['detail_json'] or '{}').get('failure_kind')=='transient_tool'
+                      for g in self.store.rows('SELECT detail_json FROM gate_runs WHERE artifact_id=? AND level=?',(artifact_id,level)))
+            if count>limit: break
+            with self.store.transaction() as conn:
+                event(conn,'gate.automatic_retry',{'artifact_id':artifact_id,'level':level,'previous_gate_id':result['id'],'retry':count,'limit':limit})
+            result=self.inspect(artifact_id,level,retry=True,_automatic=True)
+        return result
+
     def interrupt(self, gate_id: str, reason: str) -> None:
         """Explicit operator recovery only after confirming the local checker stopped."""
         from .service import require_text
@@ -101,7 +128,11 @@ class Quality:
 
     def _run(self, artifact: dict, gate_id: str, level: str, settings: dict) -> dict:
         source = inside(self.task, artifact['path'])
-        checks = {'source': lint_deck(source, process_records=False), 'math_source': inspect_math_source(source)}
+        try:
+            checks = {'source': lint_deck(source, process_records=False), 'math_source': inspect_math_source(source)}
+        except (MPresError, ValueError, UnicodeError) as exc:
+            # Parsing invalid authored Markdown/TeX is not a broken browser.
+            return {'success':False,'checks':{},'failure_kind':'content','errors':[str(exc)]}
         # Source lint already validates local image paths. CSS/SVG external loads
         # must also be caught before passing --allow-local-files to a browser.
         checks['asset_boundary'] = asset_boundary(source)
@@ -119,6 +150,8 @@ class Quality:
         copy_tree(source, work, read_only=False)
         try:
             checks['html_layout'] = inspect_marp_html_layout(self.root, work, policy=policy, timeout=timeout)
+            if checks['html_layout'].get('returncode', 0) != 0:
+                return {'success': False, 'checks': checks, 'failure_kind': 'tool_or_input'}
             checks['math_renderer'] = inspect_math_renderer(checks['math_source'], checks['html_layout'])
             if not all(c['success'] for c in checks.values()):
                 return {'success': False, 'checks': checks, 'failure_kind': 'layout_or_renderer'}
@@ -128,6 +161,9 @@ class Quality:
             checks['render'] = {'success': proc.returncode == 0 and pdf.is_file(), 'command': cmd,
                                 'returncode': proc.returncode, 'stderr': proc.stderr[-4000:]}
             if not checks['render']['success']:
+                if 'TargetClosedError:' in proc.stderr:
+                    from mpres.util import TransientToolError
+                    raise TransientToolError('Marp browser closed during PDF rendering: '+proc.stderr[-1000:])
                 return {'success': False, 'checks': checks, 'failure_kind': 'tool_or_input'}
             checks['pdf'] = inspect_pdf_file(pdf, expected_pages=len(parse_deck(work/'presentation.md').slides))
             ok = all(c['success'] for c in checks.values())

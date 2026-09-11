@@ -1,4 +1,4 @@
-PRAGMA user_version = 6;
+PRAGMA user_version = 7;
 CREATE TABLE task (
     singleton INTEGER PRIMARY KEY CHECK (singleton=1), title TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('draft','running','paused','completed')),
@@ -157,3 +157,12 @@ ALTER TABLE decks ADD COLUMN repair_case TEXT REFERENCES repair_cases(id);
 ALTER TABLE decks ADD COLUMN review_round INTEGER NOT NULL DEFAULT 1;
 INSERT INTO release_versions(presentation,revision,artifact_id,gate_id,pdf_path,state,created_at,committed_at)
  SELECT presentation,1,artifact_id,gate_id,pdf_path,state,created_at,committed_at FROM releases;
+
+CREATE TABLE audience_steps (
+ attempt_id TEXT NOT NULL REFERENCES attempts(id), sequence INTEGER NOT NULL,
+ phase TEXT NOT NULL CHECK(phase IN ('student','production_language')),
+ artifact_id TEXT NOT NULL REFERENCES artifacts(id), slide_ids_json TEXT NOT NULL,
+ state TEXT NOT NULL CHECK(state IN ('pending','dispatched','completed')),
+ receipt TEXT, result_json TEXT, completed_at TEXT,
+ PRIMARY KEY(attempt_id,sequence)
+);

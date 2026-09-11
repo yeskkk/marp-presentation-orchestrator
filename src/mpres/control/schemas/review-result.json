@@ -141,5 +141,104 @@
         }
       }
     }
+  },
+  "$defs": {
+    "audience_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "read_slide_ids",
+        "summary",
+        "observations",
+        "findings"
+      ],
+      "properties": {
+        "phase": {
+          "enum": [
+            "student",
+            "production_language"
+          ]
+        },
+        "read_slide_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1200
+        },
+        "observations": {
+          "type": "array",
+          "maxItems": 24,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "slide_id",
+              "quote",
+              "learning_impact"
+            ],
+            "properties": {
+              "slide_id": {
+                "type": "string"
+              },
+              "quote": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1200
+              },
+              "learning_impact": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1200
+              }
+            }
+          }
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "required": [
+              "message",
+              "slide_ids",
+              "severity"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "slide_ids": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1,
+                "uniqueItems": true
+              },
+              "severity": {
+                "enum": [
+                  "minor",
+                  "major",
+                  "critical"
+                ]
+              }
+            }
+          },
+          "minItems": 0,
+          "maxItems": 24
+        }
+      }
+    }
   }
 }

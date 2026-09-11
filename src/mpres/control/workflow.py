@@ -156,10 +156,18 @@ class Workflow:
         if not gate or gate['state'] not in {'failed','interrupted'}:
             raise MPresError('No completed failed gate to retry; a running checker must first be reconciled')
         report = self.quality.inspect(deck['candidate_id'], 'full', retry=True)
-        if report['state'] == 'passed':
-            self._set(deck, deck['blocked_from'], blocked_from=None, block_reason=None)
-            with self.store.transaction() as conn:
-                conn.execute('UPDATE decisions SET resolved_at=?,answer=? WHERE presentation=? AND kind=? AND resolved_at IS NULL', (utc_now(), note, presentation, 'workflow-blocked'))
+        from .recovery import CONTENT_FAILURES
+        content_failure=report['state']=='failed' and json.loads(report.get('detail_json') or '{}').get('failure_kind') in CONTENT_FAILURES
+        if report['state']=='passed' or content_failure:
+            if self._set(deck, deck['blocked_from'], blocked_from=None, block_reason=None):
+                with self.store.transaction() as conn:
+                    # Resolve only the specific blocking reason/phase we resumed.
+                    candidates=conn.execute("SELECT id,detail_json FROM decisions WHERE presentation=? AND kind='workflow-blocked' AND resolved_at IS NULL ORDER BY id DESC",(presentation,)).fetchall()
+                    for decision in candidates:
+                        detail=json.loads(decision['detail_json'])
+                        if (detail.get('reason'),detail.get('resume_phase'))==(deck['block_reason'],deck['blocked_from']):
+                            conn.execute('UPDATE decisions SET resolved_at=?,answer=? WHERE id=?',(utc_now(),note,decision['id']))
+                            break
         return report
 
     def continue_delivery(self, actor: str, note: str) -> dict:
@@ -245,10 +253,13 @@ class Workflow:
                     if failed:
                         raise MPresError('A unit job is blocked or failed; inspect its exact attempt/decision')
                     return False
-                artifact=rows[0];gate=self.quality.inspect(artifact['id'])
+                artifact=rows[0];gate=self.quality.inspect_recovering(artifact['id'])
                 if gate['state'] == 'running':
                     return False
                 if gate['state'] != 'passed':
+                    from .recovery import CONTENT_FAILURES
+                    if json.loads(gate.get('detail_json') or '{}').get('failure_kind') not in CONTENT_FAILURES:
+                        raise MPresError('Unit checker environment failed; do not ask an author to change correct source')
                     with self.store.transaction() as conn:
                         cfg=json.loads(self.service.confirmed(conn)['settings_json'])
                         count=conn.execute("SELECT count(*) FROM jobs WHERE plan_item_id=? AND kind='edit'", (plan['id'],)).fetchone()[0]
@@ -282,7 +293,7 @@ class Workflow:
             Feedback(self.task).require_author_clear(deck['candidate_id'])
             from .repairs import Repairs
             Repairs(self.task).require_clear(deck['candidate_id'])
-            gate=self.quality.inspect(deck['candidate_id'], 'full')
+            gate=self.quality.inspect_recovering(deck['candidate_id'], 'full')
             if gate['state']=='running':
                 return False
             if gate['state']!='passed':

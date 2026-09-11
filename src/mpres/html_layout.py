@@ -349,6 +349,9 @@ def inspect_marp_html_layout(
         command = _marp_html_command(root, source_copy, output, policy)
         process = run_command(command, cwd=source_copy, timeout=timeout)
         if process.returncode != 0 or not output.is_file():
+            if 'TargetClosedError:' in process.stderr:
+                from .util import TransientToolError
+                raise TransientToolError('Marp browser closed while rendering HTML: '+process.stderr[-1000:])
             return {
                 "schema_version": 1,
                 "command": command,

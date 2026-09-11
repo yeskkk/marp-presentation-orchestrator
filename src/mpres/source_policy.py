@@ -16,7 +16,7 @@ from markdown_it import MarkdownIt
 
 from mpres.util import MPresError
 
-POLICY_VERSION = 1
+POLICY_VERSION = 3
 THEME_PATH = Path(__file__).with_name('control')/'theme.css'
 FRONTMATTER = {'marp':True,'theme':'mathist-academic','paginate':True,'size':'16:9','math':'mathjax'}
 METADATA = re.compile(r'<!--\s*(?:slide-id:\s*[A-Za-z][A-Za-z0-9_.:-]{0,127}|_class:\s*(?:core|support))\s*-->')
@@ -187,12 +187,17 @@ def inspect_source(source: Path) -> dict:
         if p.is_absolute() or '..' in p.parts or not (source/p).resolve().is_relative_to(source.resolve()):
             errors.append(f'Image escapes source directory: {raw}')
         elif not (source/p).is_file():errors.append(f'Missing image: {raw}')
-    return {**report,'success':not errors,'errors':errors}
+    from mpres.geometry import inspect_figures
+    geometry=inspect_figures(source)
+    errors.extend(geometry['errors'])
+    return {**report,'success':not errors,'errors':errors,'computed_figures':geometry}
 
 
 def require_source(source: Path) -> None:
     report=inspect_source(source)
-    if not report['success']:raise MPresError('Project source contract failed:\n'+'\n'.join(report['errors'][:20]))
+    if not report['success']:
+        from mpres.util import SubmissionRejected
+        raise SubmissionRejected('Project source contract failed:\n'+'\n'.join(report['errors'][:20]))
 
 
 def comparable_files(source: Path) -> dict[str,bytes]:

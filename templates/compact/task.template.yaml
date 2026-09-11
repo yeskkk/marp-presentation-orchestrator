@@ -9,6 +9,10 @@ author_concurrency: 4
 max_attempts: 2
 context_budget_bytes: 262144
 provider_timeout_seconds: 1200
+# Separate, bounded retries of safe read-only operations; never retries unknown creates/runs.
+recovery:
+  transient_tool_retries: 2
+  host_observation_retries: 2
 quality:
   browser: auto
   timeout_seconds: 1800
