@@ -22,6 +22,12 @@ from .service import CHANNELS, Service, require_text, uid
 from .store import encode, event
 
 
+def current_findings(service: Service, deck: dict) -> list[dict]:
+    return service.store.rows("""SELECT f.* FROM findings f JOIN jobs j ON j.id=f.job_id
+        WHERE f.artifact_id=? AND j.presentation=? AND j.round=? AND j.kind='review'""",
+        (deck['frozen_id'],deck['presentation'],deck['review_round']))
+
+
 def validate_result(service: Service, job: dict, result: dict, source: Path | None) -> None:
     """Evidence validation, not a claim that code can judge semantic correctness."""
     decks = service.store.rows('SELECT * FROM decks WHERE presentation=?', (job['presentation'],))
@@ -29,9 +35,11 @@ def validate_result(service: Service, job: dict, result: dict, source: Path | No
         return  # Draft-only v0.6.8/9 API remains explicitly separate.
     deck = decks[0]
     if job['kind'] == 'review':
-        if deck['frozen_id'] != job['input_artifact_id']:
+        if deck['frozen_id'] != job['input_artifact_id'] or deck['review_round'] != job['round']:
             raise MPresError('Reviewer must read the exact current frozen revision')
-        gate = Quality(service.task).require_pass(deck['frozen_id'])
+        from .repairs import Repairs
+        if not Repairs(service.task).historical_review(deck):
+            Quality(service.task).require_pass(deck['frozen_id'])
         artifact = service.store.rows('SELECT * FROM artifacts WHERE id=?', (deck['frozen_id'],))[0]
         ids = {s.slide_id for s in parse_deck(service.task/artifact['path']/'presentation.md').slides}
         findings = result.get('findings')
@@ -47,7 +55,7 @@ def validate_result(service: Service, job: dict, result: dict, source: Path | No
             if not isinstance(cited, list) or not cited or any(not isinstance(x,str) or x not in ids for x in cited):
                 raise MPresError('Finding evidence must cite frozen canonical slide IDs')
     if job['kind'] == 'revise' and deck['frozen_id']:
-        expected = {r['id'] for r in service.store.rows('SELECT id FROM findings WHERE artifact_id=?', (deck['frozen_id'],))}
+        expected = {r['id'] for r in current_findings(service,deck)}
         rows = result.get('resolutions')
         if not isinstance(rows, list):
             raise MPresError('Revision must account for every finding in resolutions')
@@ -67,8 +75,12 @@ def validate_result(service: Service, job: dict, result: dict, source: Path | No
             frozen = service.store.rows('SELECT * FROM artifacts WHERE id=?', (deck['frozen_id'],))[0]
             previous = {s.slide_id for s in parse_deck(service.task/frozen['path']/'presentation.md').slides}
             now = {s.slide_id for s in parse_deck(source/'presentation.md').slides}
-            if not previous <= now:
-                raise MPresError('Post-review revision must retain frozen slide IDs; scope changes require a new task/review')
+            from .repairs import Repairs
+            context=Repairs(service.task).context(job)
+            if context and context.get('allow_slide_changes'):
+                pass  # Repairs.validate_result checked cumulative mapping against the approved baseline.
+            elif not previous <= now:
+                raise MPresError('Post-review revision must retain frozen slide IDs; scope changes require a confirmed repair')
 
 
 class Workflow:
@@ -284,7 +296,7 @@ class Workflow:
                     raise MPresError('Editor job is blocked or failed; inspect its exact attempt/decision')
                 return False
             if phase == 'revising':
-                pending=self.store.rows('SELECT * FROM findings WHERE artifact_id=?', (deck['frozen_id'],))
+                pending=current_findings(self.service,deck)
                 if any(not f['resolution_json'] or json.loads(f['resolution_json']).get('status')!='addressed' for f in pending):
                     raise MPresError('Author requested a semantic decision; unresolved findings cannot be released')
             return self._set(deck, 'preflight' if phase=='editing' else 'postflight', candidate_id=output['id'], active_job_id=None)
@@ -312,7 +324,7 @@ class Workflow:
                 if current['phase']!='preflight' or current['candidate_id']!=deck['candidate_id']:
                     return False
                 for channel in CHANNELS:
-                    self.service.ensure_job(conn,key=f"review:{deck['candidate_id']}:{channel}",presentation=deck['presentation'],kind='review',round=deck['review_round'],channel=channel,artifact=deck['candidate_id'])
+                    self.service.ensure_job(conn,key=f"review:{deck['presentation']}:{deck['review_round']}:{deck['candidate_id']}:{channel}",presentation=deck['presentation'],kind='review',round=deck['review_round'],channel=channel,artifact=deck['candidate_id'])
                 conn.execute("UPDATE decks SET phase='reviewing',frozen_id=candidate_id,repair_count=0 WHERE presentation=?",(deck['presentation'],))
                 event(conn,'deck.frozen',{'presentation':deck['presentation'],'artifact_id':deck['candidate_id'],'gate_id':gate['id']})
             return True
@@ -321,9 +333,10 @@ class Workflow:
             if len(jobs)!=5 or any(j['state']!='succeeded' for j in jobs):
                 return False
             self._review_proof(deck)
-            if not self.store.rows('SELECT id FROM findings WHERE artifact_id=?', (deck['frozen_id'],)):
+            from .repairs import Repairs
+            if not current_findings(self.service,deck) and not Repairs(self.task).historical_review(deck):
                 return self._set(deck, 'releasing')
-            job=self._editor(deck, deck['candidate_id'], kind='revise', key=f"revise:{deck['frozen_id']}")
+            job=self._editor(deck, deck['candidate_id'], kind='revise', key=f"revise:{deck['presentation']}:{deck['review_round']}:{deck['frozen_id']}")
             return self._set(deck, 'revising', active_job_id=job)
         if phase=='releasing':
             self.publish(deck)
@@ -386,16 +399,18 @@ class Workflow:
             raise
 
     def _review_proof(self, deck: dict) -> None:
-        rows=self.store.rows("SELECT j.channel,a.session_id FROM jobs j JOIN attempts a ON a.job_id=j.id WHERE j.kind='review' AND j.input_artifact_id=? AND j.round=? AND j.state='succeeded' AND a.state='succeeded'", (deck['frozen_id'],deck['review_round']))
+        rows=self.store.rows("SELECT j.channel,a.session_id FROM jobs j JOIN attempts a ON a.job_id=j.id WHERE j.kind='review' AND j.input_artifact_id=? AND j.round=? AND j.presentation=? AND j.state='succeeded' AND a.state='succeeded'", (deck['frozen_id'],deck['review_round'],deck['presentation']))
         if len(rows)!=5 or {r['channel'] for r in rows}!=set(CHANNELS) or len({r['session_id'] for r in rows})!=5:
             raise MPresError('Release requires five distinct successful full-deck reviewer sessions')
         for row in rows:
             conflicts=self.store.rows("SELECT 1 FROM participation WHERE session_id=? AND presentation=? AND kind IN ('write','edit','revise')",(row['session_id'],deck['presentation']))
             if conflicts:
                 raise MPresError('Reviewer independence was violated')
-        self.quality.require_pass(deck['frozen_id'])
+        from .repairs import Repairs
+        if not Repairs(self.task).historical_review(deck):
+            self.quality.require_pass(deck['frozen_id'])
         from .feedback import Feedback
-        Feedback(self.task).require_current_reviews(deck['frozen_id'])
+        Feedback(self.task).require_current_reviews(deck['frozen_id'],round_no=deck['review_round'])
 
     def publish(self, deck: dict) -> dict:
         """Publish exact revisions; a repair never overwrites a historical PDF."""
@@ -406,7 +421,7 @@ class Workflow:
         Repairs(self.task).require_clear(deck['candidate_id'])
         gate=self.quality.require_pass(deck['candidate_id'])
         if not gate['pdf_path']: raise MPresError('Successful full gate did not retain a PDF')
-        for finding in self.store.rows('SELECT * FROM findings WHERE artifact_id=?',(deck['frozen_id'],)):
+        for finding in current_findings(self.service,deck):
             resolution=json.loads(finding['resolution_json'] or '{}')
             if resolution.get('status')!='addressed' or resolution.get('artifact_id')!=deck['candidate_id']:
                 raise MPresError('Every finding needs an author response bound to the exact release revision')

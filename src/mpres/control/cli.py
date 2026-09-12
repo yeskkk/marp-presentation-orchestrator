@@ -73,7 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
         cmd=job.add_parser(op);cmd.add_argument('slug');cmd.add_argument('attempt_id')
         if op=='acknowledge':cmd.add_argument('--readback',required=True);cmd.add_argument('--receipt',required=True)
     repair=sub.add_parser('repair').add_subparsers(dest='operation',required=True)
-    op=repair.add_parser('open');op.add_argument('slug');op.add_argument('--report',required=True);op.add_argument('--presentation',action='append',required=True);op.add_argument('--by',required=True)
+    op=repair.add_parser('open');op.add_argument('slug');op.add_argument('--report',required=True);op.add_argument('--presentation',action='append',required=True);op.add_argument('--by',required=True);op.add_argument('--mode',choices=['edit-first','review-first'],default='edit-first');op.add_argument('--allow-slide-changes',action='store_true')
     op=repair.add_parser('status');op.add_argument('slug')
     for action in ('present','confirm','amend','cancel','materialize','bundle'):
         op=repair.add_parser(action);op.add_argument('slug');op.add_argument('case_id')
@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.command=='repair':
                 from .repairs import Repairs, RepairDelivery
                 repair=Repairs(service.task)
-                if args.operation=='open':result=repair.open(args.report,args.presentation,args.by)
+                if args.operation=='open':result=repair.open(args.report,args.presentation,args.by,mode=args.mode,allow_slide_changes=args.allow_slide_changes)
                 elif args.operation=='status':result=repair.status()
                 elif args.operation=='present':result=repair.present(args.case_id)
                 elif args.operation=='confirm':result=repair.confirm(args.case_id,args.version,args.by)

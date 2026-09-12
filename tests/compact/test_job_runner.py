@@ -195,7 +195,7 @@ def test_database_v1_upgrade_preserves_confirmed_profile(compact_root):
     before=service.store.rows('SELECT * FROM configs')
     c=service.store.connect();c.execute('DROP TABLE audience_steps');c.execute('DROP TABLE release_versions');c.execute('DROP TABLE repair_jobs');c.execute('DROP TABLE repair_targets');c.execute('DROP TABLE attempt_briefings');c.execute('DROP TABLE feedback_rules');c.execute('DROP TABLE releases');c.execute('DROP TABLE decks');c.execute('DROP TABLE repair_cases');c.execute('DROP TABLE gate_runs');c.execute('DROP TABLE runtime_host');c.execute('DROP TABLE pool_slots');c.execute('ALTER TABLE task DROP COLUMN author_slots_limit');c.execute('PRAGMA user_version=1');c.close()
     assert service.store.rows('SELECT * FROM configs')==before
-    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==7;c.close()
+    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==8;c.close()
 
 
 def test_command_adapter_runs_jobs_without_main_scheduling(compact_root,tmp_path):

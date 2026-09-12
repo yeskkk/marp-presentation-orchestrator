@@ -36,9 +36,10 @@ if '--help' in sys.argv:
     raise SystemExit(int(os.environ.get('FAKE_HELP_EXIT','0')))
 Path(os.environ['CAPTURE']).write_text(json.dumps({'argv':sys.argv[1:],'cwd':os.getcwd(),
     'tty':[os.isatty(0),os.isatty(1)],'pid':os.getpid(),'task':os.environ.get('MPRES_TASK_SLUG')}))
-print('CODEX_FIXTURE_STARTED',flush=True)
 if os.environ.get('WAIT_SIGNAL'):
     signal.signal(signal.SIGINT,lambda *_:sys.exit(130))
+print('CODEX_FIXTURE_STARTED',flush=True)
+if os.environ.get('WAIT_SIGNAL'):
     while True:time.sleep(.05)
 raise SystemExit(int(os.environ.get('FAKE_EXIT','0')))
 ''')

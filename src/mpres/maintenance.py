@@ -148,6 +148,10 @@ def open_maintenance(
     build = base / "build"
     source.parent.mkdir(parents=True, exist_ok=True)
     ensure_tree(_current_release_source(task, presentation_id), source)
+    # Release evidence remains read-only; only this distinct author work copy is writable.
+    from mpres.util import make_tree_writable, require_no_symlinks
+    require_no_symlinks(source)
+    make_tree_writable(source)
     build.mkdir(parents=True, exist_ok=True)
 
     cycle_path = base / "CORRECTIVE-CYCLE.yaml"

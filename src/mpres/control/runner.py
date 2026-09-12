@@ -206,18 +206,13 @@ class Runner:
                                'No screenshots, OCR or model-vision PDF checking',
                                'Do not author workflow status, assignment files or gate receipts'],
                 'input_files':[]}
+        deck_references=[]
         if job['plan_item_id']:
             item=self.store.rows('SELECT * FROM plan_items WHERE id=?',(job['plan_item_id'],))[0]
             packet['unit']={'id':item['unit'],'title':item['title'],'brief':item['brief']}
-            for index,relative in enumerate(json.loads(item['sources_json'])):
-                src=inside(self.task,relative)
-                if src.suffix.lower() not in {'.md','.txt','.json','.csv'}:
-                    raise MPresError('Writer references must be extracted text/data, not raw PDF or executable files')
-                target=inputs/f'{index:03d}-{src.name}'
-                if target.exists() and target.read_bytes()!=src.read_bytes():
-                    raise MPresError('Input snapshot already differs; do not mutate an execution packet')
-                if not target.exists():
-                    target.write_bytes(src.read_bytes());target.chmod(0o444)
+            from .input_packet import snapshot_reference
+            for index,relative in enumerate(dict.fromkeys(json.loads(item['sources_json']))):
+                target=snapshot_reference(self.task,relative,inputs,index)
                 packet['input_files'].append(str(target))
             imported=self.store.rows("SELECT * FROM artifacts WHERE presentation=? AND unit=? AND origin='import' ORDER BY created_at DESC LIMIT 1",(job['presentation'],item['unit']))
             if imported:
@@ -226,7 +221,11 @@ class Runner:
                 packet['constraints'].append('Reuse existing content as a starting point; imported status is not gate approval')
         if job['input_artifact_id']:
             artifact=self.store.rows('SELECT * FROM artifacts WHERE id=?',(job['input_artifact_id'],))[0]
-            path=self.task/artifact['path']
+            path=inside(self.task,artifact['path'])
+            from .input_packet import safe_file
+            for entry in path.rglob('*'):
+                if entry.is_symlink(): raise MPresError('Input source contains a symlink')
+                if entry.is_file(): safe_file(self.task,entry)
             packet['frozen_source_directory']=str(path)
             packet['input_files'].extend(str(p) for p in path.rglob('*') if p.is_file() and (p.name in {'presentation.md','theme.css'} or 'assets' in p.relative_to(path).parts))
             if job['kind']=='review':
@@ -242,17 +241,19 @@ class Runner:
             packet['constraints'].extend(['Quote size: "16:9" in YAML',
                 'Use assets/<unit-id>/ paths. Never edit CSS/theme/frontmatter layout. No raw HTML, inline SVG or image size/background directives. Split/rewrite content to fit fixed layout. Run mpres source check on output before submission'])
             if job['input_artifact_id']:
-                from .files import writable
-                for src in path.rglob('*'):
-                    if src.is_file() and (src.name in {'presentation.md'} or 'assets' in src.relative_to(path).parts):
-                        target=output/src.relative_to(path)
-                        if not target.exists():
-                            target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(src.read_bytes())
-                writable(output)
+                from .files import prepare_edit_source
+                packet['source_preparation']=prepare_edit_source(self.task,path,output)
+                packet['constraints'].append('Existing mathematical figure specs were regenerated only in a new work copy. Do not copy stale SVGs back from historical evidence. Edit data and run figure build; submitted Python was not executed.')
             from mpres.source_policy import install_theme
             install_theme(output)
         if not job['plan_item_id']:
-            packet['course_outline'] = self.store.rows('SELECT unit,title,brief FROM plan_items WHERE presentation=? ORDER BY ordinal',(job['presentation'],))
+            packet['course_outline'] = self.store.rows('SELECT unit,title,brief FROM plan_items WHERE presentation=? AND config_id=? ORDER BY ordinal',(job['presentation'],job['config_id']))
+            from .input_packet import snapshot_reference
+            materials=self.store.rows('SELECT sources_json FROM plan_items WHERE presentation=? AND config_id=? ORDER BY ordinal',(job['presentation'],job['config_id']))
+            references=list(dict.fromkeys(ref for row in materials for ref in json.loads(row['sources_json'])))
+            for index,relative in enumerate(references):
+                target=snapshot_reference(self.task,relative,inputs,index)
+                deck_references.append(str(target));packet['input_files'].append(str(target))
         if job['input_artifact_id']:
             from .quality import Quality
             from .semantic import gate_excerpt
@@ -261,23 +262,33 @@ class Runner:
             if failed:
                 packet['mechanical_findings'] = gate_excerpt(json.loads(failed[0]['detail_json']))
             if job['kind']=='review':
+                from .repairs import Repairs
+                decks=self.store.rows('SELECT * FROM decks WHERE presentation=?',(job['presentation'],))
+                historical=Repairs(self.task).historical_review(decks[0]) if decks else None
                 full_gate = q.latest(job['input_artifact_id'],'full')
-                if full_gate and full_gate['state']=='passed':
+                if historical:
+                    packet['historical_release_evidence']=historical
+                    packet['frozen_pdf']=historical['pdf']
+                    packet['input_files'].append(historical['pdf'])
+                elif full_gate and full_gate['state']=='passed':
                     pdf = inside(self.task,full_gate['pdf_path'])
                     packet['frozen_pdf'] = str(pdf)
                     packet['input_files'].append(str(pdf))
                     packet['mechanical_evidence'] = gate_excerpt(json.loads(full_gate['detail_json']))
                 packet['required_result']['findings'] = 'Exactly message, slide_ids (existing canonical IDs), severity (minor/major/critical); [] permitted'
             if job['kind']=='revise':
-                decks=self.store.rows('SELECT frozen_id FROM decks WHERE presentation=?',(job['presentation'],))
-                frozen=decks[0]['frozen_id'] if decks else job['input_artifact_id']
-                packet['findings']=[{'finding_id':r['id'], 'channel':r['channel'], **json.loads(r['detail_json'])} for r in self.store.rows('SELECT * FROM findings WHERE artifact_id=?',(frozen,))]
+                from .workflow import current_findings
+                decks=self.store.rows('SELECT * FROM decks WHERE presentation=?',(job['presentation'],))
+                packet['findings']=[{'finding_id':r['id'],'channel':r['channel'],**json.loads(r['detail_json'])} for r in current_findings(self.service,decks[0])] if decks else []
                 packet['required_result']['resolutions'] = 'One per finding: finding_id, status addressed|needs_decision, explanation; retain frozen slide IDs'
         from .repairs import Repairs
         repair=Repairs(self.task).context(job)
         if repair:
             packet['repair_scope']=repair
-            packet['constraints'].append('Preserve unrelated correct material and original slide IDs. Apply only the user-confirmed issue family and related forms, never unrelated polishing.')
+            packet['constraints'].append('Preserve unrelated correct material and retained slide IDs. Apply only the user-confirmed issue family and related forms, never unrelated polishing.')
+            if repair.get('allow_slide_changes') and job['kind'] in {'edit','revise'}:
+                packet['required_result']['slide_changes']='Cumulative against original repair target: every deleted/merged original ID, action delete|merge, target_slide_id or null, concrete reason. Retain unaffected IDs; never rename the whole deck.'
+                packet['constraints'].append('User authorized deleting/merging pages within this repair scope. This overrides retain-all-slides instructions, not mathematical or runtime constraints.')
             if job['kind']=='diagnose':
                 packet['writable_directory']=None
                 packet['scope']='read_only_problem_expansion_not_authorized_repair'
@@ -310,13 +321,9 @@ class Runner:
         packet['semantic_guidance'] = guidance(self.root if hasattr(self, 'root') else self.task.parent.parent, job['kind'])
         from .semantic import teaching_context
         packet['teaching_context'] = teaching_context(config)
-        text_suffixes={'.md','.css','.txt','.json','.yaml','.yml','.csv','.svg'}
-        packet['attachment_bytes']=sum(Path(p).stat().st_size for p in set(packet['input_files']) if Path(p).suffix.lower() not in text_suffixes)
-        count=len(encode(packet).encode('utf-8'))+sum(Path(p).stat().st_size for p in set(packet['input_files']) if Path(p).suffix.lower() in text_suffixes)
-        budget=config.get('context_budget_bytes',262144)
-        if count>budget:
-            raise MPresError(f'Context packet is {count} bytes, over confirmed budget {budget}; reduce authorized input, not runtime')
-        packet['context_bytes']=count
+        from .input_packet import compile_inputs,check_budget
+        compile_inputs(self.task,packet,references=deck_references)
+        check_budget(packet,config.get('context_budget_bytes',262144))
         packet['sandbox_enforced_by_project']=False
         return packet
 

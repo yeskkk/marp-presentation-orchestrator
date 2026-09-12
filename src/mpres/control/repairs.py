@@ -30,8 +30,11 @@ class Repairs:
         if not rows: raise MPresError('Unknown repair case')
         return rows[0]
 
-    def open(self, report: str, presentations: list[str], actor: str) -> dict:
+    def open(self, report: str, presentations: list[str], actor: str, *,
+             mode: str = 'edit-first', allow_slide_changes: bool = False) -> dict:
         require_text(report,'Verbatim user problem'); require_text(actor,'User request attribution')
+        if mode not in {'edit-first','review-first'} or type(allow_slide_changes) is not bool:
+            raise MPresError('Invalid repair mode or slide-change authorization')
         if not presentations or len(set(presentations))!=len(presentations):
             raise MPresError('Select one or more distinct delivered presentation IDs explicitly')
         for p in presentations: safe_id(p)
@@ -47,8 +50,8 @@ class Repairs:
                     raise MPresError('Repair targets must be committed, currently delivered presentations')
                 revision=conn.execute('SELECT coalesce(max(revision),0)+1 FROM release_versions WHERE presentation=?',(p,)).fetchone()[0]
                 targets.append((p,row['artifact_id'],row['pdf_path'],max(2,revision)))
-            conn.execute("INSERT INTO repair_cases(id,report,requested_by,created_at,state) VALUES(?,?,?,?,'diagnosing')",
-                         (case_id,report,actor,utc_now()))
+            conn.execute("INSERT INTO repair_cases(id,report,requested_by,created_at,state,mode,allow_slide_changes) VALUES(?,?,?,?,'diagnosing',?,?)",
+                         (case_id,report,actor,utc_now(),mode,int(allow_slide_changes)))
             for p,artifact,pdf,revision in targets:
                 conn.execute('INSERT INTO repair_targets(case_id,presentation,baseline_artifact_id,baseline_pdf_path,release_revision) VALUES(?,?,?,?,?)',
                              (case_id,p,artifact,pdf,revision))
@@ -73,6 +76,7 @@ class Repairs:
         case=self.case(case_id)
         inspected=self.store.rows("SELECT j.presentation,j.input_artifact_id FROM jobs j JOIN repair_jobs r ON r.job_id=j.id WHERE r.case_id=? AND r.stage='proposal'",(case_id,))
         return {'case_id':case_id,'state':case['state'],'report':case['report'],
+                'mode':case['mode'],'allow_slide_changes':bool(case['allow_slide_changes']),
                 'proposal_version':case['proposal_version'],
                 'targets':self.store.rows('SELECT presentation,baseline_artifact_id,baseline_pdf_path,release_revision FROM repair_targets WHERE case_id=? ORDER BY presentation',(case_id,)),
                 'expansion':json.loads(case['proposal_json']) if case['proposal_json'] else None,
@@ -128,6 +132,32 @@ class Repairs:
             conn.execute("UPDATE repair_cases SET state='presented',presented_json=? WHERE id=?",(encode(exact),case_id))
         return {**exact,'requires_explicit_user_confirmation':True,'source_edits_authorized':False}
 
+    def _release_evidence(self, target: dict, conn=None) -> dict:
+        query = """SELECT a.path,r.gate_id FROM release_versions r JOIN artifacts a
+                   ON a.id=r.artifact_id WHERE r.presentation=? AND r.artifact_id=?
+                   AND r.pdf_path=? AND r.state='committed'"""
+        args=(target['presentation'],target['baseline_artifact_id'],target['baseline_pdf_path'])
+        rows=[dict(row) for row in conn.execute(query,args)] if conn else self.store.rows(query,args)
+        if not rows: raise MPresError('Historical review requires exact committed release evidence')
+        source=inside(self.task,rows[0]['path'])
+        markdown=inside(source,'presentation.md');pdf=inside(self.task,target['baseline_pdf_path'])
+        if not markdown.is_file() or not pdf.is_file():
+            raise MPresError('Historical review source or PDF evidence is missing')
+        with pdf.open('rb') as stream:
+            if stream.read(5)!=b'%PDF-': raise MPresError('Historical PDF evidence is invalid')
+        return {'artifact_id':target['baseline_artifact_id'],'source_directory':str(source),
+                'pdf':str(pdf),'historical_release':True,'historical_gate_id':rows[0]['gate_id'],
+                'current_gate_approval':False,'new_revision_must_pass_current_gates':True}
+
+    def historical_review(self, deck: dict) -> dict | None:
+        if not deck.get('repair_case'): return None
+        case=self.case(deck['repair_case'])
+        if case['mode']!='review-first' or case['state'] not in {'running','completed'}: return None
+        targets=self.store.rows('SELECT * FROM repair_targets WHERE case_id=? AND presentation=?',
+                                (case['id'],deck['presentation']))
+        if not targets or targets[0]['baseline_artifact_id']!=deck['frozen_id']: return None
+        return self._release_evidence(targets[0])
+
     def confirm(self, case_id: str, version: int, actor: str) -> dict:
         require_text(actor,'Explicit user confirmation attribution')
         if type(version) is not int or version<1: raise MPresError('Proposal version must be a positive integer')
@@ -152,6 +182,8 @@ class Repairs:
                     raise MPresError('A selected release changed since the proposal; open a new case')
                 if conn.execute("SELECT 1 FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.presentation=? AND a.state IN ('reserved','running','uncertain')",(target['presentation'],)).fetchone():
                     raise MPresError('A selected deck still has an outstanding execution')
+            if case['mode']=='review-first':
+                for target in targets: self._release_evidence(dict(target),conn)
             expansion=json.loads(case['proposal_json'])
             rule={'id':case_id,'report':case['report'],'expectation':expansion['problem_definition'],
                   'possible_forms':[f['description'] for f in expansion['variants']+expansion['related_problems']],
@@ -160,9 +192,19 @@ class Repairs:
             conn.execute('INSERT INTO feedback_rules VALUES(?,1,?,?,?)',(case_id,encode(rule),actor,utc_now()))
             for target in targets:
                 p=target['presentation']
-                job=self.service.ensure_job(conn,key=f'repair-edit:{case_id}:{p}',presentation=p,kind='edit',artifact=target['baseline_artifact_id'])
-                conn.execute('INSERT INTO repair_jobs VALUES(?,?,?)',(job,case_id,'edit'))
-                conn.execute("UPDATE decks SET phase='editing',candidate_id=?,frozen_id=NULL,active_job_id=?,repair_count=0,blocked_from=NULL,block_reason=NULL,delivered_at=NULL,repair_case=?,review_round=review_round+1 WHERE presentation=?",(target['baseline_artifact_id'],job,case_id,p))
+                if case['mode']=='review-first':
+                    round_no=conn.execute('SELECT review_round FROM decks WHERE presentation=?',(p,)).fetchone()[0]+1
+                    from .service import CHANNELS
+                    for channel in CHANNELS:
+                        self.service.ensure_job(conn,key=f'repair-review:{case_id}:{p}:{channel}',
+                            presentation=p,kind='review',round=round_no,channel=channel,
+                            artifact=target['baseline_artifact_id'])
+                    conn.execute("UPDATE decks SET phase='reviewing',candidate_id=?,frozen_id=?,active_job_id=NULL,repair_count=0,blocked_from=NULL,block_reason=NULL,delivered_at=NULL,repair_case=?,review_round=? WHERE presentation=?",
+                                 (target['baseline_artifact_id'],target['baseline_artifact_id'],case_id,round_no,p))
+                else:
+                    job=self.service.ensure_job(conn,key=f'repair-edit:{case_id}:{p}',presentation=p,kind='edit',artifact=target['baseline_artifact_id'])
+                    conn.execute('INSERT INTO repair_jobs VALUES(?,?,?)',(job,case_id,'edit'))
+                    conn.execute("UPDATE decks SET phase='editing',candidate_id=?,frozen_id=NULL,active_job_id=?,repair_count=0,blocked_from=NULL,block_reason=NULL,delivered_at=NULL,repair_case=?,review_round=review_round+1 WHERE presentation=?",(target['baseline_artifact_id'],job,case_id,p))
             conn.execute("UPDATE repair_cases SET state='running',confirmed_by=?,confirmed_at=?,previous_task_status=? WHERE id=?",(actor,utc_now(),state,case_id))
             conn.execute("UPDATE task SET status='running'")
             event(conn,'repair.confirmed',{'case_id':case_id,'proposal_version':version,'actor':actor})
@@ -209,7 +251,7 @@ class Repairs:
         if source:
             parsed=parse_deck(source/'presentation.md')
             ids={s.slide_id for s in parsed.slides}
-            if not baseline<=ids: raise MPresError('Repair must preserve original slide IDs and unaffected material; deletion requires a new scope')
+            self.validate_slide_changes(context,baseline,ids,result.get('slide_changes',[]))
         else:
             a=self.store.rows('SELECT path FROM artifacts WHERE id=?',(job['input_artifact_id'],))[0]
             ids={s.slide_id for s in parse_deck(self.task/a['path']/'presentation.md').slides}
@@ -223,6 +265,32 @@ class Repairs:
             if row['status'] in {'addressed','needs_decision'} and not row['slide_ids']: raise MPresError('Repair action/issue needs concrete slide evidence')
             if job['kind']=='review' and row['status']=='needs_decision' and not set(row['slide_ids'])&finding_ids: raise MPresError('Unresolved repair issue must be a routed finding')
         if seen!=expected: raise MPresError('Repair result omitted confirmed possible/similar problem forms')
+
+    @staticmethod
+    def validate_slide_changes(context: dict, baseline: set[str], current: set[str], changes: list) -> None:
+        missing=baseline-current
+        if not context.get('allow_slide_changes'):
+            if missing or changes:
+                raise MPresError('Repair must preserve original slide IDs; deletion/merge needs explicit user scope')
+            return
+        if not isinstance(changes,list): raise MPresError('slide_changes must be a list')
+        if not baseline & current:
+            raise MPresError('Repair cannot remove or rename every original slide; retain stable IDs')
+        seen=set()
+        for row in changes:
+            if not isinstance(row,dict) or set(row)!={'slide_id','action','target_slide_id','reason'}:
+                raise MPresError('Each slide change requires slide_id, action, target_slide_id, reason')
+            sid=row['slide_id']
+            if not isinstance(sid,str) or sid not in missing or sid in seen:
+                raise MPresError('Slide change must identify each missing original slide exactly once')
+            seen.add(sid);require_text(row['reason'],'Specific slide-change reason')
+            if row['action']=='delete':
+                if row['target_slide_id'] is not None: raise MPresError('Deleted slide has no merge target')
+            elif row['action']=='merge':
+                if not isinstance(row['target_slide_id'],str) or row['target_slide_id'] not in baseline & current:
+                    raise MPresError('Merge target must be a retained original slide')
+            else: raise MPresError('Slide-change action must be delete or merge')
+        if seen!=missing: raise MPresError('Every missing original slide needs a cumulative deletion/merge mapping')
 
     def require_clear(self, artifact: str) -> None:
         rows=self.store.rows('SELECT a.result_json FROM artifacts r JOIN attempts a ON a.id=r.attempt_id WHERE r.id=?',(artifact,))

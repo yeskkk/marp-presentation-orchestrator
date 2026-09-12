@@ -164,7 +164,9 @@ class Audience:
             packet['teaching_context']=teaching_context(settings)
             packet['confirmed_task_brief']=cfg['task_text']
             budget=settings.get('context_budget_bytes',262144)
-        if len(encode(packet).encode())+sum(Path(p).stat().st_size for p in assets if Path(p).suffix.lower() in {'.svg','.txt','.json'})>budget:raise MPresError('Audience step exceeds confirmed context budget; no silent truncation')
+        from .input_packet import compile_inputs,check_budget
+        compile_inputs(self.task,packet)
+        check_budget(packet,budget)
         with self.store.transaction() as conn:
             row=conn.execute('SELECT state FROM audience_steps WHERE attempt_id=? AND sequence=?',(attempt['id'],next_row['sequence'])).fetchone()
             if row['state']!='pending':return None

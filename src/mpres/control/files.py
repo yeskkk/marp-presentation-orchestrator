@@ -74,3 +74,67 @@ def snapshot(task: Path, source: Path, *, fixed_theme: bool = False) -> tuple[st
         remove_tree(stage)
         raise
     return artifact_id, relative
+
+
+def prepare_edit_source(task: Path, source: Path, target: Path) -> dict:
+    """Prepare a NEW author work copy and regenerate declared figures there.
+
+    The original immutable artifact is never modified. Existing nonempty author
+    output is deliberately not refreshed (including unsubmitted user edits).
+    A complete staged directory is renamed into place; interrupted staging is
+    disposable, not an excuse to rewrite the original source or trust old SVGs.
+    """
+    from .input_packet import safe_file
+    from mpres.geometry import build, mathematical_model, inspect_figures
+    from mpres.source_policy import install_theme, inspect_markdown
+    import json
+    import errno
+    if not target.resolve().is_relative_to((task/'.mpres/work').resolve()):
+        raise MPresError('Automatic figure preparation is restricted to a task author work directory')
+    target = inside(task,target.relative_to(task).as_posix())
+    source = inside(task,source.relative_to(task).as_posix())
+    if target == source or target.is_relative_to(source):
+        raise MPresError('Author work copy must be distinct from source evidence')
+    if target.exists() and any(target.iterdir()):
+        return {'state':'existing_output_preserved','regenerated':[]}
+    files=[]
+    for entry in source.rglob('*'):
+        if entry.is_symlink(): raise MPresError('Cannot prepare an author copy from symlinked evidence')
+        relative=entry.relative_to(source)
+        if entry.is_file() and (relative.as_posix()=='presentation.md' or relative.parts[0]=='assets'):
+            safe_file(task,entry);files.append((entry,relative))
+    # Validate all mathematical inputs first. Unknown versions require explicit implementation,
+    # never a downgrade, removal of the .plot.json, or execution of submitted Python.
+    for entry,relative in files:
+        if entry.name.endswith('.plot.json'):
+            if entry.stat().st_size>32768: raise MPresError('Mathematical figure input is too large')
+            mathematical_model(json.loads(entry.read_text(encoding='utf-8')))
+    stage=target.parent/(target.name+'.prepare-'+uuid.uuid4().hex)
+    stage.mkdir(parents=True)
+    regenerated=[]
+    try:
+        for entry,relative in files:
+            dst=stage/relative;dst.parent.mkdir(parents=True,exist_ok=True);dst.write_bytes(entry.read_bytes())
+        for spec in sorted(stage.rglob('*.plot.json')):
+            result=build(spec)
+            regenerated.append({'input':spec.relative_to(stage).as_posix(),
+                                'version':json.loads(spec.read_text())['version'],'model':result['model']})
+        checked=inspect_figures(stage)
+        if not checked['success']: raise MPresError('Prepared mathematical figures failed validation: '+str(checked['errors']))
+        install_theme(stage)
+        remaining=inspect_markdown((stage/'presentation.md').read_text(encoding='utf-8'))['errors']
+        try:
+            # POSIX replaces an empty directory atomically but refuses a populated one.
+            # On Windows an existing empty directory may need to be removed first.
+            if os.name=='nt' and target.exists(): target.rmdir()
+            os.replace(stage,target)
+        except OSError as exc:
+            if exc.errno not in {errno.EEXIST,errno.ENOTEMPTY,errno.EACCES}: raise
+            if target.is_dir() and any(target.iterdir()):
+                return {'state':'concurrent_output_preserved','regenerated':[]}
+            raise
+        return {'state':'prepared','regenerated':regenerated,'remaining_source_errors':remaining,
+                'instruction':'Correct remaining legacy Markdown directives in this work copy; this report is internal, not student-visible content. Preparation is not a gate pass.',
+                'evidence_modified':False,'validation':'Recomputed from closed mathematical inputs in current renderer; normal submission gates still required.'}
+    finally:
+        remove_tree(stage)

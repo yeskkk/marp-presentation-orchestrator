@@ -1,4 +1,4 @@
-PRAGMA user_version = 7;
+PRAGMA user_version = 8;
 CREATE TABLE task (
     singleton INTEGER PRIMARY KEY CHECK (singleton=1), title TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('draft','running','paused','completed')),
@@ -166,3 +166,6 @@ CREATE TABLE audience_steps (
  receipt TEXT, result_json TEXT, completed_at TEXT,
  PRIMARY KEY(attempt_id,sequence)
 );
+
+ALTER TABLE repair_cases ADD COLUMN mode TEXT NOT NULL DEFAULT 'edit-first' CHECK(mode IN ('edit-first','review-first'));
+ALTER TABLE repair_cases ADD COLUMN allow_slide_changes INTEGER NOT NULL DEFAULT 0 CHECK(allow_slide_changes IN (0,1));

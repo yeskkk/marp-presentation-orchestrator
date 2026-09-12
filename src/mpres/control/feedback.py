@@ -175,10 +175,10 @@ class Feedback:
             if any(c['status']=='issue' for c in result.get('feedback_checks',[])):
                 raise MPresError('Author reports an unresolved historical-feedback issue; resolve evidence/semantics before freezing')
 
-    def require_current_reviews(self, artifact: str) -> None:
+    def require_current_reviews(self, artifact: str, *, round_no: int | None = None) -> None:
         with self.store.transaction() as conn:
             p=conn.execute('SELECT presentation FROM artifacts WHERE id=?',(artifact,)).fetchone()
             expected=self.effective(conn,p['presentation'])
-            rows=conn.execute("SELECT b.snapshot_json FROM jobs j JOIN attempts a ON a.job_id=j.id LEFT JOIN attempt_briefings b ON b.attempt_id=a.id WHERE j.kind='review' AND j.input_artifact_id=? AND a.state='succeeded'",(artifact,)).fetchall()
+            rows=conn.execute("SELECT b.snapshot_json FROM jobs j JOIN attempts a ON a.job_id=j.id LEFT JOIN attempt_briefings b ON b.attempt_id=a.id WHERE j.kind='review' AND j.input_artifact_id=? AND a.state='succeeded' AND (? IS NULL OR j.round=?)",(artifact,round_no,round_no)).fetchall()
             if any(r['snapshot_json'] is None or json.loads(r['snapshot_json'])!=expected for r in rows):
                 raise MPresError('User feedback changed after this review; start a newly confirmed rework/review cycle')
