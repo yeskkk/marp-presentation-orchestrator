@@ -38,7 +38,7 @@ def result(s,b):
 def test_new_task_seeds_exact_user_concerns_without_more_documents(compact_root):
     s=Service.create(compact_root,'quality','Algebra')
     rules=Feedback(s.task).list()
-    assert {r['id'] for r in rules}=={'standard-terminology','recent-real-world-examples','explicit-geometric-intuition'}
+    assert {r['id'] for r in rules}=={'standard-terminology','recent-real-world-examples','explicit-geometric-intuition','student-learning-value'}
     assert all(r['report'] and r['possible_forms'] and r['acceptance'] for r in rules)
     assert sorted(p.name for p in s.task.iterdir() if p.is_file())==['TASK-RUNTIME-PROFILE.yaml','TASK.md','task.yaml']
 
@@ -163,7 +163,7 @@ def test_reviewer_issue_must_be_a_routed_finding(compact_root):
 def test_feedback_is_visible_at_task_presentation(compact_root):
     s=prepare(compact_root,count=1);teaching_policy(s)
     doc=s.present()
-    assert len(doc['historical_feedback'])==3
+    assert len(doc['historical_feedback'])==4
     assert all(r['report'] and r['expectation'] for r in doc['historical_feedback'])
     assert s.confirm('user')['already_confirmed']
 

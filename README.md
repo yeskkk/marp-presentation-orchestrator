@@ -4,7 +4,7 @@
 检查，AI 负责教学语义；不要求 main agent 阅读大量过程文档后逐条操作流程。
 
 **当前工作方式：新任务已经接通写作 → 组装 → 整稿编辑 → 完整门禁 → 五通道审核 →
-修订 → 再次完整门禁 → PDF 发布 → PDF/源码配对 ZIP。** 运行器不把源码提交等同于交付；缺少原生渲染工具、
+修订 → 再次完整门禁 → PDF 发布 → PDF/源码/资产直接目录交付。** 运行器不把源码提交等同于交付；缺少原生渲染工具、
 审核回执、finding 处置或明确宿主状态时都会停止。当前验收覆盖确定性适配器和失败分支，
 尚未在本交付环境验证真实模型与固定 Marp 浏览器的端到端输出质量。
 
@@ -58,7 +58,7 @@ worker 的实际 runtime 仍由 runner 的真实回执校验，不由启动器�
 | 冻结与专项审核 | 五个不同且独立的 reviewer 阅读同一冻结稿；不做模型型审核协调 | 已实现 |
 | 修订与再次门禁 | findings 送给作者，生成新修订；旧稿门禁不能批准新稿 | 已实现 |
 | 用户指定返修 | 交付后先只读展开问题形式与相似问题 → 展示精确方案 → 等用户确认 → 仅修改指定稿件 → 重走审核发布 | 已实现 |
-| 发布、打包与暂停 | 仅对合格版本发布 PDF；从发布记录取对应源码，机械生成累计交付 ZIP；按 all/pilot/each 继续或暂停 | 已实现 |
+| 发布、目录交付与暂停 | 私下保存准确发布修订；自动将 PDF、同名 Markdown 与资产直接放入 deliverables；按 all/pilot/each 继续或暂停 | 已实现 |
 
 新建任务默认 `workflow: full`。程序只有将对应 PDF 发布记录提交为 committed 后才
 标为 delivered；所有 deck 都完成才将任务标为 completed。`workflow: authoring` 是明确的
@@ -78,6 +78,15 @@ main agent 只处理需求、教学范围和不能机械解决的语义问题。
 
 作者并发是用户上限；容量不足时可排队、降低实际并发，但不能改模型或推理强度。
 
+教学选择与运行选择分开。新任务 task.yaml 增加 `teaching.audience` 和 `teaching.proof_depth`，
+默认面向非数学专业、重动机/计算/直观，proof_depth=minimal。用户在确认前可选 explanatory
+（必要短推导）或 rigorous（证明训练）。规范术语、准确含义和必要条件始终要有，不意味着
+所有正确证明都必须上屏。这两个字段是备课信息，不能原样变为学生“先修/目标”页。
+旧确认没有 teaching 字段时不填默认、不修改确认快照；继续读取原任务和最新明确反馈。
+`task present` 显示 teaching_context 及有限的 teaching_conflicts 提示（包含位置与原文），
+帮助发现“minimal”与“保留全部证明”等冲突。提示不是完整语义冲突判定器，也不是新门禁；
+规划者须在确认前实际解决意见冲突，不能由技术升级暗中改写教学授权。
+
 ## 3. 代码如何组织
 
 ```text
@@ -95,12 +104,12 @@ src/mpres/
     recovery.py                有界只读重试策略和明确的工具错误分类
     audience.py                同一 reviewer 的学生阅读、制作口吻检查及最终汇总
     workflow.py                固定整稿状态机、组装、审核证明、finding 处置、发布
-    repairs.py                 问题展开、方案版本/确认、指定返修、历史发布与专用 ZIP
+    repairs.py                 问题展开、方案版本/确认、指定返修、历史发布与目标目录视图
     feedback.py                用户反馈版本、开工回执、结果证据和旧审核失效检查
-    teaching_feedback.json     本项目用户明确指出的三项教学质量底线，自动进入任务数据库
-    delivery.py                按已提交 release 配对 PDF/源码，累计 ZIP、校验与独立重试
+    teaching_feedback.json     本项目用户明确指出的四项教学质量底线，自动进入任务数据库
+    delivery.py                按已提交 release 配对 PDF/源码/资产，直接目录、校验与恢复
     theme.css                  唯一权威全局主题；由代码维护，author/editor 均不得改
-    semantic.py                四个语义 schema 的真实验证；每类作业只注入对应语义指南
+    semantic.py                四个语义 schema、教学设置与学习价值标准；每类作业注入对应指南
     schemas/                   plan、author-result、review-result、diagnosis-result
     files.py                   安全相对路径、只读快照、可写副本
     migration.py               旧任务只读导入
@@ -138,12 +147,20 @@ tasks/<slug>/
   TASK-RUNTIME-PROFILE.yaml      用户自行选择的固定 runtime
   sources/                      获准教材文本和数据
   content/                      人工或作者编辑的实际内容
-  deliverables/                 已审核并经门禁的 PDF，以及 <slug>-delivery.zip
+  deliverables/
+    p01/
+      p01.pdf                   当前已发布 PDF（Git 忽略）
+      p01.md                    同版源稿，直接阅读／版本控制
+      theme.css                 同版项目主题
+      assets/                   图片、绘图脚本与数据
+    p02/                        后续已交付课件；未交付不生成
   .mpres/
     task.sqlite3                唯一运行事实源
     artifacts/<revision>/       已提交或导入的只读源码与资产
     work/<attempt>/             本次输入快照和可写 output
-    gates/<gate-id>/            完整检查生成的 PDF；不是正式交付
+    gates/<gate-id>/             完整检查生成的 PDF
+    releases/<presentation>/    不可变的各次发布 PDF；用户通常只读 deliverables
+    delivery-staging/            目录发布暂存／中断恢复，不入 Git
 ```
 
 不生成 assignment 三联单、THREAD-REGISTRY.yaml、STAGE-ARTIFACT.md 或 SELF-CHECK.md。
@@ -166,6 +183,9 @@ mpres --root . task init economics --title "面向经济学的线性代数"
 先编辑三份入口。`task.yaml` 的每课 brief 必须是教学语义，不是操作指令：
 
 ```yaml
+teaching:
+  audience: 非数学专业学生，重视问题动机、计算和直观理解
+  proof_depth: minimal  # minimal / explanatory / rigorous；确认前由用户选择
 presentations:
   - id: p01
     title: 向量与经济数量
@@ -356,7 +376,7 @@ mpres source check path/to/output
 数学输入例如 `{"version":1,"kind":"lines","lines":[[1,1,2],[1,-1,0]]}`，
 表示 `x+y=2` 与 `x-y=0`。生成同名 `.svg` 和重建入口 `.py`。将三者一起放进
 `assets/<unit-id>/`，以普通 Markdown 图片引用 SVG。它们都是可复现的内容资产，
-不是需要 agent 维护的过程文档；发布 ZIP 已保留整个源码快照，因此三者一起交付。
+不是需要 agent 维护的过程文档；直接交付目录保留整个源码快照，因此三者一起交付。
 
 源码提交和 gate 重算 `.plot.json` 并比较规范化 SVG（不使用额外文件 checksum，
 不执行作者脚本）。改了数据未重新出图、手工挪动标记、缺少重建入口都会失败。
@@ -395,7 +415,7 @@ mpres --root . artifact interrupt-gate economics GATE_ID --reason "已核实原�
 mpres --root . artifact inspect economics REVISION_ID --level full --retry
 ```
 
-已有交付 PDF 和配对 ZIP 不会自动重写。旧任务若含自定义主题、HTML 或单页样式，继续
+已有历史 PDF 和旧 ZIP 不会自动重写。旧任务若含自定义主题、HTML 或单页样式，继续
 编辑/发布时会被明确拦截；需由作者保留教学内容、改为受支持的 Markdown/外部图，再
 形成新修订。不能通过 legacy 入口或复制旧 gate 绕过规则。既有配置/runtime 不会被覆盖；schema 6→7 仅增加分步阅读表。
 
@@ -467,8 +487,9 @@ pilot 首次反馈之前，只预算首个目标稿件的 runtime 池；each 只
    自动添加新 reviewer 轮次；扩大教学范围或删除冻结页面需要新任务/新审核。
 7. 发布前再次验证五个审核回执、独立性、finding 和精确候选 gate。PDF 先暂存，最终
    路径独占创建，prepared → committed；中断后同字节才能收敛，永不静默覆盖旧交付。
-8. 每次 advance/tick 在已提交发布之后同步交付 ZIP。压缩只使用 committed releases；
-   不扫描工作草稿，不运行新模型或重新渲染，返回的 delivery_package.path 是应交给用户的压缩包。
+8. 每次 advance/tick 在已提交发布之后同步配对目录。只使用 committed releases；
+   不扫描工作草稿、不运行模型或重新渲染。delivery_package.format 为 directory，
+   entries 给出每稿现有 PDF 与 Markdown 路径；只有 ready 时才附给用户。
 
 ```bash
 mpres --root . workflow status economics
@@ -493,46 +514,43 @@ mpres --root . workflow recover-assembly economics --job-id JOB_ID --note "已�
 
 ### audience reviewer 如何分步试读
 
-首次五通道审核不变，audience 不再一次承担所有阅读目标：
+首次五通道审核不变，仍用同一个 audience 会话、同一固定 runtime，逐段覆盖整个冻结稿：
 
-1. **学生阅读**：按顺序每段最多 12 页、正文最多 48 KB，只描述能学到什么、
-   具体困惑及页内证据。包中不含作者回执、自检记录、整份任务目录或 PDF。
-2. **制作口吻检查**：再次分段检查对管理者的自证、制作状态和资料请求。
-   不能误删真实模型条件、模拟数据披露和适用限制。
-3. **历史反馈对照与汇总**：已有结果作为有限上下文，与原冻结稿、反馈版本
-   一起汇总最终 findings。前序问题不能在汇总时无声消失。
+1. **学生阅读**：每段最多12页/48KB正文，判断学生正解决什么、具体获得什么、哪里需要
+   猜测变量/条件/图形关系；不同时承担其他四个通道。没有正面评价数量要求。
+2. **学习价值与制作口吻**（协议 phase 名仍为 production_language）：对每段问“删去后，
+   当前数学学习具体损失什么”。不是只查是否自夸。先修/时长/核心字段、孤立引文、
+   TXT 行数、方法口号、凭空制造的误会都应主动质疑。
+3. **历史反馈对照与汇总**：结合前序具体问题给最终 findings，不能无声丢掉已提出的问题。
 
-`control/audience.py` 管理顺序和证据；SQLite `audience_steps` 保存派发、精确页码、
-结果和 usage。schema 从 6 加法升级为 7，确认配置及旧已交付记录不变。
-没有新增独立 reviewer、模型档次或过程文档；中间调用与最终调用归于同一 attempt。
-表中覆盖记录证明输入已派发并回执，不证明模型真正理解，教学质量仍需实际测试。
+程序使用 Markdown 解析器提出 `attention_candidates`：跳过代码/数学字面量，只标记常见
+待判断片段，不按关键词删改或判错。这些不是穷尽清单；模型还要判断未命中的无价值内容。
+有候选的第二步须返回 `attention_checks`，逐项写 keep/remove/rewrite/move_to_notes、
+删除造成的具体学习损失及理由；需删改的项必须指向本步 findings 数组中对应页的 finding。
+“不是自夸/属于教学内容/可以避免误解”不能单独充当保留理由。必要假设、模拟数据披露和
+事实出处可以保留，但要说清它怎样影响当前模型或判断，不能用抽象标签保护任何一句话。
 
-宿主适配器现在须处理 `operation: audience_step`：请求携带 `sequence`、phase、
-受限页面和 review-result schema 中的子结构；回传实际 runtime、receipt、usage，
-以及 summary、read_slide_ids、observations 和 findings。只有当前步骤成功入库，
-runner 才发下一步，最后才发原来的 `run`。丢失回执不自动重做外部调用，迟到的
-精确回执可恢复步骤。`runner outstanding` 可查看等待中的步骤。
+这些判断和中间 usage 仍入 SQLite 的 audience_steps，没有新增表、独立 reviewer 或过程
+Markdown。只增加已有 review-result schema 的可选子结构；新请求在有候选时明确要求它。
+宿主适配器按 packet.result_schema 生成/转发结果；operation 仍是 audience_step，无新工具名。
+程序能检查是否答题、是否有原文和是否形成可修订 finding，不能证明模型判断一定正确。
+它不会自动为作者删字，也没有增加修订后的 reviewer 验收。
 
-开工前历史反馈 briefing 仍然存在，因此试读不是严格的认知盲测；它隔离的是
-作者自评，而不是假装模型遗忘历史。默认不增加任何“修复验收 reviewer”轮次。
+每个新试读 attempt 在 events 中固定 `audience.contract` version=2；旧版已经派发的步骤
+没有这个事件时按原协议接收，不用新字段追溯拒收真实旧回执。旧 completed 记录也不会被
+补造成已经做过新检查。最新反馈仍会使旧审核不再自动满足新的发布条件，需要新审核路径。
+开工前已回顾历史反馈，所以这不是认知盲测或真实学生实验；隔离的是作者自证，不是假装
+会话忘记已知内容。
 
-### 交付压缩包：PDF 与对应的 Markdown 同名
-
-每次完成一份或多份交付后，runner 自动生成或更新：
-
-```text
-tasks/<slug>/deliverables/<slug>-delivery.zip
-```
-
-例如 `economics` 任务已经交付两份课件，解压后的目录如下：
+### 直接交付目录：不再要求解压才能看源码
 
 ```text
-economics-delivery/
+tasks/<slug>/deliverables/
   p01/
     p01.pdf
     p01.md
     theme.css
-    assets/                     # 该已发布修订中的资源；有则保留
+    assets/
   p02/
     p02.pdf
     p02.md
@@ -540,40 +558,38 @@ economics-delivery/
     assets/
 ```
 
-每个 PDF 与 Markdown 使用同一 presentation ID（与交付 PDF 文件名一致）。
-内部仍使用 `presentation.md`；只有 ZIP 条目改名，**不移动、改名或重写 canonical source**。
-程序从 `releases.artifact_id` 取这份 PDF 对应的源码修订，不取较新的工作草稿。
-同一源码快照内的主题、图片和其他资源保留相对路径；各课件分目录，避免同名资源互相覆盖。
-ZIP 中的源码为普通可编辑文件，不继承内部快照的只读权限。压缩包不是完整任务备份，
-不加入任务数据库、线程记录、检查日志、输入教材或其他任务工作目录。
+不自动生成累计 ZIP 或 repair ZIP；同名 PDF/Markdown 来自同一条 committed 发布记录。
+内部 presentation.md 不改名，较新的工作草稿不混入；图示、数据与可复现脚本保持相对路径。
+新发布的历史 PDF 存在 `.mpres/releases/<presentation>/rNNN/<presentation>.pdf`，
+`.mpres/artifacts` 保留准确源码修订。公开目录是可重建视图，不是数据库之外的第二真源。
 
-`all` 持续更新同一个累计包；`pilot/each` 在反馈暂停前也会生成，只包含当时已交付的课件。
-后续交付继续更新同一路径，不散落一批时间戳压缩包。无交付或只有 prepared 发布时不生成 ZIP。
-宿主向用户展示交付时，应附上 `delivery_package.state=ready` 对应的 `path`，而不只列单份 PDF；
-项目命令提供本地路径，不代替宿主向外部聊天/云盘上传文件的接口。
-
-已交付的 SQLite 新控制面任务也可以补打包或重新验证：
+all/pilot/each 的已交付部分都得到配对目录。没有 committed
+发布时不生成目录，prepared PDF 不公开。后续返修成功才将该稿公开目录更新到新版本；
+未选中的稿件不动。旧任务根目录已有的 PDF、ZIP 保留，不擅自删除，也不再更新 ZIP。
 
 ```bash
-mpres --root . workflow bundle economics
+# 为已有 SQLite 任务补出源码和资产，或核对现有目录；不调用模型/渲染器。
+mpres --root . workflow materialize economics
 mpres --root . workflow status economics
 mpres --root . task status economics
+# 旧 workflow bundle 是兼容别名，现在同样只生成目录，不压缩。
 ```
 
-`workflow bundle` 校验已有 ZIP 的条目及内容；未变化时不重写、不重复记账。
-正常 tick 使用现有事件和 ZIP 文件元数据判断是否需要更新，避免每次轮询解压所有内容。
-打包先在 `.mpres/delivery-staging` 暂存并校验，再用短数据库事务核对 release 集合、原子替换 ZIP。
-压缩或校验失败保留上一个完整 ZIP，runner 返回 blocked 和打包错误；不会撤销已提交 PDF，
-也不会为了重试 ZIP 而重新调用 author、reviewer 或渲染器。修好文件权限、磁盘空间等问题后，
-重跑 `workflow bundle` 或 runner 即可。`task.status=completed` 仍指 PDF 发布完成，
-是否已完成压缩交付另看 `delivery_package.state`。缺失源码、缺失/被改写的正式 PDF、
-不安全路径或重名条目均拒绝打包，不跳过缺失的配对文件后冒充成功。
+`delivery_package` 保留字段名以兼容宿主，但 `format` 已为 `directory`，`path` 指向
+`deliverables`。宿主应使用 `entries[].pdf`、`entries[].markdown` 展示实际文件，不能
+假定 path 是一个 ZIP。状态 ready 表示视图已完成；复制失败时 runner 返回 blocked，
+即使数据库的 PDF 已 committed/completed。修复磁盘／路径问题后 materialize 即可，
+不重做写作、审核或渲染。
 
-`.gitignore` 使用 `**/deliverables/*-delivery.zip` 屏蔽这些生成包；暂存目录由已有 `.mpres/`
-规则屏蔽。不使用全局 `*.zip`，不会屏蔽项目源码发行包或用户主动版本控制的教材 ZIP。
-Git 已经跟踪过的文件仍需手动取消跟踪，ignore 规则不会自动删除历史记录。
-本功能不更改任务确认配置、runtime 或数据库 schema，也不增加 skill、模板或过程文档。
-显式 `legacy` 旧引擎尚未接入自动 ZIP；上述命令面向有 `.mpres/task.sqlite3` 的新控制面任务。
+目录先在 `.mpres/delivery-staging` 完整复制并按字节验证，再核对最新发布集合、
+按稿替换完整目录。同一稿不会把 PDF 与另一个修订的源码混在一起；不同稿不是一个
+跨目录原子事务。进程在两次 rename 之间中断时保留 previous 目录，重跑会收敛；
+数据库与文件系统不是同一个事务。目录缺失可重建；同名位置有用户手改内容、额外文件或
+符号链接时拒绝覆盖。先保留/移走个人改稿，再生成发布视图；不会擅自删掉这些编辑。
+
+`.gitignore` 不忽略 deliverables，也不使用全局 `*.zip`。PDF 和交付目录中的 ZIP
+被忽略，Markdown、CSS、SVG/PNG、绘图脚本和数据可进 Git；已被跟踪的二进制文件
+仍需用户决定是否取消跟踪。显式 legacy 旧入口没有被改造成新控制面。
 
 ## 9. 状态、成本和迁移
 
@@ -644,9 +660,15 @@ schema 是真正执行的边界，不只是说明文件。计划在确认前验�
 
 ## 12. 历史反馈怎样避免丢失
 
+除术语、近期实际案例、几何直观三项原反馈外，项目现在增加 `student-learning-value`：
+计划字段不自动上屏、证明强度不由“规范数学”推导、删除无学习损失的陈述、来源服务数学
+而不是服务验收。作为新的版本化 feedback ID 写入旧任务也不覆盖已有规则或运行配置。
+已派发 attempt 的反馈快照保持不变；新作业回顾新要求。不得伪造旧审核已经采用新标准。
+
+
 聊天上下文不是质量要求的真源。`feedback_rules` 以版本保存用户原话、期望、可能表现、
 验收准则和适用课件；`attempt_briefings` 保存本次作业实际收到和回顾的版本。默认内置用户
-已经明确提出的三类问题：规范术语、近几年实际生活/经济场景、明示几何直观。
+已经明确提出的四类问题：规范术语、近几年实际生活/经济场景、明示几何直观，以及学生学习价值与制作口吻。
 新任务自动写入数据库，task present 会展示当前历史反馈；旧 compact 任务在下一次绑定/读取反馈时补入，不生成过程文档。
 
 每个 write/edit/revise/review（以及后续诊断）执行如下小循环：
@@ -705,7 +727,7 @@ readback 会增加一次很短的模型调用；其 token 单独计入同一 att
   → 等待用户回复；初始投诉不是对 AI 展开方案的授权
   → repair confirm：只确认刚展示的那个版本及其准确目标
   → 作者逐份修订 → 完整门禁 → 五名独立 reviewer → 必要修订 → 再次门禁
-  → 新版本 PDF + 对应 Markdown/资产 ZIP，原版不被覆盖
+  → 新版本 PDF + 对应 Markdown/资产目录；历史修订保留
 ```
 
 ### 先展开、再确认，而不是只把问题换一种说法
@@ -745,8 +767,8 @@ mpres --root . repair confirm economics <case-id> --version 2 --by "用户明确
 mpres --root . runner run economics
 mpres --root . repair status economics
 
-# 独立补打包，不重新写作/渲染：
-mpres --root . repair bundle economics <case-id>
+# 独立补出本次选定目标的目录，不重新写作/渲染：
+mpres --root . repair materialize economics <case-id>
 # 用户不批准时可取消未确认方案（有在途诊断时须先核对回执）：
 mpres --root . repair cancel economics <case-id> --by "用户" --note "此次不返修"
 ```
@@ -755,21 +777,16 @@ mpres --root . repair cancel economics <case-id> --by "用户" --note "此次不
 加说明与实际页 ID。仅修举例页却漏掉同类问题、漏项回执、编造页码，会被拦截或交给独立
 reviewer。无法判断/缺少来源的内容必须停在语义待决，不把空泛改写当成解决。
 
-### 新旧交付版本与打包
+### 新旧交付版本与直接目录
 
-原 `deliverables/p01.pdf` 和只读源码修订保持原样。首次返修生成 `p01-r002.pdf`，再次返修
-生成 `p01-r003.pdf`。releases 指向最新 committed 版本，release_versions 保留全历史。
-只有新发布提交后才切换当前版本；发布失败保留旧 PDF 和旧交付记录，可沿用
-`workflow retry-publish` 恢复，不必重新调用模型。
+`release_versions` 保存历史 PDF、源码、gate 和 case；`releases` 指向各稿最新正式版本。
+公开的 `deliverables/p01/p01.pdf` 与 `p01.md` 成对更新。旧 PDF 与原稿修订不覆盖，
+旧任务中根目录已存在的 PDF/ZIP 也不自动移动或删除。只有正式发布成功后才替换公开目录。
 
-正常累计 `<任务名>-delivery.zip` 更新为各稿最新版本。返修完成还自动生成
-`<任务名>-repair-<标识>.zip`，只包含此次指定稿件；包内仍为 `p01/p01.pdf`、`p01/p01.md`
-及该源码版本的主题/资产，同名配对。`repair status` 返回 ready 的实际 ZIP 路径；宿主只附
-已存在且 ready 的压缩包。打包失败可单独 repair bundle 重试，不能拿未交付稿冒充结果。
-两类 ZIP 都有精确 `.gitignore` 规则，不屏蔽项目源码发行包。
-
-批量返修仅执行指定目标，不启动未选择的后续课件；在 pilot/each 的暂停处返修，完成后
-恢复原暂停，继续下一稿仍要独立的用户反馈。数据全部入 SQLite，不新增一堆过程 Markdown。
+`repair status` 返回所选稿件的同一目录视图，不制造另一份 repair ZIP。更早 case 已被
+后来的返修取代时显示 superseded 和历史 PDF/source 路径，绝不能把老稿覆盖回当前目录。
+一个 case 内有多稿时，每稿发布互相独立；整个 case completed 后恢复原任务暂停状态。
+在 pilot/each 暂停时返修，完成后不会顺便启动下一稿。
 
 ### 边界与部署
 
@@ -781,26 +798,16 @@ reviewer。无法判断/缺少来源的内容必须停在语义待决，不把�
 
 ## v0.7.x 实施边界与后续顺序
 
-v0.7.0 是新的小版本序列的第一包，**已完成的独立目标是默认全局主题及其回归检查**，
-不是全部 v7 审计改造的最终验收。保留原六个语义 skills、四类结果 schema、三个配置入口，
-本阶段不修改 runtime、数据库 schema、审核轮次或用户任务。
-
-仍未实施：有效教学要求的继承与冲突处理、学生注意力删除反事实、review-first 返修及
-删页／合并能力、直接交付 PDF/MD/资产目录、真实宿主适配与部分修订续做、v7 完整技术迁移。
-这些应继续用 v0.7.1、v0.7.2 等独立小版本逐项打包。当前流程和 CLI 表格反映**实际已有功能**，
-其中自动 delivery ZIP 仍是现有行为，不把尚未改造的直接目录交付写成已完成。
+当前已实现默认主题、直接目录交付，以及学生学习价值的分步判断和精简教学配置。
+尚未实现 review-first 返修、授权删除/合并冻结页面、v7 本地 bridge/图示版本补丁的
+完整自动迁移。当前 repair 仍然 edit-first，且原 slide-ID 保留规则仍有效。不能把本版
+作为已完成“打开旧 v7、审核原 p01、删页合并后直接重交”的全套交付承诺。
+真实模型教学质量与固定 Marp 全流程仍须在实际宿主验收；测试替身不能替代。
 
 ## 最近阶段
 
-v0.6.20 加入有界工具/观测恢复、已完成不合规源码的作者重交、pilot 作用域容量预算和
-精确恢复决策；数据库继续使用 schema 7。v0.6.19 的分步学生试读、v0.6.18 的计算式
-图示以及固定全局布局/禁用 HTML 均保留。真实宿主/固定 Marp 的端到端质量仍须在部署
-环境验证，单元和替身集成测试不冒充生产教学质量验收。
-
-
-### v0.7.0：默认全局主题
-
-采用用户提供的字体、色彩、字号和 Gaia／lead 风格；离线自包含，补齐表格、图片与页码盒模型。
-作者 HTML/CSS 禁令不变。旧主题 gate 失效但旧 artifact 保留。修正工具链 smoke 样稿的
-`size: "16:9"` 引号，避免启动自测首先违反自身规约。新增主题样稿与原生验证脚本。
-本版未执行真实模型生成，也未宣称整个旧 v7 已迁移或其 p01 已修好。
+v0.7.2 采用学习损失删除反事实：所有语义作业收到教学背景，audience 对程序提出的
+待判断片段给明确语义判断，需要删改的判断形成 finding；新版试读协议固定在 attempt。
+仍为六个 skills、四种结果 schema、三份用户入口、SQLite schema 7，无额外验修 reviewer。
+v0.7.1 用直接 PDF/MD/资产目录替换自动 ZIP；历史发布与确认配置保持不变。
+v0.7.0 实现用户提供的默认全局主题、表格边框与留白、图示盒模型和主题升级检查。

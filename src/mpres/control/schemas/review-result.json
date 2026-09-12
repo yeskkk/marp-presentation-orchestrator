@@ -237,6 +237,51 @@
           },
           "minItems": 0,
           "maxItems": 24
+        },
+        "attention_checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "candidate_id",
+              "disposition",
+              "learning_loss_if_removed",
+              "reason",
+              "finding_index"
+            ],
+            "properties": {
+              "candidate_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "disposition": {
+                "enum": [
+                  "keep",
+                  "remove",
+                  "rewrite",
+                  "move_to_notes"
+                ]
+              },
+              "learning_loss_if_removed": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1200
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1200
+              },
+              "finding_index": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          }
         }
       }
     }

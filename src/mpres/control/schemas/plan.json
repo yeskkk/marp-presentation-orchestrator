@@ -63,6 +63,27 @@
         }
       },
       "minItems": 1
+    },
+    "teaching": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "audience",
+        "proof_depth"
+      ],
+      "properties": {
+        "audience": {
+          "type": "string",
+          "minLength": 1
+        },
+        "proof_depth": {
+          "enum": [
+            "minimal",
+            "explanatory",
+            "rigorous"
+          ]
+        }
+      }
     }
   }
 }

@@ -240,11 +240,10 @@ class Repairs:
 
 
 class RepairDelivery(Delivery):
+    """A selected view, not a second set of generated files or a repair ZIP."""
     def __init__(self, task: Path, case_id: str):
         super().__init__(task)
         self.case_id=safe_id(case_id)
-        self.folder=self.task.name+'-'+case_id
-        self.relative=f'deliverables/{self.folder}.zip'
 
     def _releases(self, conn=None) -> list[dict]:
         query="""SELECT r.presentation,r.artifact_id,r.gate_id,r.pdf_path,
@@ -253,3 +252,19 @@ class RepairDelivery(Delivery):
                  JOIN gate_runs g ON g.id=r.gate_id
                  WHERE r.state='committed' AND r.case_id=? ORDER BY r.presentation"""
         return [dict(r) for r in conn.execute(query,(self.case_id,))] if conn else self.store.rows(query,(self.case_id,))
+
+    def status(self) -> dict:
+        selected=self._releases()
+        current={r['presentation']:r for r in Delivery(self.task)._releases()}
+        if any(current.get(r['presentation'])!=r for r in selected):
+            return {'state':'superseded','format':'directory','case_id':self.case_id,
+                    'presentations':[r['presentation'] for r in selected],
+                    'history':[{'presentation':r['presentation'],'pdf':str(self.task/r['pdf_path']),
+                                'source':str(self.task/r['source_path'])} for r in selected]}
+        return super().status()
+
+    def materialize(self) -> dict:
+        current=self.status()
+        if current['state']=='superseded':
+            return current
+        return super().materialize()

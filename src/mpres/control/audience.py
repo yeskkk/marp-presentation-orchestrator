@@ -6,6 +6,8 @@ not human cognition; final findings still require independent semantic judgment.
 """
 from __future__ import annotations
 import json
+import copy
+import re
 from pathlib import Path
 from mpres.marp_source import parse_deck
 from mpres.util import MPresError, utc_now
@@ -14,6 +16,63 @@ from .service import Service, require_text
 
 CHUNK_SLIDES = 12
 STEP_BUDGET = 48000
+
+
+# These signals request a semantic deletion counterfactual; they never delete or
+# fail source content by keyword. Code/math examples are excluded by the parser.
+_ATTENTION_SIGNALS = (
+    ('planning-field', re.compile(r'^(?:先修|预备知识|核心|扩展|教学目标|目标|本课目标)\s*[:：]|核心.*\d+.*分钟')),
+    ('producer-voice', re.compile(r'教学假设|教学模拟|本页已|已按.*要求|资料缺口|另行提供|已明确标|本课使用.*规范术语')),
+    ('invented-misunderstanding', re.compile(r'不代表.*地理位置|不是.*地理坐标')),
+    ('internal-source', re.compile(r'\.txt.*(?:行|L\d|:\d)|L\d+[-–]L?\d+|^(?:阅读|参考文献|引用材料|资料来源)\s*[:：]')),
+    ('method-slogan', re.compile(r'分别论证|代数证明保证|保证结论适用于|几何图形.*几何图形')),
+)
+
+
+def attention_candidates(slides: list[dict]) -> list[dict]:
+    from mpres.source_policy import parser
+    output=[]
+    for slide in slides:
+        for index, token in enumerate(parser().parse(slide['markdown'])):
+            if token.type!='inline' or not token.map:
+                continue
+            plain=''.join(child.content for child in token.children or [] if child.type=='text')
+            reasons=[kind for kind, pattern in _ATTENTION_SIGNALS if pattern.search(plain)]
+            if reasons:
+                output.append({'candidate_id':f"{slide['slide_id']}@{token.map[0]+1}:{index}",
+                               'slide_id':slide['slide_id'],'quote':token.content[:1200],
+                               'signals':reasons,
+                               'question':'删去/改写这段后，当前数学学习具体损失什么？关键词不是定罪，给有内容的保留或删改理由。'})
+    return output
+
+
+def validate_attention(result: dict, candidates: list[dict]) -> None:
+    if not candidates and 'attention_checks' not in result:
+        return
+    checks=result.get('attention_checks')
+    if not isinstance(checks,list):
+        raise MPresError('attention_checks must address each proposed student-attention candidate')
+    expected={r['candidate_id']:r for r in candidates}; seen=set()
+    generic={'不是自夸','属于教学内容','可以避免误解','有利于学习','符合要求',
+             '这是教学内容','会降低学习效果','无损失但属于教学内容','not self praise','teaching content'}
+    for row in checks:
+        key=row['candidate_id']
+        if key not in expected or key in seen:
+            raise MPresError('Unknown or duplicate attention candidate')
+        seen.add(key)
+        loss=require_text(row['learning_loss_if_removed'],'Concrete learning-loss counterfactual')
+        require_text(row['reason'],'Concrete attention decision')
+        if loss.strip(' .。！!;；').lower() in generic:
+            raise MPresError('A generic teaching/compliance label is not a learning-loss counterfactual')
+        index=row['finding_index']
+        if row['disposition']=='keep':
+            if index is not None:
+                raise MPresError('A kept attention candidate must not point to a removal finding')
+        elif (type(index) is not int or index<0 or index>=len(result['findings']) or
+              expected[key]['slide_id'] not in result['findings'][index]['slide_ids']):
+            raise MPresError('Attention removal/rewrite must route to a finding on the same slide')
+    if seen!=set(expected):
+        raise MPresError('Attention checks omitted a candidate; do not silently declare the page acceptable')
 
 
 def applies(job):
@@ -45,12 +104,18 @@ class Audience:
         if current:chunks.append(current)
         with self.store.transaction() as conn:
             self.service.confirmed(conn)
+            if not conn.execute('SELECT 1 FROM audience_steps WHERE attempt_id=?',(attempt_id,)).fetchone():
+                event(conn,'audience.contract',{'attempt_id':attempt_id,'version':2},job['id'])
             for seq,(phase,ids) in enumerate((phase,ids) for phase in ('student','production_language') for ids in chunks):
                 conn.execute('INSERT OR IGNORE INTO audience_steps(attempt_id,sequence,phase,artifact_id,slide_ids_json,state) VALUES(?,?,?,?,?,\'pending\')',
                              (attempt_id,seq,phase,job['input_artifact_id'],encode(ids)))
 
     def rows(self, attempt_id):
         return self.store.rows('SELECT * FROM audience_steps WHERE attempt_id=? ORDER BY sequence',(attempt_id,))
+
+    def protocol(self, attempt_id):
+        rows=self.store.rows("SELECT detail_json FROM events WHERE kind='audience.contract' AND json_extract(detail_json,'$.attempt_id')=? ORDER BY id DESC LIMIT 1",(attempt_id,))
+        return json.loads(rows[0]['detail_json'])['version'] if rows else 1
 
     def request(self, job, attempt, runtime):
         self.ensure(attempt['id'])
@@ -73,22 +138,30 @@ class Audience:
                 if str(path) not in assets:assets.append(str(path))
         prior=[json.loads(r['result_json'])['summary'] for r in rows if r['state']=='completed' and r['phase']==next_row['phase']]
         instruction = (
-            'Read these slides sequentially as a student with the stated prerequisites. Explain what can be learned and identify concrete confusion, missing conditions, undefined symbols or unexplained diagram/formula links. Do not perform all five specialist roles.'
+            'Read as a student, not a rubric auditor. State the concrete learner question and learning gained; find missing meanings, unsupported transitions and unnecessary cognitive load. An example is an entry, not the definition of the entire course. Do not perform all five specialist roles.'
             if next_row['phase']=='student' else
-            'Read ONLY for audience/production voice: find compliance self-praise, author-to-manager status reports and requests for production inputs. Preserve legitimate modeling assumptions, simulation disclosures and limitations that affect what students learn. Cite actual text, not keyword matches.'
+            'Judge ATTENTION VALUE, not just compliance self-praise. For each candidate apply the deletion counterfactual: what specific current mathematical learning would be lost? Prerequisite lists, timing/core labels, isolated quotations, TXT line citations and invented misunderstandings are not justified merely by being educational. Preserve real conditions and necessary attribution. Recommend deletions/rewrites as findings; never edit the source. No positive observations quota.'
         )
         from .semantic import schema
+        protocol=self.protocol(attempt['id'])
+        candidates=attention_candidates(content) if protocol>=2 and next_row['phase']=='production_language' else []
+        result_schema=copy.deepcopy(schema('review-result')['$defs']['audience_step'])
+        if candidates:
+            result_schema['required'].append('attention_checks')
         packet={'kind':'review','channel':'audience','presentation':job['presentation'],
                 'phase':next_row['phase'],'sequence':next_row['sequence'],'artifact_id':job['input_artifact_id'],
                 'slides':content,'read_slide_ids':targets,'input_files':assets,'writable_directory':None,
                 'instructions':instruction,'continuity':prior[-2:],
                 'learner_context':'Use the confirmed audience/prerequisites; do not rely on author self-evaluation.',
-                'result_schema':schema('review-result')['$defs']['audience_step'],
+                'result_schema':result_schema,'reading_protocol':protocol,
+                'attention_candidates':candidates,
                 'limitations':'Historical feedback was briefed earlier; this is not a blind experiment or real student study.'}
         # Audience/prerequisites should be read from confirmed TASK, not author
         # self-checks. Keep this context bounded rather than injecting task records.
         with self.store.transaction() as conn:
             cfg=self.service.confirmed(conn);settings=json.loads(cfg['settings_json'])
+            from .semantic import teaching_context
+            packet['teaching_context']=teaching_context(settings)
             packet['confirmed_task_brief']=cfg['task_text']
             budget=settings.get('context_budget_bytes',262144)
         if len(encode(packet).encode())+sum(Path(p).stat().st_size for p in assets if Path(p).suffix.lower() in {'.svg','.txt','.json'})>budget:raise MPresError('Audience step exceeds confirmed context budget; no silent truncation')
@@ -131,6 +204,10 @@ class Audience:
                 raise MPresError('Audience evidence is outside the dispatched source or invented')
         for finding in result['findings']:
             if not set(finding['slide_ids'])<=allowed:raise MPresError('Audience finding cites an unread page')
+        if self.protocol(attempt['id'])>=2 and row['phase']=='production_language':
+            from mpres.source_policy import METADATA
+            selected=[{'slide_id':sid,'markdown':METADATA.sub('',text[sid]).strip()} for sid in result['read_slide_ids']]
+            validate_attention(result, attention_candidates(selected))
         calls=response.get('usage')
         if not isinstance(calls,list) or not calls:raise MPresError('Audience steps require real usage receipts')
         # Namespace per-step IDs; providers may reuse a local call ID in a session.

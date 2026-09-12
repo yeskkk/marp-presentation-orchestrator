@@ -4,6 +4,11 @@ engine: compact
 workflow: full
 title: Untitled course
 # These are user-confirmed upper bounds, not promises to spawn that many sessions.
+# These are teacher/planner choices, not text to paste onto student slides.
+# Review and edit before confirming; technical migration never rewrites an old task.
+teaching:
+  audience: 非数学专业学生，重视问题动机、计算和直观理解
+  proof_depth: minimal  # minimal | explanatory | rigorous
 delivery: all
 author_concurrency: 4
 max_attempts: 2

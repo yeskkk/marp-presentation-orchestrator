@@ -116,7 +116,7 @@ def test_complete_two_decks_full_review_revision_release(compact_root,native_dou
     runner,last=run_host(service,host)
     assert service.status()['status']=='completed', (last,Workflow(service.task).status())
     assert last['release_pipeline_enabled'] is True
-    assert sorted(p.name for p in (service.task/'deliverables').iterdir())==['full-delivery.zip','p01.pdf','p02.pdf']
+    assert sorted(p.name for p in (service.task/'deliverables').iterdir())==['p01','p02']
     assert len(service.store.rows('SELECT * FROM releases'))==2
     assert len(service.store.rows("SELECT * FROM jobs WHERE kind='review' AND state='succeeded'"))==10
     assert len(service.store.rows("SELECT * FROM jobs WHERE kind='revise' AND state='succeeded'"))==2
@@ -235,7 +235,7 @@ def test_publication_crash_after_file_before_database_is_reconciled(compact_root
     monkeypatch.setattr(module,'event',crash)
     runner,last=run_host(service,host)
     assert service.status()['status']=='running'
-    assert (service.task/'deliverables/p01.pdf').is_file()
+    assert (service.task/'.mpres/releases/p01/r001/p01.pdf').is_file()
     assert service.store.rows('SELECT state FROM releases')[0]['state']=='prepared'
     report=Workflow(service.task).retry_publish('p01','Verified the previous publisher stopped; reconcile its prepared release.')
     assert service.status()['status']=='completed'

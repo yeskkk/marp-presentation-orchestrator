@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import zipfile
 from pathlib import Path
 
 import pytest
@@ -124,7 +123,7 @@ def test_single_repair_preserves_unselected_deck_and_original_pdf(compact_root,n
     assert repair.case(cid)['state']=='completed',last
     current=s.store.rows('SELECT * FROM releases ORDER BY presentation')
     assert current[0]['artifact_id']!=original[0]['artifact_id']
-    assert current[0]['pdf_path']=='deliverables/p01-r002.pdf'
+    assert current[0]['pdf_path']=='.mpres/releases/p01/r002/p01.pdf'
     assert current[1]==original[1]
     assert all((s.task/path).read_bytes()==data for path,data in bytes_before.items())
     assert s.store.rows('SELECT * FROM configs')==config
@@ -133,22 +132,21 @@ def test_single_repair_preserves_unselected_deck_and_original_pdf(compact_root,n
     assert s.status()['status']=='completed'
 
 
-def test_batch_zip_has_only_requested_pairs_and_can_be_rebuilt(compact_root,native_double):
+def test_batch_direct_view_selects_requested_pairs_without_extra_archive(compact_root,native_double):
     s,h,r=completed(compact_root,decks=3);repair,cid=propose(s,r,['p01','p03']);confirm(repair,cid)
     last=r.run(cycles=120,interval=0)
     assert repair.case(cid)['state']=='completed',last
-    package=RepairDelivery(s.task,cid).bundle();path=Path(package['path'])
+    package=RepairDelivery(s.task,cid).materialize();path=Path(package['path'])
     assert package['presentations']==['p01','p03']
-    with zipfile.ZipFile(path) as z:
-        names=z.namelist()
-        assert any(x.endswith('/p01/p01.pdf') for x in names)
-        assert any(x.endswith('/p01/p01.md') for x in names)
-        assert not any('/p02/' in x for x in names)
-        for p in ['p01','p03']:
-            release=s.store.rows('SELECT r.*,a.path FROM releases r JOIN artifacts a ON a.id=r.artifact_id WHERE r.presentation=?',(p,))[0]
-            assert z.read(next(n for n in names if n.endswith(f'/{p}/{p}.md')))==(s.task/release['path']/'presentation.md').read_bytes()
-    count=len(h.calls);again=RepairDelivery(s.task,cid).bundle()
-    assert again['already_bundled'] and len(h.calls)==count
+    assert [e['presentation'] for e in package['entries']]==['p01','p03']
+    for p in ['p01','p03']:
+        release=s.store.rows('SELECT r.*,a.path FROM releases r JOIN artifacts a ON a.id=r.artifact_id WHERE r.presentation=?',(p,))[0]
+        assert (path/p/f'{p}.md').read_bytes()==(s.task/release['path']/'presentation.md').read_bytes()
+        assert (path/p/f'{p}.pdf').is_file()
+    assert (path/'p02/p02.md').is_file()  # Not a target: its existing directory is preserved.
+    assert not list(path.rglob('*.zip'))
+    count=len(h.calls);again=RepairDelivery(s.task,cid).materialize()
+    assert again['already_materialized'] and len(h.calls)==count
     assert all(x['state']=='ready' for x in Workflow(s.task).advance()['repair_packages'])
 
 
@@ -157,9 +155,12 @@ def test_repeat_repair_creates_third_revision_not_overwrite(compact_root,native_
     for revision in [2,3]:
         repair,cid=propose(s,r,['p01']);confirm(repair,cid);last=r.run(cycles=100,interval=0)
         assert repair.case(cid)['state']=='completed',last
-        assert (s.task/f'deliverables/p01-r{revision:03d}.pdf').is_file()
+        assert (s.task/f'.mpres/releases/p01/r{revision:03d}/p01.pdf').is_file()
     assert len(s.store.rows("SELECT * FROM release_versions WHERE presentation='p01'"))==3
-    assert (s.task/'deliverables/p01.pdf').is_file()
+    history=repair.status()['cases']
+    assert history[0]['delivery_package']['state']=='superseded'
+    assert history[-1]['delivery_package']['state']=='ready'
+    assert (s.task/'.mpres/releases/p01/r001/p01.pdf').is_file()
 
 
 def test_pilot_repair_restores_pause_does_not_start_next_deck(compact_root,native_double):
@@ -169,7 +170,7 @@ def test_pilot_repair_restores_pause_does_not_start_next_deck(compact_root,nativ
     assert repair.case(cid)['state']=='completed',last
     assert s.status()['status']=='paused'
     assert not any(c['packet']['presentation']=='p02' for c in h.calls)
-    assert not (s.task/'deliverables/p02.pdf').exists()
+    assert not (s.task/'deliverables/p02/p02.pdf').exists()
 
 
 def test_missing_confirmed_form_is_rejected_before_acceptance(compact_root,native_double):
@@ -181,7 +182,7 @@ def test_missing_confirmed_form_is_rejected_before_acceptance(compact_root,nativ
         return response
     r.invoke=incomplete;last=r.run(cycles=20,interval=0)
     assert any(x['status']=='uncertain' for x in last.get('results',[]))
-    assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='deliverables/p01.pdf'
+    assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='.mpres/releases/p01/r001/p01.pdf'
     assert not s.store.rows("SELECT * FROM release_versions WHERE revision=2 AND state='committed'")
 
 
@@ -234,7 +235,7 @@ def test_reviewer_cannot_skip_a_confirmed_related_problem(compact_root,native_do
         return out
     r.invoke=bad_review;last=r.run(cycles=100,interval=0)
     assert any(x['status']=='uncertain' for x in last.get('results',[]))
-    assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='deliverables/p01.pdf'
+    assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='.mpres/releases/p01/r001/p01.pdf'
 
 
 def test_semantic_uncertainty_blocks_repair_not_falsely_delivered(compact_root,native_double):
@@ -247,7 +248,7 @@ def test_semantic_uncertainty_blocks_repair_not_falsely_delivered(compact_root,n
         return out
     r.invoke=uncertain_edit;last=r.run(cycles=100,interval=0)
     assert last['status']=='blocked'
-    assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='deliverables/p01.pdf'
+    assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='.mpres/releases/p01/r001/p01.pdf'
     assert s.store.rows('SELECT phase FROM decks')[0]['phase']=='blocked'
 
 
@@ -256,18 +257,18 @@ def test_repair_publish_failure_retains_original_and_can_retry(compact_root,nati
     import mpres.control.workflow as mod
     real=mod.os.link
     def broken(src,dst,*a,**kw):
-        if str(dst).endswith('p01-r002.pdf'):raise OSError('fixture disk publication failure')
+        if str(dst).endswith('/r002/p01.pdf'):raise OSError('fixture disk publication failure')
         return real(src,dst,*a,**kw)
     monkeypatch.setattr(mod.os,'link',broken)
     last=r.run(cycles=100,interval=0)
     assert last['status']=='blocked'
-    assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='deliverables/p01.pdf'
+    assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='.mpres/releases/p01/r001/p01.pdf'
     assert s.store.rows('SELECT state FROM release_versions WHERE revision=2')[0]['state']=='prepared'
     monkeypatch.setattr(mod.os,'link',real)
     Workflow(s.task).retry_publish('p01','The local publication error is corrected.')
     assert repair.case(cid)['state']=='completed'
-    assert (s.task/'deliverables/p01.pdf').is_file()
-    assert (s.task/'deliverables/p01-r002.pdf').is_file()
+    assert (s.task/'.mpres/releases/p01/r001/p01.pdf').is_file()
+    assert (s.task/'.mpres/releases/p01/r002/p01.pdf').is_file()
 
 
 def test_repair_bundle_gitignore_does_not_hide_sources(compact_root,tmp_path):

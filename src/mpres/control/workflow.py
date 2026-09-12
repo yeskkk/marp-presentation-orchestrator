@@ -237,7 +237,7 @@ class Workflow:
                 break
         package = Delivery(self.task).ensure()
         from .repairs import RepairDelivery
-        repair_packages=[{'case_id':c['id'],**RepairDelivery(self.task,c['id']).ensure()} for c in self.store.rows("SELECT id FROM repair_cases WHERE state='completed' ORDER BY created_at")]
+        repair_packages=[{'case_id':c['id'],**RepairDelivery(self.task,c['id']).status()} for c in self.store.rows("SELECT id FROM repair_cases WHERE state='completed' ORDER BY created_at")]
         return {**self.status(), 'delivery_package': package, 'repair_packages':repair_packages,
                 'changed': before != self.store.rows('SELECT * FROM decks ORDER BY ordinal')}
 
@@ -418,8 +418,10 @@ class Workflow:
             target_row=self.store.rows('SELECT * FROM repair_targets WHERE case_id=? AND presentation=?',(case_id,deck['presentation']))
             if not target_row: raise MPresError('Repair target is outside the approved campaign')
             revision=target_row[0]['release_revision']
-        relative=f"deliverables/{deck['presentation']}.pdf" if not case_id else f"deliverables/{deck['presentation']}-r{revision:03d}.pdf"
+        history=self.store.rows('SELECT pdf_path FROM release_versions WHERE presentation=? AND revision=?',(deck['presentation'],revision))
+        relative=history[0]['pdf_path'] if history else f".mpres/releases/{deck['presentation']}/r{revision:03d}/{deck['presentation']}.pdf"
         target=inside(self.task,relative)
+        target.parent.mkdir(parents=True,exist_ok=True)
         with self.store.transaction() as conn:
             cfg=self.service.confirmed(conn)
             old=conn.execute('SELECT * FROM release_versions WHERE presentation=? AND revision=?',(deck['presentation'],revision)).fetchone()

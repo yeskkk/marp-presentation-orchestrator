@@ -47,10 +47,22 @@ inline HTML、内嵌 SVG、临时 class/字号/图片尺寸。只用规范 Markd
 
 runner 分别派发 student、production_language 和最终历史反馈汇总；不要提前跨步骤。
 student 阶段只说明学生能学到什么、哪里需要猜变量／条件／图与公式的关系。
-production_language 阶段只找制作者对管理者的自述、自证合规与资料请求。
+production_language 阶段判断每段文字的学生学习价值；不仅检查自述、自证和资料请求。
 “本页已按要求补充案例”属于制作口吻；“这些数值为教学模拟，不能用于预测”
 可能是重要建模条件，不能通过关键词一律删掉。两阶段逐段覆盖全部页面。
 引用实际页内片段及其学习影响；没有观察到问题可返回空 observations/findings。
 最终对照历史批评并汇总，保留前序已提出的问题，不依据 author 自评宣布无问题。
 同一 reviewer、同一固定 runtime；这是模拟学生阅读，不是真实学生实验，也不是
 认知盲测。只完成首次审核，不加入作者修复后的 reviewer 验收。
+
+## audience 的学习价值标准（优先于仅查制作口吻的旧理解）
+
+student：先问学生在解决什么、获得什么，而不是列内容目录。production_language：
+检查任何不值得学生花注意力的文字，不限于自夸。对 packet.attention_candidates 逐项
+做删除反事实，返回 attention_checks；它们是待判断信号，不是自动删除名单。
+keep 必须说明删去会失去的具体数学认识，不能只说“不是自夸、属于教学、避免误解”。
+remove/rewrite/move_to_notes 要产生对应页 finding，并填该 findings 数组的索引。
+不强制正面 observations；保留数学条件、必要模拟数据披露及事实出处，不保护空泛
+免责声明。最终汇总不能遗失前序问题；只有一个 audience 会话，不增加验修轮次。
+pedagogy 同时检查兴趣、问题动机和用户要求的证明深度；language 检查对学生说话的口吻，
+不只查错别字。domain_accuracy 保证正确性，但不得把形式证明密度当普遍质量门槛。

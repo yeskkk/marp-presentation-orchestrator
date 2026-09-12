@@ -21,7 +21,9 @@ user feedback, not healthy polling events. Unknown execution must be reconciled.
 A deterministic fixture test is not native-browser or model-quality validation.
 
 When reporting a finished delivery, attach/link the existing path from
-`delivery_package` only when its state is `ready`; a PDF commit alone is not ZIP success.
+`delivery_package.entries[].pdf` and `.markdown` only when its state is `ready`.
+The package path is now a directory; never expect or generate a default delivery ZIP.
+A PDF commit alone is not successful source/asset materialization.
 
 User criticism is durable task data, not chat memory. Record explicit user feedback
 in SQLite; never silently retire, weaken or mark it satisfied. Before every author/
@@ -33,7 +35,7 @@ For user-directed rework, open a repair case at a delivery boundary. Obtain the
 read-only problem expansion, present its exact version/targets/limits to the user,
 and STOP for the user's reply. Do not auto-confirm an AI proposal or infer consent
 from the initial complaint. Once confirmed, let the runner edit/review/release only
-those targets. Attach the completed repair ZIP, not an unreviewed draft. Record
+those targets. Attach the selected completed PDF/Markdown paths, not an unreviewed draft or a ZIP. Record
 additional user requirements as new feedback versions; never edit runtime choices.
 
 Project source contract applies to every entry, including manually launched Codex:
@@ -42,3 +44,11 @@ edit CSS, add HTML/inline SVG, per-slide styles/classes or image sizing tricks.
 Use Markdown, mathematics and external assets; split/rewrite dense content. Run
 `mpres source check <output>` before submitting. Theme copies are read-only; the
 service verifies them and rejects violations before accepting a revision.
+
+Student-facing quality is not compliance self-praise detection. Before confirming,
+separate precise mathematical language from proof depth; expose conflicting old
+teaching requirements instead of silently rewriting them. Planning prerequisites,
+time/core labels and internal TXT citations are not student-page defaults. Apply
+the learning-loss deletion counterfactual; retain genuine conditions/attribution,
+not empty disclaimers. Follow the bounded audience_step schema for attention
+candidates; do not auto-delete text by keywords or add a repair-verification reviewer.

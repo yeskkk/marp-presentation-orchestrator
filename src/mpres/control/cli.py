@@ -60,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     interrupt=artifact.add_parser('interrupt-gate'); interrupt.add_argument('slug'); interrupt.add_argument('gate_id')
     interrupt.add_argument('--reason',required=True)
     workflow=sub.add_parser('workflow').add_subparsers(dest='operation',required=True)
-    for name in ('advance','status','bundle','continue','retry-checks','retry-publish','recover-assembly'):
+    for name in ('advance','status','materialize','bundle','continue','retry-checks','retry-publish','recover-assembly'):
         cmd=workflow.add_parser(name);cmd.add_argument('slug')
         if name=='continue':cmd.add_argument('--by',required=True);cmd.add_argument('--note',required=True)
         if name in {'retry-checks','retry-publish'}:cmd.add_argument('--presentation',required=True);cmd.add_argument('--note',required=True)
@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     repair=sub.add_parser('repair').add_subparsers(dest='operation',required=True)
     op=repair.add_parser('open');op.add_argument('slug');op.add_argument('--report',required=True);op.add_argument('--presentation',action='append',required=True);op.add_argument('--by',required=True)
     op=repair.add_parser('status');op.add_argument('slug')
-    for action in ('present','confirm','amend','cancel','bundle'):
+    for action in ('present','confirm','amend','cancel','materialize','bundle'):
         op=repair.add_parser(action);op.add_argument('slug');op.add_argument('case_id')
         if action in {'confirm','amend','cancel'}:op.add_argument('--by',required=True)
         if action=='confirm':op.add_argument('--version',type=int,required=True)
@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
                 elif args.operation=='amend':result=repair.amend(args.case_id,json_input(args.proposal),args.by)
                 elif args.operation=='cancel':result=repair.cancel(args.case_id,args.by,args.note)
                 else:
-                    if repair.case(args.case_id)['state']!='completed':raise MPresError('All selected repair targets must be delivered before exporting the repair bundle')
+                    if repair.case(args.case_id)['state']!='completed':raise MPresError('All selected repair targets must be delivered before materializing the repair view')
                     result=RepairDelivery(service.task,args.case_id).bundle()
             elif args.command=='feedback':
                 from .feedback import Feedback
@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command=='workflow':
                 from .workflow import Workflow
                 workflow=Workflow(service.task)
-                if args.operation=='bundle':
+                if args.operation in {'materialize','bundle'}:
                     from .delivery import Delivery
                     result=Delivery(service.task).bundle()
                 elif args.operation=='continue':result=workflow.continue_delivery(args.by,args.note)

@@ -308,6 +308,8 @@ class Runner:
         packet['required_result']['feedback_checks'] = 'One disposition for every historical feedback id/version, with actual slide excerpts; issue is not a pass; no automatic not_applicable by channel'
         packet['result_schema'] = schema(result_schema_name(job['kind']))
         packet['semantic_guidance'] = guidance(self.root if hasattr(self, 'root') else self.task.parent.parent, job['kind'])
+        from .semantic import teaching_context
+        packet['teaching_context'] = teaching_context(config)
         text_suffixes={'.md','.css','.txt','.json','.yaml','.yml','.csv','.svg'}
         packet['attachment_bytes']=sum(Path(p).stat().st_size for p in set(packet['input_files']) if Path(p).suffix.lower() not in text_suffixes)
         count=len(encode(packet).encode('utf-8'))+sum(Path(p).stat().st_size for p in set(packet['input_files']) if Path(p).suffix.lower() in text_suffixes)
@@ -340,7 +342,7 @@ class Runner:
         workflow_report = workflow.advance()
         full = workflow_report['enabled']
         if workflow_report.get('delivery_package', {}).get('state') == 'failed':
-            return {'status': 'blocked', 'reason': 'Delivery ZIP could not be generated; retry packaging, not content production',
+            return {'status': 'blocked', 'reason': 'Delivery directory could not be materialized; retry export, not content production',
                     'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': full}
         from .repairs import Repairs
         repairs=Repairs(self.task)

@@ -18,8 +18,6 @@ Thumbs.db
 tasks/*/logs/project.jsonl
 tasks/*/downloads/
 
-# Generated PDF + matching Markdown delivery bundles (not source release ZIPs).
-**/deliverables/*-delivery.zip
-
-# User-confirmed, versioned repair delivery ZIPs
-**/deliverables/*-repair-*.zip
+# Delivery source and assets are versioned; generated binary deliverables are not.
+**/deliverables/**/*.pdf
+**/deliverables/**/*.zip

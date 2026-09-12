@@ -31,7 +31,7 @@ def require_text(value: Any, label: str) -> str:
 def settings_document(value: Any) -> dict:
     if not isinstance(value, dict):
         raise MPresError('task.yaml must be a mapping')
-    allowed = {'schema_version','engine','title','delivery','author_concurrency','max_attempts','provider','presentations','context_budget_bytes','provider_timeout_seconds','quality','workflow','recovery'}
+    allowed = {'schema_version','engine','title','delivery','author_concurrency','max_attempts','provider','presentations','context_budget_bytes','provider_timeout_seconds','quality','workflow','recovery','teaching'}
     if set(value) - allowed:
         raise MPresError(f'Unknown task settings: {sorted(set(value)-allowed)}')
     if value.get('schema_version') != 1 or value.get('engine') != 'compact':
@@ -78,6 +78,13 @@ def settings_document(value: Any) -> dict:
         raise MPresError('recovery accepts transient_tool_retries and host_observation_retries only')
     if any(type(x) is not int or not 0 <= x <= 3 for x in recovery.values()):
         raise MPresError('Recovery retries must be integers from 0 to 3')
+    teaching = value.get('teaching')
+    if teaching is not None:
+        if not isinstance(teaching, dict) or set(teaching) != {'audience','proof_depth'}:
+            raise MPresError('teaching requires audience and proof_depth only')
+        require_text(teaching['audience'], 'Student audience, not workflow instructions')
+        if teaching['proof_depth'] not in {'minimal','explanatory','rigorous'}:
+            raise MPresError('proof_depth must be minimal, explanatory or rigorous')
     decks = value.get('presentations')
     if not isinstance(decks, list) or not decks:
         raise MPresError('Supply a semantic course plan in task.yaml before presenting')
@@ -162,7 +169,10 @@ class Service:
             conn.execute('UPDATE task SET presented_json=?', (encode(doc),))
             event(conn,'task.presented',{})
         from .feedback import Feedback
-        return {**doc, 'historical_feedback': Feedback(self.task).list()}
+        from .semantic import teaching_context, teaching_conflicts
+        return {**doc, 'historical_feedback': Feedback(self.task).list(),
+                'teaching_context': teaching_context(doc['settings']),
+                'teaching_conflicts': teaching_conflicts(doc['settings'],doc['task_text'])}
 
     def confirm(self, actor: str) -> dict:
         actor = require_text(actor,'explicit user confirmation attribution')
