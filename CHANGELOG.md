@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+- First v0.7.x milestone: project-owned, offline Gaia/lead-style default based on
+  the user's 1-1.md styling. Preserve the requested typography and utility palette.
+- Add explicit table borders/padding and a fixed heading/image/caption box model;
+  do not position MathJax SVGs or auto-shrink overfull slides.
+- Source policy 4 invalidates old theme gate passes without rewriting artifacts.
+- Fix the toolchain specimen's quoted 16:9 value and test it against the real source contract.
+- Add a five-page regression specimen, native verification command and ten tests.
+- No changes to model selection, database schema, review count or old user tasks.
+
+
 ## 0.6.9
 
 Mechanical semantic-job runner with observed host inventory, persistent pool admission, fixed runtime execution receipts, bounded packets, no blind external retries, and JSON-stdio/bridge adapters. Full deck release pipeline remains disabled pending gate migration.

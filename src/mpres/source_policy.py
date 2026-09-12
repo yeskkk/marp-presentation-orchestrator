@@ -16,7 +16,7 @@ from markdown_it import MarkdownIt
 
 from mpres.util import MPresError
 
-POLICY_VERSION = 3
+POLICY_VERSION = 4
 THEME_PATH = Path(__file__).with_name('control')/'theme.css'
 FRONTMATTER = {'marp':True,'theme':'mathist-academic','paginate':True,'size':'16:9','math':'mathjax'}
 METADATA = re.compile(r'<!--\s*(?:slide-id:\s*[A-Za-z][A-Za-z0-9_.:-]{0,127}|_class:\s*(?:core|support))\s*-->')

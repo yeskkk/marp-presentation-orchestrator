@@ -1,9 +1,174 @@
-/* @theme mathist-academic */
+/*
+ * @theme mathist-academic
+ * @size 16:9 1280px 720px
+ * @auto-scaling false
+ *
+ * Project-owned, offline Gaia/lead-style theme.
+ * Typography, colours and utility rules supplied by the user (1-1.md).
+ * No stylesheet imports: Gaia's online font request must not enter an offline deck.
+ * Utilities are reserved project styles, NOT permission to embed HTML/classes.
+ * Change this file only in a project release; never to squeeze in slide content.
+ */
 section {
-  width: 1280px; height: 720px; padding: 64px 72px;
-  font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif;
-  font-size: 30px; line-height: 1.4; background: white; color: #183044;
+  box-sizing: border-box;
+  position: relative;
+  width: 1280px;
+  height: 720px;
+  padding: 48px 64px 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe center;
+  align-items: stretch;
+  font-family: 'Arial', 'Microsoft YaHei', 'Noto Sans CJK SC', sans-serif;
+  font-size: 24px;
+  line-height: 1.6;
+  letter-spacing: normal;
+  background: #fff;
+  color: #183044;
+  text-align: center;
+  overflow-wrap: break-word;
 }
-h1 { font-size: 52px; } h2 { font-size: 40px; }
+/* Flex must not silently shrink a tall image/table to hide overfull content. */
+section > * { flex-shrink: 0; }
+section > :first-child { margin-top: 0; }
+section > :last-child { margin-bottom: 0; }
 section.support { border-left: 10px solid #68878f; }
-img { max-width: 100%; max-height: 460px; }
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: bold;
+  line-height: 1.4;
+  margin: 0 0 16px;
+}
+h1 { color: #2c3e50; font-size: 36px; }
+h2 {
+  color: #34495e;
+  font-size: 30px;
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 10px;
+}
+h3 { color: #2980b9; font-size: 26px; }
+h4, h5, h6 { color: #34495e; font-size: 24px; }
+strong { color: #e74c3c; font-weight: bold; }
+p { margin: 0 0 12px; }
+a { color: #2980b9; }
+
+ul, ol {
+  margin: 0 0 12px 20px;
+  padding-left: 28px;
+  text-align: left;
+}
+li { margin-bottom: 10px; }
+li:last-child { margin-bottom: 0; }
+li > p { margin: 0; }
+li > ul, li > ol { margin-top: 8px; }
+
+/* Every Markdown cell has its own visible boundary and actual inner space. */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+  margin: 0 auto 12px;
+  font-size: inherit;
+  line-height: 1.6;
+  text-align: left;
+}
+th, td {
+  border: 2px solid #8195a5;
+  padding: 10px 16px;
+  vertical-align: middle;
+  background: #fff;
+}
+thead th {
+  background: #eaf4fb;
+  color: #2c3e50;
+  font-weight: bold;
+}
+tbody tr:nth-child(even) td { background: #f8fafc; }
+
+/* Only external img elements: NEVER position/resize MathJax's SVG descendants. */
+section img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 460px;
+  margin: 0 auto;
+  object-fit: contain;
+}
+/* Remove the invisible inline-image baseline, not the image or caption. */
+section p:has(> img:only-child) {
+  line-height: 0;
+  margin: 0 0 12px;
+}
+section p:has(> img:only-child):last-child { margin-bottom: 0; }
+
+blockquote {
+  margin: 0 0 12px;
+  padding: 8px 20px;
+  border-left: 5px solid #3498db;
+  color: #34495e;
+  text-align: left;
+}
+blockquote > :last-child { margin-bottom: 0; }
+code { font-family: 'Consolas', 'DejaVu Sans Mono', monospace; }
+pre {
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  background: #f8f9fa;
+  text-align: left;
+  line-height: 1.4;
+  white-space: pre;
+}
+hr { width: 100%; border: 0; border-top: 2px solid #8195a5; }
+/* Page number is outside the 620px content box, but inside the slide. */
+section::after {
+  position: absolute;
+  right: 32px;
+  bottom: 12px;
+  font-size: 16px;
+  line-height: 24px;
+  color: #607080;
+}
+
+/* User-supplied utility palette. Kept at project scope for compatibility.
+ * Raw HTML, per-slide CSS and arbitrary _class remain forbidden by source_policy.
+ * The normal Markdown path does not use these selectors to squeeze content.
+ */
+.columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  align-items: center;
+}
+.center { text-align: center; }
+.small { font-size: 0.85em; }
+.warning {
+  background-color: #fff3cd;
+  border-left: 5px solid #ffc107;
+  padding: 15px;
+  margin: 10px 0;
+}
+.success {
+  background-color: #d4edda;
+  border-left: 5px solid #28a745;
+  padding: 15px;
+  margin: 10px 0;
+}
+.formula {
+  font-family: 'Times New Roman', serif;
+  font-style: italic;
+  background-color: #f8f9fa;
+  padding: 10px;
+  border-radius: 5px;
+}
+.quote-large {
+  text-align: center !important;
+  font-size: 60px !important;
+  color: #ff0000 !important;
+  font-weight: bold !important;
+}
+.quote-middle {
+  text-align: right !important;
+  font-size: 40px !important;
+  font-weight: bold !important;
+}
