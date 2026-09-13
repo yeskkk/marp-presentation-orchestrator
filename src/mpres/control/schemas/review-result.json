@@ -52,13 +52,6 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "id",
-          "version",
-          "status",
-          "explanation",
-          "evidence"
-        ],
         "additionalProperties": false,
         "properties": {
           "id": {
@@ -100,8 +93,42 @@
                 }
               }
             }
+          },
+          "finding_refs": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Reference a finding once: step:<sequence>:<1-based index> or new:<1-based index>. Scoped to this review only."
           }
-        }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "id",
+              "version",
+              "status",
+              "explanation",
+              "evidence"
+            ]
+          },
+          {
+            "required": [
+              "id",
+              "version",
+              "status",
+              "finding_refs"
+            ],
+            "properties": {
+              "status": {
+                "const": "issue"
+              }
+            }
+          }
+        ]
       },
       "description": "按实际请求的全部反馈 id/version 回应，引用真实页内摘录。"
     },
@@ -109,12 +136,6 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": [
-          "problem_id",
-          "status",
-          "explanation",
-          "slide_ids"
-        ],
         "additionalProperties": false,
         "properties": {
           "problem_id": {
@@ -139,10 +160,52 @@
               "minLength": 1
             },
             "uniqueItems": true
+          },
+          "finding_refs": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Reference a finding once: step:<sequence>:<1-based index> or new:<1-based index>. Scoped to this review only."
           }
-        }
+        },
+        "anyOf": [
+          {
+            "required": [
+              "problem_id",
+              "status",
+              "explanation",
+              "slide_ids"
+            ]
+          },
+          {
+            "required": [
+              "problem_id",
+              "status",
+              "finding_refs"
+            ],
+            "properties": {
+              "status": {
+                "const": "needs_decision"
+              }
+            }
+          }
+        ]
       },
       "description": "确认返修的问题族检查；身份与范围来自 repair_scope。"
+    },
+    "finding_refs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Reference a finding once: step:<sequence>:<1-based index> or new:<1-based index>. Scoped to this review only."
     }
   },
   "$defs": {

@@ -35,7 +35,7 @@ if '--help' in sys.argv:
     print(os.environ.get('FAKE_HELP','Codex fixture: --cd --model --config --no-alt-screen'))
     raise SystemExit(int(os.environ.get('FAKE_HELP_EXIT','0')))
 Path(os.environ['CAPTURE']).write_text(json.dumps({'argv':sys.argv[1:],'cwd':os.getcwd(),
-    'tty':[os.isatty(0),os.isatty(1)],'pid':os.getpid(),'task':os.environ.get('MPRES_TASK_SLUG')}))
+    'tty':[os.isatty(0),os.isatty(1)],'pid':os.getpid(),'task':os.environ.get('MPRES_TASK_SLUG'),'intent':os.environ.get('MPRES_STARTUP_INTENT')}))
 if os.environ.get('WAIT_SIGNAL'):
     signal.signal(signal.SIGINT,lambda *_:sys.exit(130))
 print('CODEX_FIXTURE_STARTED',flush=True)
@@ -53,10 +53,11 @@ def invoke(root,env,*args):
                           env=env,text=True,capture_output=True,timeout=20)
 
 
-def pty_run(root,env,args=(),interrupt=False):
+def pty_run(root,env,args=(),interrupt=False,answers=None):
     import pty
     master,slave=pty.openpty()
-    p=None;output=b''
+    p=None;output=b'';answered=0
+    replies=iter(['2'] if answers is None else answers)
     try:
         p=subprocess.Popen(['bash',str(root/'start.sh'),*args],cwd=root.parent,env=env,
                            stdin=slave,stdout=slave,stderr=slave)
@@ -68,6 +69,10 @@ def pty_run(root,env,args=(),interrupt=False):
                 except OSError:break
                 if not chunk:break
                 output+=chunk
+                prompts=output.count(b'TASK_INTENT> ')+output.count(b'TASK_SELECT> ')
+                while answered < prompts:
+                    reply=next(replies,'3');answered+=1
+                    os.write(master,b'\x04' if reply=='EOF' else (reply+'\n').encode())
                 if interrupt and b'CODEX_FIXTURE_STARTED' in output:
                     # exec must ensure the directly launched PID is the host.
                     captured=json.loads(Path(env['CAPTURE']).read_text())

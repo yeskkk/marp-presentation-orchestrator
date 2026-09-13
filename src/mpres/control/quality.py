@@ -20,6 +20,7 @@ from mpres.util import MPresError, run_command, utc_now
 from .files import copy_tree, inside, remove_tree
 from .service import Service, uid
 from .store import encode, event
+from .inspection import INSPECTION_POLICY_VERSION, normalize_check, normalize_report, page_check, warning_metadata
 
 
 class Quality:
@@ -40,7 +41,7 @@ class Quality:
             raise MPresError(f'Revision {artifact_id} lacks a current successful {level} gate')
         from mpres.source_policy import POLICY_VERSION
         detail=json.loads(row['detail_json'] or '{}')
-        if detail.get('source_policy_version') != POLICY_VERSION:
+        if detail.get('source_policy_version') != POLICY_VERSION or detail.get('inspection_policy_version') != INSPECTION_POLICY_VERSION:
             raise MPresError('Gate predates the current source contract; run artifact inspect --retry before reuse')
         return dict(row)
 
@@ -55,7 +56,7 @@ class Quality:
             artifact = dict(artifact)
             old = conn.execute('SELECT * FROM gate_runs WHERE artifact_id=? AND level=? ORDER BY sequence DESC LIMIT 1', (artifact_id, level)).fetchone()
             from mpres.source_policy import POLICY_VERSION
-            current_policy = old and json.loads(old['detail_json'] or '{}').get('source_policy_version') == POLICY_VERSION
+            current_policy = old and json.loads(old['detail_json'] or '{}').get('source_policy_version') == POLICY_VERSION and json.loads(old['detail_json'] or '{}').get('inspection_policy_version') == INSPECTION_POLICY_VERSION
             if old and (old['state'] == 'running' or (not retry and current_policy)):
                 return {**dict(old), 'already_recorded': True}
             if _automatic:
@@ -78,9 +79,12 @@ class Quality:
                       'failure_kind': 'transient_tool' if transient(exc) else 'tool_or_input'}
         from mpres.source_policy import POLICY_VERSION
         report['source_policy_version'] = POLICY_VERSION
+        report = normalize_report(report)
         report['seconds'] = time.monotonic()-start
         report['artifact_id'] = artifact_id
         report['gate_id'] = gate_id
+        if level == 'full' and report['success']:
+            report['warning_report'] = warning_metadata(report)
         state = 'passed' if report.get('success') is True else 'failed'
         with self.store.transaction() as conn:
             self.service.confirmed(conn)
@@ -136,6 +140,8 @@ class Quality:
         # Source lint already validates local image paths. CSS/SVG external loads
         # must also be caught before passing --allow-local-files to a browser.
         checks['asset_boundary'] = asset_boundary(source)
+        checks['pages'] = page_check(len(parse_deck(source/'presentation.md').slides), 'draft')
+        checks = {name: normalize_check(name, c) for name, c in checks.items()}
         if not all(c['success'] for c in checks.values()):
             return {'success': False, 'checks': checks, 'failure_kind': 'content'}
         if level == 'source':
@@ -153,6 +159,7 @@ class Quality:
             if checks['html_layout'].get('returncode', 0) != 0:
                 return {'success': False, 'checks': checks, 'failure_kind': 'tool_or_input'}
             checks['math_renderer'] = inspect_math_renderer(checks['math_source'], checks['html_layout'])
+            checks = {name: normalize_check(name, c) for name, c in checks.items()}
             if not all(c['success'] for c in checks.values()):
                 return {'success': False, 'checks': checks, 'failure_kind': 'layout_or_renderer'}
             pdf = build/'presentation.pdf'
@@ -166,6 +173,7 @@ class Quality:
                     raise TransientToolError('Marp browser closed during PDF rendering: '+proc.stderr[-1000:])
                 return {'success': False, 'checks': checks, 'failure_kind': 'tool_or_input'}
             checks['pdf'] = inspect_pdf_file(pdf, expected_pages=len(parse_deck(work/'presentation.md').slides))
+            checks = {name: normalize_check(name, c) for name, c in checks.items()}
             ok = all(c['success'] for c in checks.values())
             if ok:
                 pdf.chmod(0o444)

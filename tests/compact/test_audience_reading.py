@@ -118,11 +118,12 @@ def test_final_cannot_drop_student_finding(compact_root,native_double):
     response=h(req);finding={'message':'Explain the meaning of the coordinates.','severity':'minor','slide_ids':[req['packet']['read_slide_ids'][0]]}
     response['result']['findings']=[finding];r.accept(req,response)
     req=r.tick()['requests'][0];r.accept(req,h(req));last=r.tick()['requests'][0]
-    assert finding in last['packet']['audience_reading'][0]['findings']
+    assert 'findings' not in last['packet']['audience_reading'][0]
+    assert last['packet']['audience_reading'][0]['finding_refs'][0]['ref']=='step:0:1'
     response=h(last)
-    with pytest.raises(MPresError,match='dropped'):r.accept(last,response)
-    response['result']['findings']=[finding]
     assert not r.accept(last,response)['already_submitted']
+    rows=s.store.rows('SELECT detail_json FROM findings WHERE job_id=?',(s.attempt(req['attempt_id'])['job_id'],))
+    assert [json.loads(x['detail_json']) for x in rows]==[finding]
 
 
 def test_historical_brief_precedes_steps_and_counts_usage(compact_root,native_double):

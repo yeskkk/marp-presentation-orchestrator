@@ -77,7 +77,10 @@ class Delivery:
     def _description(self, release: dict) -> dict:
         pid = safe_id(release['presentation'], label='presentation ID')
         folder = inside(self.task, f'deliverables/{pid}')
-        return {'presentation': pid, 'artifact_id': release['artifact_id'],
+        gate = self.store.rows('SELECT detail_json FROM gate_runs WHERE id=?', (release['gate_id'],))
+        report = json.loads(gate[0]['detail_json'] or '{}').get('warning_report') if gate else None
+        warning = {'unresolved_count': report['unresolved_count'], 'path': str(folder/'WARNINGS.md'), 'json_path': str(folder/'WARNINGS.json'), 'coverage': report['coverage']} if report else {'unresolved_count': None, 'coverage': 'legacy_not_recorded'}
+        return {'warning_report': warning, 'presentation': pid, 'artifact_id': release['artifact_id'],
                 'path': str(folder), 'pdf': str(folder / f'{pid}.pdf'),
                 'markdown': str(folder / f'{pid}.md')}
 
@@ -128,6 +131,12 @@ class Delivery:
             if file.is_dir():
                 continue
             entries.append((f'{pid}.md' if relative == 'presentation.md' else relative, file))
+        gate = self.store.rows('SELECT detail_json FROM gate_runs WHERE id=?', (release['gate_id'],))
+        warning = json.loads(gate[0]['detail_json'] or '{}').get('warning_report') if gate else None
+        if warning:
+            from .inspection import write_warning_report
+            write_warning_report(self.task, json.loads(gate[0]['detail_json']))
+            entries.extend([('WARNINGS.md', inside(self.task, warning['markdown_path'])), ('WARNINGS.json', inside(self.task, warning['json_path']))])
         used = set()
         for name, file in entries:
             parts = PurePosixPath(name).parts

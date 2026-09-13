@@ -41,6 +41,7 @@ provider:
 presentations: []
 # - id: p01
 #   title: 同时满足几个条件
+#   estimated_pages: 90  # 估计全部学生可见页数；规划<=100，不以100为写作目标。旧任务无该字段则保持未知。
 #   units:
 #   - id: l01
 #     title: 解与解集

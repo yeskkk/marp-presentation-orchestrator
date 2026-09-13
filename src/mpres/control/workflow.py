@@ -412,6 +412,20 @@ class Workflow:
         from .feedback import Feedback
         Feedback(self.task).require_current_reviews(deck['frozen_id'],round_no=deck['review_round'])
 
+    def _delivery_pages(self, deck: dict, gate: dict) -> None:
+        from .inspection import page_check
+        # Historical publication is immutable; do not grandfather a name or a new revision.
+        if self.store.rows("SELECT 1 FROM release_versions WHERE artifact_id=? AND state='committed'", (deck['candidate_id'],)):
+            return
+        detail = json.loads(gate['detail_json'] or '{}')
+        count = detail.get('checks', {}).get('pdf', {}).get('page_count')
+        if type(count) is not int:
+            from pypdf import PdfReader
+            count = len(PdfReader(inside(self.task, gate['pdf_path'])).pages)
+        check = page_check(count, 'delivery')
+        if not check['success']:
+            raise MPresError(check['errors'][0])
+
     def publish(self, deck: dict) -> dict:
         """Publish exact revisions; a repair never overwrites a historical PDF."""
         from .feedback import Feedback
@@ -421,6 +435,7 @@ class Workflow:
         Repairs(self.task).require_clear(deck['candidate_id'])
         gate=self.quality.require_pass(deck['candidate_id'])
         if not gate['pdf_path']: raise MPresError('Successful full gate did not retain a PDF')
+        self._delivery_pages(deck, gate)
         for finding in current_findings(self.service,deck):
             resolution=json.loads(finding['resolution_json'] or '{}')
             if resolution.get('status')!='addressed' or resolution.get('artifact_id')!=deck['candidate_id']:

@@ -90,8 +90,10 @@ def settings_document(value: Any) -> dict:
         raise MPresError('Supply a semantic course plan in task.yaml before presenting')
     seen = set()
     for deck in decks:
-        if not isinstance(deck,dict) or set(deck) != {'id','title','units'}:
+        if not isinstance(deck,dict) or set(deck)-{'id','title','units','estimated_pages'} or not {'id','title','units'} <= set(deck):
             raise MPresError('Each presentation requires id, title and units')
+        if 'estimated_pages' in deck and (type(deck['estimated_pages']) is not int or deck['estimated_pages'] < 1):
+            raise MPresError('estimated_pages must be a positive integer')
         safe_id(deck['id'])
         if deck['id'] in seen:
             raise MPresError('Duplicate presentation ID')
@@ -170,7 +172,8 @@ class Service:
             event(conn,'task.presented',{})
         from .feedback import Feedback
         from .semantic import teaching_context, teaching_conflicts
-        return {**doc, 'historical_feedback': Feedback(self.task).list(),
+        from .inspection import plan_checks
+        return {**doc, 'page_estimates': plan_checks(doc['settings']), 'historical_feedback': Feedback(self.task).list(),
                 'teaching_context': teaching_context(doc['settings']),
                 'teaching_conflicts': teaching_conflicts(doc['settings'],doc['task_text'])}
 
@@ -184,6 +187,10 @@ class Service:
                 return {'config_id':current['id'],'already_confirmed':True}
             if not task['presented_json'] or json.loads(task['presented_json']) != doc:
                 raise MPresError('Present the exact documents to the user before confirmation')
+            from .inspection import plan_checks
+            over = [pid for pid, check in plan_checks(doc['settings']).items() if not check['success']]
+            if over:
+                raise MPresError('Plan exceeds 100 estimated pages; split before confirmation: '+', '.join(over))
             cur = conn.execute('INSERT INTO configs(settings_json,runtime_json,task_text,task_digest,confirmed_by,confirmed_at) VALUES(?,?,?,?,?,?)',
                                (encode(doc['settings']),encode(doc['runtime']),doc['task_text'],doc['task_digest'],actor,utc_now()))
             cid = cur.lastrowid
@@ -405,10 +412,15 @@ class Service:
         from .semantic import validate, result_schema_name
         if job['family'] is not None:
             validate(result_schema_name(job['kind']), result)
+        from .review_data import prepare as prepare_review, storage_result
+        raw_result = result
+        historical_result = (attempt['state']=='succeeded' and json.loads(attempt['result_json'] or '{}').get('storage_schema') != 'review-references-v1')
+        if not historical_result:
+            result = prepare_review(self, job, attempt_id, result)
         from .audience import Audience, applies
         if applies(job) and (attempt['state']!='succeeded' or Audience(self.task).rows(attempt_id)):
             Audience(self.task).require_final(attempt_id,result)
-        canonical = encode(result)
+        canonical = encode(result if historical_result else storage_result(job, result))
         if source is not None:
             if not source.resolve().is_relative_to(self.task):
                 raise MPresError('Submission source must be under this task')
@@ -420,7 +432,7 @@ class Service:
             from mpres.source_policy import require_source
             require_source(source)
         if attempt['state'] == 'succeeded':
-            if attempt['result_json'] != canonical:
+            if attempt['result_json'] not in {canonical, encode(result)}:
                 raise MPresError('Duplicate submission differs; accepted results are immutable')
             if source is not None:
                 prior = self.store.rows('SELECT path FROM artifacts WHERE attempt_id=?',(attempt_id,))
@@ -475,6 +487,7 @@ class Service:
                 if row['state'] not in {'running','uncertain'}:
                     raise MPresError('Attempt is no longer accepting results')
                 if job['kind']=='review':
+                    event(conn, 'review.result_received', {'attempt_id':attempt_id,'receipt':row['provider_receipt'],'raw_result':raw_result},job['id'])
                     findings = result.get('findings')
                     if not isinstance(findings,list) or job['input_artifact_id'] is None:
                         raise MPresError('Review requires findings and a frozen input revision')
@@ -496,7 +509,7 @@ class Service:
                                      (encode({**resolution, 'artifact_id': artifact[0], 'attempt_id': attempt_id}), resolution['finding_id']))
                 if job['kind']=='diagnose':
                     Repairs(self.task).accept_proposal(conn, job, result)
-                conn.execute("UPDATE attempts SET state='succeeded',result_json=?,finished_at=? WHERE id=?",(canonical,utc_now(),attempt_id))
+                conn.execute("UPDATE attempts SET state='succeeded',result_json=?,finished_at=?,error=NULL WHERE id=?",(canonical,utc_now(),attempt_id))
                 conn.execute("UPDATE jobs SET state='succeeded' WHERE id=?",(job['id'],))
                 conn.execute("UPDATE sessions SET state='open' WHERE id=? AND state='uncertain'",(row['session_id'],))
                 event(conn,'attempt.submitted',{'attempt_id':attempt_id,'artifact_id':artifact[0] if artifact else None},job['id'])

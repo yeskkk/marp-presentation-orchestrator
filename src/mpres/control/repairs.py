@@ -257,13 +257,19 @@ class Repairs:
             ids={s.slide_id for s in parse_deck(self.task/a['path']/'presentation.md').slides}
         finding_ids={i for f in result.get('findings',[]) for i in f.get('slide_ids',[])}
         for row in checks:
-            if not isinstance(row,dict) or set(row)!={'problem_id','status','explanation','slide_ids'}: raise MPresError('Invalid repair check')
+            if not isinstance(row,dict) or set(row)-{'problem_id','status','explanation','slide_ids','finding_refs'} or not {'problem_id','status','explanation','slide_ids'}<=set(row): raise MPresError('Invalid repair check')
             if row['problem_id'] not in expected or row['problem_id'] in seen: raise MPresError('Unknown or repeated confirmed problem form')
             seen.add(row['problem_id']);require_text(row['explanation'],'Specific repair disposition')
             if row['status'] not in {'addressed','not_found','needs_decision'} or not isinstance(row['slide_ids'],list): raise MPresError('Invalid repair check status/evidence')
             if set(row['slide_ids'])-ids: raise MPresError('Repair evidence must cite this exact source')
-            if row['status'] in {'addressed','needs_decision'} and not row['slide_ids']: raise MPresError('Repair action/issue needs concrete slide evidence')
-            if job['kind']=='review' and row['status']=='needs_decision' and not set(row['slide_ids'])&finding_ids: raise MPresError('Unresolved repair issue must be a routed finding')
+            linked=[]
+            if row.get('finding_refs'):
+                from .review_data import referenced_findings
+                if job['kind']!='review' or row['status']!='needs_decision':
+                    raise MPresError('Finding links require a real review problem')
+                linked=[sid for f in referenced_findings(job,result,row['finding_refs']) for sid in f['slide_ids']]
+            if row['status'] in {'addressed','needs_decision'} and not (row['slide_ids'] or linked): raise MPresError('Repair action/issue needs concrete slide evidence')
+            if job['kind']=='review' and row['status']=='needs_decision' and not set(row['slide_ids']+linked)&finding_ids: raise MPresError('Unresolved repair issue must be a routed finding')
         if seen!=expected: raise MPresError('Repair result omitted confirmed possible/similar problem forms')
 
     @staticmethod

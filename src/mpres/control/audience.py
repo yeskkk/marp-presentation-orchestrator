@@ -246,12 +246,20 @@ class Audience:
         return {'already_recorded':False,'sequence':row['sequence']}
 
     def final_context(self, attempt_id):
-        if self.pending(attempt_id):raise MPresError('Student reading and production-language passes must finish before final review')
-        return [{'phase':r['phase'],'sequence':r['sequence'],**{k:v for k,v in json.loads(r['result_json']).items() if k!='observations'}} for r in self.rows(attempt_id)]
+        if self.pending(attempt_id):
+            raise MPresError('Student reading and attention passes must finish before final review')
+        # The same session already read these messages. Supply scope and stable
+        # references, not every complete finding body again.
+        return [{'phase':r['phase'],'sequence':r['sequence'],
+                 'summary':json.loads(r['result_json'])['summary'],
+                 'finding_refs':[{'ref':f"step:{r['sequence']}:{i}",
+                                  'slide_ids':f['slide_ids'],'severity':f['severity']}
+                     for i,f in enumerate(json.loads(r['result_json'])['findings'],1)]}
+                for r in self.rows(attempt_id)]
 
     def require_final(self, attempt_id, result):
-        context=self.final_context(attempt_id)
+        from .review_data import step_catalog
         findings=result.get('findings',[])
-        for step in context:
-            for earlier in step['findings']:
-                if earlier not in findings:raise MPresError('Final audience findings dropped an earlier student/production-language issue')
+        for entry in step_catalog(self.service,attempt_id):
+            if entry['finding'] not in findings:
+                raise MPresError('Normalized final audience result dropped an accepted earlier finding')

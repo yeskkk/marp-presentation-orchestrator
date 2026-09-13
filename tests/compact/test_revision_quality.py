@@ -31,7 +31,7 @@ def test_source_checks_without_process_documents(compact_root):
     service=prepare(compact_root); aid=revision(service)
     q=Quality(service.task);result=q.inspect(aid)
     assert result['state']=='passed'
-    assert len(service.store.rows('SELECT * FROM checks'))==3
+    assert {r['name'] for r in service.store.rows('SELECT * FROM checks')}=={'source','math_source','asset_boundary','pages'}
     assert not list(service.task.rglob('SELF-CHECK.md'))
     with pytest.raises(MPresError,match='full'): q.require_pass(aid,'full')
 

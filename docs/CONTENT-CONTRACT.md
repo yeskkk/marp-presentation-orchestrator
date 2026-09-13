@@ -83,3 +83,10 @@ PDF 模型视觉、截图或 OCR 不是默认纠错路径；写作者修正文�
 四份 JSON Schema 在 `src/mpres/control/schemas/`。顶层未知字段会被拒；条件性要求取自请求。
 结果中的 feedback_checks 引用实际 slide_id 与 quote；没有执行到的下游门禁不宣称已完成。
 findings 由 reviewer 提，resolutions 由作者处置，状态由 runner 登记；三者不可互换。
+
+## 阶段规模与机械严重性（v0.8.4）
+
+预计上限100，允许写作编辑浮动；运行中121–130 warning、>130 error，新正式PDF最多120。
+全稿所有页面计数。检查保留原始payload并生成带code/severity/message的issues；执行状态另存。
+只有warning不阻断，未完成/明确error仍阻断相应动作。最终门禁的warning记录直接随PDF/MD交付，
+不进入投影正文；旧门禁未记警告时不得显示为零。历史已发布修订保持，不由升级强制拆稿。

@@ -143,7 +143,7 @@ class Feedback:
         seen=set()
         from .service import require_text
         for check in checks:
-            if not isinstance(check,dict) or set(check)!={'id','version','status','explanation','evidence'}:
+            if not isinstance(check,dict) or set(check)-{'id','version','status','explanation','evidence','finding_refs'} or not {'id','version','status','explanation','evidence'}<=set(check):
                 raise MPresError('Feedback check requires id, version, status, explanation, evidence')
             key=(check['id'],check['version'])
             if key not in expected or key in seen: raise MPresError('Unknown, duplicate or stale feedback check')
@@ -157,6 +157,11 @@ class Feedback:
             if check['status']=='satisfied' and not evidence:
                 raise MPresError('Satisfied feedback needs actual slide excerpts')
             cited=set()
+            if check.get('finding_refs'):
+                from .review_data import referenced_findings
+                if job['kind']!='review' or check['status']!='issue':
+                    raise MPresError('Finding links are review-issue evidence only')
+                cited.update(sid for f in referenced_findings(job,result,check['finding_refs']) for sid in f['slide_ids'])
             for e in evidence:
                 if not isinstance(e,dict) or set(e)!={'slide_id','quote'}: raise MPresError('Evidence requires slide_id and quote')
                 require_text(e['quote'],'Exact source excerpt')

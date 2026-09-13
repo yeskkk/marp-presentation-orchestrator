@@ -51,3 +51,17 @@ learning_loss_if_removed、reason、finding_index。keep 使用 null；remove/re
 worker 只使用当前 result_schema、required_result 与真实任务证据，不读取校准样例作为工作方法。
 具体正反例在 tests/fixtures/semantic，仅供源码维护和回归验证，详见开发目录中的语义维护说明。
 它们既不是课件模板，也不构成真实作业的 ID、阅读或执行证明。
+
+## Review problems are stored once (v0.8.5)
+
+Review findings are canonical rows in SQLite. Accepted attempt results now store `finding_ids` and a
+storage schema marker; this internal representation is not a worker output schema. Original worker
+results are retained as immutable event evidence. Previous accepted results are not rewritten.
+Audience synthesis supplies step summaries and scoped IDs, not all earlier problem bodies. The engine
+merges every accepted finding automatically; the model returns only new findings. Exact duplicates
+coalesce; similar-but-different findings are never silently merged.
+
+A feedback issue or repair needs_decision may use `finding_refs` instead of restating message,
+quote and slide IDs. References are `step:<sequence>:<one-based-index>` or `new:<one-based-index>`.
+They resolve inside the same review attempt and source. `satisfied` still requires real evidence;
+links cannot invent severity, evidence or successful work. Legacy full results remain accepted.

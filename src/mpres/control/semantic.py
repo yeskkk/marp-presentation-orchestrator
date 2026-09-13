@@ -48,6 +48,8 @@ def gate_excerpt(report: dict) -> dict:
         'gate_id': report.get('gate_id'), 'artifact_id': report.get('artifact_id'),
         'success': report.get('success'), 'failure_kind': report.get('failure_kind'),
         'errors': report.get('errors', []),
+        'issues': report.get('issues', []),
+        'warning_count': report.get('warning_count'),
         'checks': {name: {key: detail[key] for key in ('success','errors','warnings','slide_count','page_count') if key in detail}
                    for name, detail in report.get('checks', {}).items()},
     }

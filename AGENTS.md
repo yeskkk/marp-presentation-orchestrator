@@ -4,6 +4,7 @@
 
 ## 首次建立任务上下文
 
+每次交互启动先询问是否修改 TASK。start.sh 已通过本地选择告知本次方向时，不再向用户重复同一问题；手动开启 Codex 时由 main 询问。
 先理解用户当前是新建、修改还是继续任务，不能启动后默认继续生产。
 任务及本次方向确定后，main、delegated planner 和所有 worker 在实质规划／写作／审核前，
 完整读一次该任务 TASK.md。新建任务先形成任务草案；修改任务先识别用户修改意图，
@@ -39,6 +40,7 @@ worker 使用包内自己的指南和结果 schema，不扫描全部 skills、�
 ./start.sh 启动交互 Codex，--cli 或 mpres 执行控制命令；手动开启 Codex 走同一入口。
 未知外部执行先对账，不盲重发；没有实际 close 证据不释放容量。不得伪造用户同意。
 交付仅引用 delivery_package.state=ready 的 entries[].pdf 和 .markdown；目录不是 ZIP。
+交付时同时提供 entries[].warning_report.path 及其 unresolved_count；未知分类写明未知，不能当零条。警告报告是用户交付说明，不进入学生课件。
 README 的实现边界必须如实保留，测试替身不冒充真实教学或原生浏览器验收。
 
 五个审核 skill 对等独立，但 .codex/agents 仍用 specialist-reviewer 按指定通道选取。

@@ -36,7 +36,7 @@ def _executable(name: str) -> str | None:
     return shutil.which(name)
 
 
-def task_runtime(root: Path, slug: str) -> dict:
+def task_runtime(root: Path, slug: str, *, editing: bool = False) -> dict:
     """Read the selected task's planner runtime without migrating or writing it."""
     safe_id(slug, label='task slug')
     task = root / 'tasks' / slug
@@ -48,7 +48,6 @@ def task_runtime(root: Path, slug: str) -> dict:
     for name in ('TASK.md','task.yaml','TASK-RUNTIME-PROFILE.yaml'):
         if not (task/name).is_file() or (task/name).is_symlink():
             raise MPresError(f'Missing or unsafe task input: {name}')
-    runtime = normalize_runtime_profile(read_yaml(task/'TASK-RUNTIME-PROFILE.yaml'))
     db = task/'.mpres/task.sqlite3'
     if not db.is_file():
         raise MPresError('Selected task is not a compact task; import legacy tasks before launching')
@@ -59,17 +58,35 @@ def task_runtime(root: Path, slug: str) -> dict:
     conn.row_factory = sqlite3.Row
     try:
         row = conn.execute('SELECT configs.* FROM configs JOIN task ON configs.id=task.config_id').fetchone()
+        changed = []
         if row is not None:
+            # The edit branch uses the CONFIRMED profile even if disk YAML is
+            # malformed. A task-edit request never authorizes a runtime change.
+            runtime = json.loads(row['runtime_json'])
             from mpres.control.service import settings_document
-            if (json.loads(row['runtime_json']) != runtime or
-                json.loads(row['settings_json']) != settings_document(read_yaml(task/'task.yaml')) or
-                row['task_text'] != (task/'TASK.md').read_text(encoding='utf-8')):
-                raise MPresError('Confirmed task configuration changed; restore it before launching')
+            expected = {'TASK.md': row['task_text'], 'task.yaml': json.loads(row['settings_json']),
+                        'TASK-RUNTIME-PROFILE.yaml': runtime}
+            for name, value in expected.items():
+                try:
+                    actual = ((task/name).read_text(encoding='utf-8') if name == 'TASK.md' else
+                              settings_document(read_yaml(task/name)) if name == 'task.yaml' else
+                              normalize_runtime_profile(read_yaml(task/name)))
+                except Exception as exc:
+                    if not editing:
+                        raise MPresError(f'Confirmed task configuration changed or is invalid ({name}); restart and choose 修改任务要求') from exc
+                    changed.append(name)
+                    continue
+                if actual != value:
+                    changed.append(name)
+            if changed and not editing:
+                raise MPresError('Confirmed task configuration changed; restart and choose 修改任务要求, or restore the confirmed files')
+        else:
+            runtime = normalize_runtime_profile(read_yaml(task/'TASK-RUNTIME-PROFILE.yaml'))
     except sqlite3.Error as exc:
         raise MPresError(f'Cannot read task confirmation: {exc}') from exc
     finally:
         conn.close()
-    return {**resolve_runtime(runtime,'main-planner'), 'confirmed':row is not None, 'task':slug}
+    return {**resolve_runtime(runtime,'main-planner'), 'confirmed':row is not None, 'task':slug, 'changed_inputs':changed, 'runtime_source':'confirmed_snapshot' if row is not None else 'unconfirmed_draft'}
 
 
 def preflight(root: Path, *, slug: str | None = None) -> dict:
@@ -119,8 +136,44 @@ def preflight(root: Path, *, slug: str | None = None) -> dict:
     if figures:
         warnings.append('Optional drawing modules missing: '+', '.join(figures)+'; install .[figures] before plotting')
     return {'success':not errors,'root':str(root),'python':sys.executable,'codex':codex,
-            'runtime':runtime,'render_dependencies_present':render_ready,
+            'runtime':runtime,'codex_flags':[flag for flag in ('--cd','--model','--config') if flag in help_text], 'render_dependencies_present':render_ready,
             'native_render_verified':False,'errors':errors,'warnings':warnings}
+
+
+def choose_task(root: Path, selected: str | None, read=None) -> str | None:
+    """Local routing only; no memory, model call, database write or default consent."""
+    if selected:
+        safe_id(selected, label='task slug')
+        return selected
+    read = read or input
+    folder = root/'tasks'
+    tasks = sorted(p.name for p in folder.iterdir() if p.is_dir() and not p.is_symlink() and (p/'.mpres/task.sqlite3').is_file()) if folder.is_dir() else []
+    if not tasks:
+        return None
+    print('选择本次任务（0：新建/进入会话后再选择；q：退出）')
+    for index, slug in enumerate(tasks, 1):
+        print(f'[{index}] {slug}')
+    while True:
+        value = read('TASK_SELECT> ').strip()
+        if value.lower() == 'q':
+            raise EOFError('User cancelled task selection')
+        if value == '0':
+            return None
+        if value.isdigit() and 1 <= int(value) <= len(tasks):
+            return tasks[int(value)-1]
+        print('请输入一个列出的编号；空输入不表示同意继续。')
+
+
+def choose_intent(slug: str | None, read=None) -> str:
+    read = read or input
+    subject = f'tasks/{slug}/TASK.md' if slug else '本次任务要求（尚未选择或创建 TASK.md）'
+    print(f'本次启动是否修改 {subject}？')
+    print('[1] 修改/先规划任务要求  [2] 不修改，进入会话  [3] 退出')
+    while True:
+        value = read('TASK_INTENT> ').strip()
+        if value in {'1','2','3'}:
+            return {'1':'edit', '2':'keep', '3':'exit'}[value]
+        print('必须明确选择1、2或3；空输入不会自动续跑。')
 
 
 def build_command(root: Path, report: dict, tail: list[str]) -> list[str]:
@@ -146,7 +199,14 @@ def build_command(root: Path, report: dict, tail: list[str]) -> list[str]:
             # Arbitrary positional strings might already be a prompt; require a
             # clear route rather than merge it into a second positional prompt.
             raise MPresError('With --task use only value-free Codex flags (e.g. --no-alt-screen); give instructions interactively')
-        command += [f"Selected task: tasks/{rt['task']}. First establish whether the user wants to amend the task, plan, or resume; do not automatically start production. Once the task and current direction are established, read TASK.md in full once in this session before substantive role work. If already read, use that context and only subsequent authorized changes. Follow AGENTS.md and inspect actual state; never infer user confirmation."]
+        intent=report.get('startup_intent')
+        if intent == 'edit':
+            direction='The local user chose to amend TASK requirements. Do not ask that same startup question again and do not dispatch production. Disk drafts are not authorization; the selected model remains the confirmed runtime.'
+        elif intent == 'keep':
+            direction='The local user chose to keep TASK requirements. Do not ask that same startup question again; this is NOT approval of a new delivery batch, repair scope or permission.'
+        else:
+            direction='First establish whether the user wants to amend the task, plan, or resume; do not automatically start production.'
+        command += [f"Selected task: tasks/{rt['task']}. {direction} Do not automatically start production. Once the task and current direction are established, read TASK.md in full once in this session before substantive role work. If already read, use that context and only subsequent authorized changes. Follow AGENTS.md and inspect actual state; never infer user confirmation."]
     return command
 
 
@@ -175,16 +235,31 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if not (root/'AGENTS.md').is_file() or not (root/'pyproject.toml').is_file():
             raise MPresError('Launch from an intact project source tree')
-        report = preflight(root,slug=parsed.task)
         tail = parsed.codex_args
         if tail[:1] == ['--']:tail=tail[1:]
         if parsed.check:
+            report = preflight(root,slug=parsed.task)
             print(json.dumps(report,ensure_ascii=False,indent=2))
             return 0 if report['success'] else 2
-        if report['errors']:
-            raise MPresError('\n'.join(report['errors']))
         if not sys.stdin.isatty() or not sys.stdout.isatty():
             raise MPresError('Interactive launch requires a terminal. Use --check or --cli in scripts; no automatic noninteractive model call.')
+        # Environment checks do not read/validate a possibly edited TASK first.
+        report = preflight(root)
+        if report['errors']:
+            raise MPresError('\n'.join(report['errors']))
+        slug = choose_task(root, parsed.task)
+        intent = choose_intent(slug)
+        if intent == 'exit':
+            print('已退出；未启动模型，未修改任务。')
+            return 0
+        report['startup_intent'] = intent
+        if slug:
+            report['runtime'] = task_runtime(root, slug, editing=intent=='edit')
+            for flag in ('--model','--config'):
+                if flag not in report['codex_flags']:
+                    raise MPresError(f'Installed Codex does not advertise {flag}; cannot enforce the selected task runtime')
+            if report['runtime']['changed_inputs']:
+                print('未确认的文件改动：'+', '.join(report['runtime']['changed_inputs'])+'；仍使用数据库已确认的模型与强度。',file=sys.stderr)
         command = build_command(root,report,tail)
         for message in report['warnings']:
             print('Preflight: '+message,file=sys.stderr)
@@ -194,7 +269,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print('Planning session uses your Codex configuration. Before production choose a task and reopen with --task.',file=sys.stderr)
         env={**os.environ,'MPRES_ROOT':str(root)}
-        if parsed.task:env['MPRES_TASK_SLUG']=parsed.task
+        env['MPRES_STARTUP_INTENT']=intent
+        if slug:env['MPRES_TASK_SLUG']=slug
         else:env.pop('MPRES_TASK_SLUG',None)
         if os.name == 'posix':
             os.chdir(root)
@@ -202,6 +278,9 @@ def main(argv: list[str] | None = None) -> int:
         # Native Windows does not replace the console process; inherited handles
         # and the exact child exit code are preserved instead.
         return subprocess.call(command,cwd=root,env=env)
+    except (EOFError,KeyboardInterrupt):
+        print('启动已取消；未把中断解释为继续授权。',file=sys.stderr)
+        return 0
     except (MPresError,OSError,sqlite3.Error) as exc:
         print(f'Start failed: {exc}',file=sys.stderr)
         return 2

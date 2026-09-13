@@ -104,3 +104,16 @@ python scripts/verify_theme.py --output /path/to/new-theme-evidence
 
 不要在未授权的课件任务里安装软件、执行作者脚本或改审批策略。启动器支持参数不证明
 宿主已接好真实 create/run/usage。独立测试替身只验证协议，不冒充真实模型、登录或原生 PDF。
+
+## 交付时核对警告
+
+`workflow status`与`task status`的`delivery_package.entries[].warning_report`提供数量及文件路径。
+新发布在课件目录提供WARNINGS.md/json；零条也有记录。旧发布未记录时数量为null。
+报告来自当前gate；不可编辑报告来消除warning，修改正文后重新检查才产生新修订的记录。
+
+## 每次交互启动的任务选择
+
+`./start.sh --task SLUG` 每次真实询问是否修改 TASK。修改分支不是恢复旧配置的要求；它允许
+打开待改文稿，固定使用数据库确认 runtime。沿用分支严格核对，取消/EOF 不执行 Codex。
+纯机械命令保持无交互。选择“不修改”不会自动确认新的课件批次，选择“修改”不等于批准改完后的内容。
+启动器不结束已经运行的外部作业；有在途作业时应先在会话中查询真实状态，不能伪造取消。

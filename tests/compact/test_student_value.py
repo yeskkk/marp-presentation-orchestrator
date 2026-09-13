@@ -88,7 +88,11 @@ def test_each_candidate_has_explicit_learning_loss_and_route(compact_root,native
     assert s.store.rows('SELECT * FROM artifacts')==before
     final=r.tick()['requests'][0]
     context=final['packet']['audience_reading']
-    assert any(step.get('attention_checks') for step in context)
+    # Raw reading decisions remain in SQLite; the final model must not recopy them.
+    assert all('attention_checks' not in step for step in context)
+    stored=s.store.rows('SELECT result_json FROM audience_steps WHERE attempt_id=? AND state=\'completed\'',(final['attempt_id'],))
+    assert any(json.loads(row['result_json']).get('attention_checks') for row in stored)
+    assert any(step.get('finding_refs') for step in context)
     assert len(s.store.rows("SELECT * FROM jobs WHERE channel='audience'"))==1
 
 

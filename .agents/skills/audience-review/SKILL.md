@@ -50,7 +50,8 @@ runner 只发当前阶段，完整工作方法在首次阅读提供，之后用 
 沿用已经读过的 TASK，不因换段、阶段或汇总重读全文。不要自行开启三个线程或把全部步骤同时做完。
 分段结果按本次 schema 返回精确 phase/read_slide_ids 及必要 observations/findings；
 存在 attention_candidates 时逐项给具体处置和删除损失，删改要对应同页 finding。
-最终 run 返回 review-result，按实际要求保留前序 findings，补齐本轮反馈判断，不制造正面观察配额。
+最终 run 只返回新的 findings，已接受的前序发现由程序合并；通过请求提供的 finding_refs
+关联反馈与返修项，不逐字搬运旧结果。补齐真实判断，不制造正面观察配额。
 
 ## 7. 发现的质量与边界
 

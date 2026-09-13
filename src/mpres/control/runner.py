@@ -466,7 +466,7 @@ class Runner:
                     repair=bool(packet.get('repair_scope')),
                     introduce=not audience.guidance_introduced(attempt['id'])))
                 packet['audience_reading']=audience.final_context(attempt['id'])
-                packet['instructions']='Final historical-feedback comparison and finding synthesis. Preserve the earlier student/production-language findings verbatim; do not claim author self-reports are evidence. Do not re-review author repairs.'
+                packet['instructions']='Final historical-feedback comparison. Earlier accepted findings are merged by the control plane automatically. Return only NEW findings; link requirements via finding_refs (step:sequence:index or new:index, indices start at 1). Do not copy existing messages; do not claim author self-reports are evidence. Do not re-review author repairs.'
         else:
             packet={'kind':job['kind'],'presentation':job['presentation'],
                     'channel':job['channel'],'historical_feedback':brief['feedback'],

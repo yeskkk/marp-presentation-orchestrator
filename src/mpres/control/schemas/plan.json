@@ -59,6 +59,11 @@
                 }
               }
             }
+          },
+          "estimated_pages": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Estimated final page count including cover, examples, answers and appendices. Plan <=100, reserve editing headroom."
           }
         }
       },
