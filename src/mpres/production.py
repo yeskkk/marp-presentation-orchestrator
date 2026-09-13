@@ -158,11 +158,11 @@ def _ensure_role_root(task: Path, directory_name: str, logical_role: str) -> Pat
 
 def _templates(root: Path) -> dict[str, str]:
     mapping = {
-        "author": "templates/assignments/TASK-author-coordinator.template.md",
-        "lesson": "templates/assignments/TASK-lesson-author.template.md",
-        "revision": "templates/assignments/TASK-deck-revision-author.template.md",
-        "header": "templates/presentation-header.template.md",
-        "section": "templates/section.template.md",
+        "author": "compat/legacy/templates/assignments/TASK-author-coordinator.template.md",
+        "lesson": "compat/legacy/templates/assignments/TASK-lesson-author.template.md",
+        "revision": "compat/legacy/templates/assignments/TASK-deck-revision-author.template.md",
+        "header": "compat/legacy/templates/presentation-header.template.md",
+        "section": "compat/legacy/templates/section.template.md",
     }
     return {name: (root / path).read_text(encoding="utf-8") for name, path in mapping.items()}
 
@@ -234,7 +234,7 @@ def _write_structured_templates(
     unit_yaml = _content_unit_yaml(units, task_kind=task_kind)
     report = ScaffoldReport()
     for destination, template_name in structured.items():
-        text = (root / "templates" / "structured" / template_name).read_text(encoding="utf-8")
+        text = (root / "compat" / "legacy" / "templates" / "structured" / template_name).read_text(encoding="utf-8")
         text = _replace(
             text,
             {
@@ -714,7 +714,7 @@ def prepare_unit_workspace(
         )
     )
     geogebra_template = (
-        root / "templates" / "structured" / "GEOGEBRA-UNIT-RESOURCES.template.yaml"
+        root / "compat" / "legacy" / "templates" / "structured" / "GEOGEBRA-UNIT-RESOURCES.template.yaml"
     ).read_text(encoding="utf-8")
     report.merge(
         ensure_text(
@@ -805,7 +805,7 @@ def prepare_unit_workspace(
         )
     )
     self_check = (
-        root / "templates" / "structured" / "SELF-CHECK.template.md"
+        root / "compat" / "legacy" / "templates" / "structured" / "SELF-CHECK.template.md"
     ).read_text(encoding="utf-8")
     report.merge(
         ensure_text(

@@ -25,10 +25,10 @@ def test_model_coordinator_roles_and_configs_are_removed(project_root: Path) -> 
     assert not (project_root / ".codex" / "agents" / "review-coordinator.toml").exists()
     assert not (project_root / ".codex" / "agents" / "release-coordinator.toml").exists()
     assert not (
-        project_root / "templates" / "assignments" / "TASK-review-coordinator.template.md"
+        project_root / "compat" / "legacy" / "templates" / "assignments" / "TASK-review-coordinator.template.md"
     ).exists()
     assert not (
-        project_root / "templates" / "assignments" / "TASK-release-coordinator.template.md"
+        project_root / "compat" / "legacy" / "templates" / "assignments" / "TASK-release-coordinator.template.md"
     ).exists()
     with pytest.raises(MPresError, match="Unknown role"):
         assignment_path(project_root, "unused", "review-coordinator", "p01")
@@ -55,12 +55,12 @@ def test_freeze_registers_runtime_free_aggregation_job(project_root: Path) -> No
 
 def test_structured_job_templates_are_runtime_free(project_root: Path) -> None:
     review = yaml.safe_load(
-        (project_root / "templates" / "structured" / "REVIEW-AGGREGATION-JOB.template.yaml")
+        (project_root / "compat" / "legacy" / "templates" / "structured" / "REVIEW-AGGREGATION-JOB.template.yaml")
         .read_text(encoding="utf-8")
         .replace("[[PRESENTATION_ID]]", "p01")
     )
     release = yaml.safe_load(
-        (project_root / "templates" / "structured" / "RELEASE-JOB.template.yaml")
+        (project_root / "compat" / "legacy" / "templates" / "structured" / "RELEASE-JOB.template.yaml")
         .read_text(encoding="utf-8")
         .replace("[[PRESENTATION_ID]]", "p01")
     )

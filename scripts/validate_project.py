@@ -31,6 +31,8 @@ def main():
         if theme_copy.read_bytes()!=theme:errors.append(f'Noncanonical project theme copy: {theme_copy}')
     if not (root/'src/mpres/source_policy.py').is_file():errors.append('Missing mandatory source contract')
     if '--html"' in (root/'src/mpres/rendering.py').read_text():errors.append('Author HTML enabled in rendering')
+    from check_documentation import check as check_documentation
+    errors.extend(check_documentation(root)['errors'])
     print(json.dumps({'version':version,'success':not errors,'errors':errors},indent=2))
     return 1 if errors else 0
 if __name__=='__main__':raise SystemExit(main())

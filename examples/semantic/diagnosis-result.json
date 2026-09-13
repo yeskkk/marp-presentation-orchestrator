@@ -1,0 +1,48 @@
+{
+  "summary": "代表稿第一页混入备课目标；其他目标稿尚未检查。",
+  "hypotheses": [
+    {
+      "explanation": "把 brief 的规划动词直接当作学生开场，削弱问题动机。",
+      "slide_ids": [
+        "p01-l01-s01"
+      ]
+    }
+  ],
+  "confidence": "high",
+  "affected_slide_ids": [
+    "p01-l01-s01"
+  ],
+  "recommended_action": "scoped_revision",
+  "expansion": {
+    "problem_definition": "学生页承载制作/备课记录，而非帮助当前数学理解。",
+    "variants": [
+      {
+        "id": "planner-copy",
+        "description": "目标动词直接上屏",
+        "detection": "找只列定义/论证动作而无实际问题的句子",
+        "correction": "用本页方程的具体问题替代，保留概念含义",
+        "evidence_status": "observed",
+        "slide_ids": [
+          "p01-l01-s01"
+        ]
+      }
+    ],
+    "related_problems": [
+      {
+        "id": "teacher-timing",
+        "description": "核心时长和先修清单外露",
+        "detection": "在未读目标中排查时长/先修字段，不预先认定存在",
+        "correction": "移至备课信息；必要基础变成实际回顾题",
+        "evidence_status": "possible",
+        "slide_ids": []
+      }
+    ],
+    "non_goals": [
+      "不删除正确数学条件或必要来源，不顺手改未指定课件"
+    ],
+    "acceptance_criteria": [
+      "学生能从具体问题开始学习，不必阅读制作安排"
+    ],
+    "source_needs": []
+  }
+}

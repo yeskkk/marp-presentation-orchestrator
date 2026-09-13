@@ -9,7 +9,8 @@
   "properties": {
     "summary": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "本次真实教学/审核/诊断所得，不是已通过门禁的状态声明。"
     },
     "findings": {
       "type": "array",
@@ -101,7 +102,8 @@
             }
           }
         }
-      }
+      },
+      "description": "按实际请求的全部反馈 id/version 回应，引用真实页内摘录。"
     },
     "repair_checks": {
       "type": "array",
@@ -139,7 +141,8 @@
             "uniqueItems": true
           }
         }
-      }
+      },
+      "description": "确认返修的问题族检查；身份与范围来自 repair_scope。"
     }
   },
   "$defs": {
@@ -285,5 +288,6 @@
         }
       }
     }
-  }
+  },
+  "description": "单一通道的首次审核结果；不改源稿，不把作者处置当独立验证。"
 }

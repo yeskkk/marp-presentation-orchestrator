@@ -8,7 +8,8 @@
   "properties": {
     "summary": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "本次真实教学/审核/诊断所得，不是已通过门禁的状态声明。"
     },
     "resolutions": {
       "type": "array",
@@ -37,7 +38,8 @@
           }
         }
       },
-      "minItems": 0
+      "minItems": 0,
+      "description": "仅本轮 finding 修订需要；作者说明相关修改与复算，不是 reviewer 验修。"
     },
     "teaching_notes": {
       "type": "array",
@@ -45,7 +47,8 @@
         "type": "string",
         "minLength": 1
       },
-      "minItems": 0
+      "minItems": 0,
+      "description": "教师/制作者说明留内部，不投影到学生页。"
     },
     "open_questions": {
       "type": "array",
@@ -53,7 +56,8 @@
         "type": "string",
         "minLength": 1
       },
-      "minItems": 0
+      "minItems": 0,
+      "description": "具体资料、范围或语义待决；不要用自证页面掩盖缺口。"
     },
     "feedback_checks": {
       "type": "array",
@@ -109,7 +113,8 @@
             }
           }
         }
-      }
+      },
+      "description": "按实际请求的全部反馈 id/version 回应，引用真实页内摘录。"
     },
     "repair_checks": {
       "type": "array",
@@ -147,7 +152,8 @@
             "uniqueItems": true
           }
         }
-      }
+      },
+      "description": "确认返修的问题族检查；身份与范围来自 repair_scope。"
     },
     "slide_changes": {
       "type": "array",
@@ -183,7 +189,9 @@
             "minLength": 1
           }
         }
-      }
+      },
+      "description": "仅获准删/并时提供，累计对应原返修稿；保留页不重命名。"
     }
-  }
+  },
+  "description": "作者语义结果。真实条件义务来自请求；状态/回执/源码路径不在此对象内。"
 }

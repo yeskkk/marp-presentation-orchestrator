@@ -26,7 +26,7 @@ def _structured_job_template(
     presentation_id: str,
     fallback: dict[str, Any],
 ) -> dict[str, Any]:
-    path = root / "templates" / "structured" / filename
+    path = root / "compat" / "legacy" / "templates" / "structured" / filename
     if not path.is_file():
         return fallback
     value = yaml.safe_load(

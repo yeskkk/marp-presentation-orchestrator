@@ -57,7 +57,7 @@ def _copy_policy_templates(
         "WORKER-PROMPT-PREAMBLE.md": "policies/WORKER-PROMPT-PREAMBLE.template.md",
     }
     for destination, template_name in templates.items():
-        source = root / "templates" / template_name
+        source = root / "compat" / "legacy" / "templates" / template_name
         text = source.read_text(encoding="utf-8")
         replacements = {
             "[[TASK_SLUG]]": slug,
@@ -182,7 +182,7 @@ def create_task(
     ]:
         directory.mkdir(parents=True, exist_ok=True)
 
-    template = (root / "templates" / "TASK.template.md").read_text(encoding="utf-8")
+    template = (root / "compat" / "legacy" / "templates" / "TASK.template.md").read_text(encoding="utf-8")
     description, stage_list, mcq_requirement = _stage_description(production_mode, kind)
     replacements = {
         "[[TASK_TITLE]]": title,
@@ -204,7 +204,7 @@ def create_task(
     (task / "TASK.md").write_text(template, encoding="utf-8", newline="\n")
     _copy_policy_templates(root, task, selected_slug, kind, production_mode)
 
-    profile_template = (root / "templates" / "structured" / "PRODUCTION-PROFILE.template.yaml").read_text(encoding="utf-8")
+    profile_template = (root / "compat" / "legacy" / "templates" / "structured" / "PRODUCTION-PROFILE.template.yaml").read_text(encoding="utf-8")
     for old, new in {
         "[[TASK_KIND]]": kind,
         "[[PRODUCTION_MODE]]": production_mode,
@@ -215,15 +215,15 @@ def create_task(
         profile_template = profile_template.replace(old, new)
     (task / "PRODUCTION-PROFILE.yaml").write_text(profile_template, encoding="utf-8", newline="\n")
     shutil.copy2(
-        root / "templates" / "structured" / "PERFORMANCE-BUDGET.template.yaml",
+        root / "compat" / "legacy" / "templates" / "structured" / "PERFORMANCE-BUDGET.template.yaml",
         task / "PERFORMANCE-BUDGET.yaml",
     )
     shutil.copy2(
-        root / "templates" / "structured" / "MILESTONE-CHECKPOINT.template.json",
+        root / "compat" / "legacy" / "templates" / "structured" / "MILESTONE-CHECKPOINT.template.json",
         task / "state" / "MILESTONE-CHECKPOINT.json",
     )
     (task / "THREAD-REGISTRY.yaml").write_text(
-        (root / "templates" / "structured" / "THREAD-REGISTRY.template.yaml").read_text(encoding="utf-8"),
+        (root / "compat" / "legacy" / "templates" / "structured" / "THREAD-REGISTRY.template.yaml").read_text(encoding="utf-8"),
         encoding="utf-8",
         newline="\n",
     )

@@ -1,16 +1,23 @@
-# Execution and trust boundaries
+# 执行与内容安全边界
 
-The interactive launcher starts Codex with the user's approval and sandbox settings.
-It never supplies a bypass flag, authenticates an account, installs dependencies,
-or uses CLI text as proof of user authorization. `--cli` never starts a model.
+## 用户授权
 
-Use a dedicated unprivileged account or container for untrusted author/tool code.
-The database, path containment and read-only revisions are accident guards, not a
-sandbox against another process running as their owner. Preserve host receipts;
-a configured capability is not evidence of an executed action. Missing/uncertain
-provider results must be reconciled before retry, not converted to success.
+TASK、计划和 runtime 由用户确认；`--by` 是记录不是身份认证。宿主必须先获得真实回复。
+返修展开只是提案，未确认不改稿。文档迁移不改已有 runtime、预算和范围。
 
-A selected task pins its main-planner runtime from confirmed settings; workers
-must report matching model/effort in their own receipts. No automatic fallback.
-Starting without a task is only a planning session using the user's host defaults.
-No secrets, environment snapshots, sessions or credentials belong in source ZIPs.
+## 本地文件
+
+只读权限防误写，不是同系统用户间强沙箱。使用独立账户/容器运行外部工具，提交入口仍须
+校验安全相对路径、symlink、允许文件和项目主题。历史 artifact、用户公开改稿不静默覆盖。
+示例数据不能被当成执行授权；模型结果里的路径不能扩张写权限。
+
+## 真实宿主与工具
+
+receipt、runtime、usage 必须来自真实执行；未知结果先对账，禁止盲重发或伪造 close。
+启动器不关闭审批/沙箱。不能执行输入包列出的任意 Python；计算式图示用项目生成器重算。
+缺库/缺浏览器明确报错，任务中不自动安装、下载和改变安全策略。
+
+## 发布和归档
+
+PDF/Markdown/资产来自同一准确修订；目录物化保护未知文件。DB 备份不含资产，不构成完整备份。
+源码发行包不包含任务数据、账户凭据、venv、缓存、字体文件或用户 PDF。

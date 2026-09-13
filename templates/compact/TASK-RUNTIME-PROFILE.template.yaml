@@ -4,9 +4,9 @@ user_editable_until_task_confirmation: true
 immutable_after_task_confirmation: true
 runtime_changes_during_task: forbidden
 
-# The user edits this task-local file before confirming TASK.md.
-# Agents may read these choices but must never choose, escalate, downgrade,
-# substitute, or rewrite them during production.
+# 用户确认前自行修改；模型标识以实际宿主接受值为准，不由 agent 猜测。
+# 三类默认值及可选细分在同一文件。运行中禁止自动切换、升降强度或重试时替代。
+# 本文件不授权联网、写文件或跳过门禁。
 defaults:
   planner:
     model: gpt-5.6-sol
@@ -18,12 +18,7 @@ defaults:
     model: gpt-5.6-sol
     reasoning_effort: low
 
-# Optional user-authored refinements. These are resolved deterministically.
+# 可选细分由用户填写，不填时继承默认。解析器不自动挑更强/更便宜模型。
 role_overrides: {}
-# Example chosen by the user before confirmation:
-# role_overrides:
-#   diagnostic-reviewer:
-#     model: luna
-#     reasoning_effort: medium
 reviewer_channel_overrides: {}
 presentation_overrides: {}

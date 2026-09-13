@@ -1,0 +1,21 @@
+{
+  "summary": "说明共同解须满足每个方程，并以 (1,1) 与 (2,0) 比较同时满足和只满足部分条件。",
+  "teaching_notes": [
+    "本文件仅演示结果形状；教学安排不放入学生页。"
+  ],
+  "open_questions": [],
+  "feedback_checks": [
+    {
+      "id": "standard-terminology",
+      "version": 1,
+      "status": "satisfied",
+      "explanation": "第二页直接说明方程组解的数学含义，并以代回区分部分满足。",
+      "evidence": [
+        {
+          "slide_id": "p01-l01-s02",
+          "quote": "解是同时满足方程组中每个方程的一组数。"
+        }
+      ]
+    }
+  ]
+}

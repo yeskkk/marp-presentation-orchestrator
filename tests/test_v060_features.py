@@ -328,7 +328,7 @@ def test_main_agent_is_exclusive_only_for_task_md(project_root: Path) -> None:
     assert "main agent alone writes or revises the top-level TASK.md" in delegated[
         "developer_instructions"
     ]
-    task_template = (project_root / "templates" / "TASK.template.md").read_text(
+    task_template = (project_root / "compat" / "legacy" / "templates" / "TASK.template.md").read_text(
         encoding="utf-8"
     )
     assert "其它 planner 工作均可委派" in task_template

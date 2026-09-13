@@ -126,10 +126,10 @@ def _scaffold_specialist_assignments(
 
     task = task_path(root, slug)
     assignment_template = (
-        root / "templates" / "assignments" / "TASK-specialist-reviewer.template.md"
+        root / "compat" / "legacy" / "templates" / "assignments" / "TASK-specialist-reviewer.template.md"
     ).read_text(encoding="utf-8")
     report_template = (
-        root / "templates" / "review" / "review-report.template.md"
+        root / "compat" / "legacy" / "templates" / "review" / "review-report.template.md"
     ).read_text(encoding="utf-8")
     created: list[str] = []
     preserved: list[str] = []
@@ -330,7 +330,7 @@ def request_review(
     review_root = _review_root(root, slug, presentation_id)
     review_plan = review_root / "REVIEW-PLAN.yaml"
     plan_text = (
-        root / "templates" / "structured" / "REVIEW-PLAN.template.yaml"
+        root / "compat" / "legacy" / "templates" / "structured" / "REVIEW-PLAN.template.yaml"
     ).read_text(encoding="utf-8")
     for old, new in {
         "[[PRESENTATION_ID]]": presentation_id,
@@ -696,7 +696,7 @@ def aggregate_round(
         },
     )
     checklist_path = source / "AUTHOR-MODIFICATION-CHECKLIST.yaml"
-    template = (root / "templates" / "structured" / "AUTHOR-MODIFICATION-CHECKLIST.template.yaml").read_text(encoding="utf-8").replace("[[PRESENTATION_ID]]", presentation_id)
+    template = (root / "compat" / "legacy" / "templates" / "structured" / "AUTHOR-MODIFICATION-CHECKLIST.template.yaml").read_text(encoding="utf-8").replace("[[PRESENTATION_ID]]", presentation_id)
     checklist_path.write_text(template, encoding="utf-8", newline="\n")
     decision = {
         "schema_version": 5,
@@ -974,7 +974,7 @@ def finalize_release(root: Path, slug: str, presentation_id: str) -> dict[str, A
         retrospective = cycle_root / "MAINTENANCE-RETROSPECTIVE.md"
         if not retrospective.is_file():
             template = (
-                root / "templates" / "structured" / "MAINTENANCE-RETROSPECTIVE.template.md"
+                root / "compat" / "legacy" / "templates" / "structured" / "MAINTENANCE-RETROSPECTIVE.template.md"
             ).read_text(encoding="utf-8")
             for old_value, new_value in {
                 "[[PRESENTATION_ID]]": presentation_id,
@@ -1124,7 +1124,7 @@ def build_context_bundle(
         shutil.rmtree(bundle)
     bundle.mkdir(parents=True, exist_ok=True)
     context = (
-        root / "templates" / "context" / "FULL-REVIEW-CONTEXT.template.md"
+        root / "compat" / "legacy" / "templates" / "context" / "FULL-REVIEW-CONTEXT.template.md"
     ).read_text(encoding="utf-8")
     context = context.replace("[[PRESENTATION_ID]]", presentation_id).replace(
         "[[ROUND]]", REVIEW_ROUND

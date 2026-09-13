@@ -391,7 +391,7 @@ def _diagnostic_assignment_text(
     result_path: Path,
 ) -> str:
     template = (
-        root / "templates" / "assignments" / "TASK-diagnostic-reviewer.template.md"
+        root / "compat" / "legacy" / "templates" / "assignments" / "TASK-diagnostic-reviewer.template.md"
     ).read_text(encoding="utf-8")
     values = {
         "[[TASK_SLUG]]": slug,
@@ -504,7 +504,7 @@ def open_diagnostic_case(
         )
 
         result_template = (
-            root / "templates" / "structured" / "DIAGNOSTIC-RESULT.template.yaml"
+            root / "compat" / "legacy" / "templates" / "structured" / "DIAGNOSTIC-RESULT.template.yaml"
         ).read_text(encoding="utf-8")
         for old, new in {
             "[[CASE_ID]]": case_id,

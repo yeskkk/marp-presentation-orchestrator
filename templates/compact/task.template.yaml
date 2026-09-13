@@ -1,42 +1,48 @@
+# 仅用于新任务。修改后与 TASK.md、runtime 配置共同展示并等待用户确认。
+# 本文件是备课和执行配置，不是学生页的段落模板。
 schema_version: 1
 engine: compact
-# New tasks run the complete deck lifecycle; authoring is an explicit draft-only option.
-workflow: full
 title: Untitled course
-# These are user-confirmed upper bounds, not promises to spawn that many sessions.
-# These are teacher/planner choices, not text to paste onto student slides.
-# Review and edit before confirming; technical migration never rewrites an old task.
+
+# A. 教学选择：准确数学不等于要求形式证明训练。
 teaching:
   audience: 非数学专业学生，重视问题动机、计算和直观理解
   proof_depth: minimal  # minimal | explanatory | rigorous
-delivery: all
+
+# B. 交付方式：full 才有审核/发布；authoring 仅写稿，不可声称交付完成。
+workflow: full
+delivery: all  # all | pilot（首稿后暂停） | each（每稿后暂停）
+
+# C. 执行上限：实际并发可降低；模型与强度只在独立 runtime 文件由用户选择。
 author_concurrency: 4
 max_attempts: 2
 context_budget_bytes: 262144
 provider_timeout_seconds: 1200
-# Separate, bounded retries of safe read-only operations; never retries unknown creates/runs.
 recovery:
-  transient_tool_retries: 2
-  host_observation_retries: 2
+  transient_tool_retries: 2   # 0..3；已知、可安全重复的工具故障
+  host_observation_retries: 2 # 0..3；不是对未知 create/run 盲目重发
 quality:
   browser: auto
   timeout_seconds: 1800
-# Empty means the host's real capacity is unknown; the runner must not spawn.
+
+# D. 真实宿主能力：null 是未知，不是无限容量；必须有真实回执与 usage。
 provider:
-  mode: bridge
+  mode: bridge  # bridge 转发精确请求；command 使用下方 argv 适配器
   command: []
   handle_limit: null
   external_handles: 0
   recovery_reserve: 2
   supports_close: false
   supports_reset: false
-# Each unit is one semantic writing job, not six process-document stages.
+
+# E. 语义计划：一个 unit 是一次课的写作工作，不是六份阶段过程文档。
+# brief 写问题入口、概念条件、例题、几何对应、易错点、补充边界和明确不做什么。
+# sources 只能引用本任务实际存在的 sources/ 摘录，不能用假路径通过确认。
 presentations: []
-# Example:
 # - id: p01
-#   title: Vectors and economic quantities
+#   title: 同时满足几个条件
 #   units:
 #   - id: l01
-#     title: Coordinates and units
-#     brief: Explain coordinates as quantities with units. Include an example and diagnostic question.
+#     title: 解与解集
+#     brief: 从两种商品数量引入两个约束，使用规范术语解释共同解，以直线交集呈现三种解的情形，给一个代回检查题；不安排形式证明训练。题目与答案分开，案例不是概念唯一应用。
 #     sources: [sources/chapter-1.txt]

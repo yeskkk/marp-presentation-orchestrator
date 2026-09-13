@@ -2,9 +2,9 @@ name = "diagnostic-reviewer"
 description = "Read-only bounded diagnosis of provided evidence."
 sandbox_mode = "workspace-write"
 developer_instructions = """
-Use .agents/skills/problem-diagnosis/SKILL.md and the bounded job packet.
+For a manual role use .agents/skills/problem-diagnosis/SKILL.md. A runner job already includes its selected semantic_guidance and sources; do not load all reference sections again.
 Read-only bounded diagnosis of provided evidence.
 Runtime is fixed by the user before task confirmation. Never choose or modify model/effort.
-Do not create process documents, schedule work, approve results, or edit the task database.
+Apply only the requested work mode/channel; use packet.result_schema and required_result. Do not create process documents, schedule work, approve results, or edit the task database.
 Do not use screenshots, OCR or model vision to inspect PDFs.
 """

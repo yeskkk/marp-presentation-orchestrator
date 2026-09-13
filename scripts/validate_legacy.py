@@ -118,7 +118,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     )
 
     runtime_template = yaml.safe_load(
-        (root / "templates/policies/TASK-RUNTIME-PROFILE.template.yaml").read_text(
+        (root / "compat/legacy/templates/policies/TASK-RUNTIME-PROFILE.template.yaml").read_text(
             encoding="utf-8"
         )
     )
@@ -141,7 +141,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     )
 
     collector_template = yaml.safe_load(
-        (root / "templates/policies/TOKEN-COLLECTOR-POLICY.template.yaml").read_text(
+        (root / "compat/legacy/templates/policies/TOKEN-COLLECTOR-POLICY.template.yaml").read_text(
             encoding="utf-8"
         )
     )
@@ -197,28 +197,28 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         ".codex/agents/diagnostic-reviewer.toml",
         # New skills.
         # Canonical structured records.
-        "templates/structured/PRODUCTION-PROFILE.template.yaml",
-        "templates/structured/REVIEW-AGGREGATION-JOB.template.yaml",
-        "templates/structured/RELEASE-JOB.template.yaml",
-        "templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml",
-        "templates/structured/BATCH-ASSIGNMENT-EXPANSIONS.template.yaml",
-        "templates/structured/PRESENTATION-WORK-PLAN.template.yaml",
-        "templates/structured/UNIT-DELTA.template.yaml",
-        "templates/structured/UNIT-CONTEXT-PACKET.template.yaml",
-        "templates/structured/AUTHOR-CONTEXT-PACKET.template.yaml",
-        "templates/structured/INTERACTION-RECORD.template.yaml",
-        "templates/structured/REVIEW-PLAN.template.yaml",
-        "templates/structured/ENGINE-INCIDENT.template.yaml",
-        "templates/structured/INCIDENT-INDEX.template.yaml",
-        "templates/structured/INCIDENT-OCCURRENCE.template.yaml",
-        "templates/structured/OPERATIONAL-WORKAROUND.template.yaml",
-        "templates/structured/DIAGNOSTIC-CASE.template.yaml",
-        "templates/structured/DIAGNOSTIC-RESULT.template.yaml",
-        "templates/structured/PATCH-SCOPE.template.yaml",
-        "templates/structured/PERFORMANCE-BUDGET.template.yaml",
-        "templates/structured/MILESTONE-CHECKPOINT.template.json",
-        "templates/structured/TOOLCHAIN-LOCK.template.yaml",
-        "templates/policies/TASK-RUNTIME-PROFILE.template.yaml",
+        "compat/legacy/templates/structured/PRODUCTION-PROFILE.template.yaml",
+        "compat/legacy/templates/structured/REVIEW-AGGREGATION-JOB.template.yaml",
+        "compat/legacy/templates/structured/RELEASE-JOB.template.yaml",
+        "compat/legacy/templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml",
+        "compat/legacy/templates/structured/BATCH-ASSIGNMENT-EXPANSIONS.template.yaml",
+        "compat/legacy/templates/structured/PRESENTATION-WORK-PLAN.template.yaml",
+        "compat/legacy/templates/structured/UNIT-DELTA.template.yaml",
+        "compat/legacy/templates/structured/UNIT-CONTEXT-PACKET.template.yaml",
+        "compat/legacy/templates/structured/AUTHOR-CONTEXT-PACKET.template.yaml",
+        "compat/legacy/templates/structured/INTERACTION-RECORD.template.yaml",
+        "compat/legacy/templates/structured/REVIEW-PLAN.template.yaml",
+        "compat/legacy/templates/structured/ENGINE-INCIDENT.template.yaml",
+        "compat/legacy/templates/structured/INCIDENT-INDEX.template.yaml",
+        "compat/legacy/templates/structured/INCIDENT-OCCURRENCE.template.yaml",
+        "compat/legacy/templates/structured/OPERATIONAL-WORKAROUND.template.yaml",
+        "compat/legacy/templates/structured/DIAGNOSTIC-CASE.template.yaml",
+        "compat/legacy/templates/structured/DIAGNOSTIC-RESULT.template.yaml",
+        "compat/legacy/templates/structured/PATCH-SCOPE.template.yaml",
+        "compat/legacy/templates/structured/PERFORMANCE-BUDGET.template.yaml",
+        "compat/legacy/templates/structured/MILESTONE-CHECKPOINT.template.json",
+        "compat/legacy/templates/structured/TOOLCHAIN-LOCK.template.yaml",
+        "compat/legacy/templates/policies/TASK-RUNTIME-PROFILE.template.yaml",
         "docs/MIGRATION-v0.6.3-to-v0.6.4.md",
         "docs/MIGRATION-v0.6.4-to-v0.6.5.md",
         "docs/MIGRATION-v0.6.5-to-v0.6.6.md",
@@ -228,31 +228,31 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         "tests/test_v066_slide_subset_diagnostics.py",
         "tests/test_v067_assignment_idempotency.py",
         # Profile-specific stages and assignments.
-        "templates/stages/STAGE-M01-BASELINE-AUDIT.template.md",
-        "templates/stages/STAGE-M02-DELTA-DESIGN-PATCH.template.md",
-        "templates/stages/STAGE-M03-INTEGRATION-SEMANTIC-CHECK.template.md",
-        "templates/assignments/TASK-deck-revision-author.template.md",
-        "templates/assignments/TASK-diagnostic-reviewer.template.md",
+        "compat/legacy/templates/stages/STAGE-M01-BASELINE-AUDIT.template.md",
+        "compat/legacy/templates/stages/STAGE-M02-DELTA-DESIGN-PATCH.template.md",
+        "compat/legacy/templates/stages/STAGE-M03-INTEGRATION-SEMANTIC-CHECK.template.md",
+        "compat/legacy/templates/assignments/TASK-deck-revision-author.template.md",
+        "compat/legacy/templates/assignments/TASK-diagnostic-reviewer.template.md",
         # Retained inspection and maintenance gates.
-        "templates/structured/COURSE-TERMINOLOGY.template.yaml",
-        "templates/structured/COURSE-SEMANTIC-OBJECTS.template.yaml",
-        "templates/structured/CROSS-DECK-HANDOFFS.template.yaml",
-        "templates/structured/PRESENTATION-CONTINUITY-MAP.template.yaml",
-        "templates/structured/SLIDE-DENSITY-AUDIT.template.yaml",
-        "templates/structured/MATH-SOURCE-INVENTORY.template.json",
-        "templates/structured/MATH-RENDERER-PROBE.template.json",
+        "compat/legacy/templates/structured/COURSE-TERMINOLOGY.template.yaml",
+        "compat/legacy/templates/structured/COURSE-SEMANTIC-OBJECTS.template.yaml",
+        "compat/legacy/templates/structured/CROSS-DECK-HANDOFFS.template.yaml",
+        "compat/legacy/templates/structured/PRESENTATION-CONTINUITY-MAP.template.yaml",
+        "compat/legacy/templates/structured/SLIDE-DENSITY-AUDIT.template.yaml",
+        "compat/legacy/templates/structured/MATH-SOURCE-INVENTORY.template.json",
+        "compat/legacy/templates/structured/MATH-RENDERER-PROBE.template.json",
     ]
     _require_paths(root, required, errors)
 
     forbidden_paths = [
         ".codex/agents/review-coordinator.toml",
         ".codex/agents/release-coordinator.toml",
-        "templates/assignments/TASK-review-coordinator.template.md",
-        "templates/assignments/TASK-release-coordinator.template.md",
-        "templates/structured/LEGACY-MARP-AUDIT.template.md",
-        "templates/structured/LEGACY-REUSE-MAP.template.md",
-        "templates/structured/UNIT-INTERACTION-MANIFEST.template.yaml",
-        "templates/structured/UNIT-MCQ-AUDIT.template.yaml",
+        "compat/legacy/templates/assignments/TASK-review-coordinator.template.md",
+        "compat/legacy/templates/assignments/TASK-release-coordinator.template.md",
+        "compat/legacy/templates/structured/LEGACY-MARP-AUDIT.template.md",
+        "compat/legacy/templates/structured/LEGACY-REUSE-MAP.template.md",
+        "compat/legacy/templates/structured/UNIT-INTERACTION-MANIFEST.template.yaml",
+        "compat/legacy/templates/structured/UNIT-MCQ-AUDIT.template.yaml",
         "tests/test_v050_features.py",
     ]
     for relative in forbidden_paths:
@@ -315,13 +315,13 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     )
 
     request_template = yaml.safe_load(
-        _filled_template_text(root / "templates/structured/ASSIGNMENT-REQUEST.template.yaml")
+        _filled_template_text(root / "compat/legacy/templates/structured/ASSIGNMENT-REQUEST.template.yaml")
     )
     brief_template = yaml.safe_load(
-        _filled_template_text(root / "templates/structured/ASSIGNMENT-BRIEF.template.yaml")
+        _filled_template_text(root / "compat/legacy/templates/structured/ASSIGNMENT-BRIEF.template.yaml")
     )
     decision_template = yaml.safe_load(
-        _filled_template_text(root / "templates/structured/ASSIGNMENT-DECISION.template.yaml")
+        _filled_template_text(root / "compat/legacy/templates/structured/ASSIGNMENT-DECISION.template.yaml")
     )
     _expect(
         request_template.get("schema_version") == 4
@@ -338,10 +338,10 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         errors,
     )
     batch_template = yaml.safe_load(
-        _filled_template_text(root / "templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml")
+        _filled_template_text(root / "compat/legacy/templates/structured/BATCH-ASSIGNMENT-PLAN.template.yaml")
     )
     expansion_template = yaml.safe_load(
-        _filled_template_text(root / "templates/structured/BATCH-ASSIGNMENT-EXPANSIONS.template.yaml")
+        _filled_template_text(root / "compat/legacy/templates/structured/BATCH-ASSIGNMENT-EXPANSIONS.template.yaml")
     )
     _expect(
         batch_template.get("schema_version") == 2
@@ -355,7 +355,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     # Exact direct dependency plus explicit repository lock is the selected npm policy.
     if (root / "package-lock.json").exists():
         errors.append("package-lock.json is excluded by this repository's explicit lock-file policy")
-    if list((root / "templates").rglob("STAGE-ASSIGNMENT*")):
+    if list((root / "compat" / "legacy" / "templates").rglob("STAGE-ASSIGNMENT*")):
         errors.append("stage-specific assignment templates are forbidden")
     if list(root.rglob("MATH-PDF-EVIDENCE*")):
         errors.append("MATH-PDF-EVIDENCE artifacts/templates are forbidden")
@@ -391,7 +391,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     )
 
     execution = yaml.safe_load(
-        (root / "templates/policies/EXECUTION-POLICY.template.yaml").read_text(encoding="utf-8")
+        (root / "compat/legacy/templates/policies/EXECUTION-POLICY.template.yaml").read_text(encoding="utf-8")
     )
     _expect(
         execution.get("planner_delegation", {}).get("main_agent_exclusive")
@@ -450,7 +450,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     )
 
     work_plan = yaml.safe_load(
-        (root / "templates/structured/PRESENTATION-WORK-PLAN.template.yaml").read_text(
+        (root / "compat/legacy/templates/structured/PRESENTATION-WORK-PLAN.template.yaml").read_text(
             encoding="utf-8"
         )
     )
@@ -496,7 +496,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         errors,
     )
     registry_template = yaml.safe_load(
-        (root / "templates/structured/THREAD-REGISTRY.template.yaml").read_text(
+        (root / "compat/legacy/templates/structured/THREAD-REGISTRY.template.yaml").read_text(
             encoding="utf-8"
         )
     )
@@ -554,7 +554,7 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
     )
 
     diagnostic_source = (root / "src/mpres/diagnostics.py").read_text(encoding="utf-8")
-    diagnostic_assignment = (root / "templates/assignments/TASK-diagnostic-reviewer.template.md").read_text(encoding="utf-8")
+    diagnostic_assignment = (root / "compat/legacy/templates/assignments/TASK-diagnostic-reviewer.template.md").read_text(encoding="utf-8")
     _expect(
         '"diagnostic-reviewer": "reviewer"' in runtime_source
         and 'agent_may_change": False' in diagnostic_source,
@@ -615,8 +615,8 @@ def _semantic_checks(root: Path, errors: list[str]) -> None:
         root / "docs/WORKFLOW.md",
         root / "docs/DESIGN-NOTES.md",
         root / "docs/VALIDATION.md",
-        root / "templates/TASK.template.md",
-        root / "templates/policies/WORKER-PROMPT-PREAMBLE.template.md",
+        root / "compat/legacy/templates/TASK.template.md",
+        root / "compat/legacy/templates/policies/WORKER-PROMPT-PREAMBLE.template.md",
     ]
     for path in stale_files:
         text = path.read_text(encoding="utf-8")

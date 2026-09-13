@@ -16,7 +16,7 @@ COURSE_FILES = (
 
 
 def initialize_course_registries(root: Path, task: Path) -> None:
-    templates = root / "templates" / "structured"
+    templates = root / "compat" / "legacy" / "templates" / "structured"
     mapping = {
         "COURSE-TERMINOLOGY.yaml": "COURSE-TERMINOLOGY.template.yaml",
         "COURSE-SEMANTIC-OBJECTS.yaml": "COURSE-SEMANTIC-OBJECTS.template.yaml",

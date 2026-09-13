@@ -173,7 +173,7 @@ def write_revision_work_queues(
         },
     )
     template = (
-        root / "templates" / "structured" / "POST-REVIEW-REVISION.template.md"
+        root / "compat" / "legacy" / "templates" / "structured" / "POST-REVIEW-REVISION.template.md"
     ).read_text(encoding="utf-8")
     queue_md = source / "POST-REVIEW-REVISION.md"
     text = template.replace("[[PRESENTATION_ID]]", presentation_id)

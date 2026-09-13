@@ -1,54 +1,32 @@
-# Agent entry
+# 工作入口
 
-Read README.md for the architecture and real implementation boundaries.
-The user confirms TASK.md, task.yaml and TASK-RUNTIME-PROFILE.yaml; never choose or
-change their model/effort. AI owns semantic planning, writing, editing, independent
-review and diagnosis. The runner owns routine execution, gates, status and release.
+先查询实际任务，不从聊天历史推断运行状态。整体结构见 README；具体流程见 docs/WORKFLOWS.md。
 
-Only six semantic skills are active. A job packet already contains its one guide,
-its result schema and bounded inputs. Do not read all skills or legacy instructions.
-Do not generate process records, assign job identities, schedule work or assert
-mechanical success. Provider receipts and token counters must be genuine.
+## 选择路径
 
-Use ./start.sh for interactive Codex or ./start.sh --cli / mpres for mechanical commands.
-The launcher never turns off approval/sandbox policy. Manual Codex in this project
-uses this same entry: select the task, read its three configuration inputs and
-query its database before acting; do not infer the task from an old conversation.
-With --task the launcher passes the task planner runtime. Without --task finish
-planning only, then let the user reopen --task before production. Starting Codex
-is not evidence that worker creation, capabilities or usage reporting work. Main responds to semantic decisions or explicit
-user feedback, not healthy polling events. Unknown execution must be reconciled.
-A deterministic fixture test is not native-browser or model-quality validation.
+新任务：规划并展示三份配置，等待用户确认。已有任务：查询数据库并继续 runner，不重新初始化。
+已发布返修：先只读展开，展示精确方案与目标；用户确认后才进入选定的 review-first/edit-first。
+只有显式 legacy 命令读取 compat/legacy；不得把兼容模板混入 SQLite 新任务。
 
-When reporting a finished delivery, attach/link the existing path from
-`delivery_package.entries[].pdf` and `.markdown` only when its state is `ready`.
-The package path is now a directory; never expect or generate a default delivery ZIP.
-A PDF commit alone is not successful source/asset materialization.
+## 职责
 
-User criticism is durable task data, not chat memory. Record explicit user feedback
-in SQLite; never silently retire, weaken or mark it satisfied. Before every author/
-reviewer job, the host must complete `brief` with the exact versions and a concrete
-readback. The runner then emits `run`. Human attribution is not authentication: only
-the user may authorize changing feedback or confirming a repair scope.
+main 处理需求、教学冲突与真实授权，不健康轮询、不手工填状态、不选 worker 的模型。
+runner 决定可执行作业与机械恢复；宿主执行精确请求并提供真实 receipt/runtime/usage。
+worker 使用包内自己的指南和结果 schema，不扫描全部 skills、模板或任务目录。
+六个 skills 只承担语义工作；数据库、assignment、容量、gate、发布都不由模型声明成立。
 
-For user-directed rework, open a repair case at a delivery boundary. Obtain the
-read-only problem expansion, present its exact version/targets/limits to the user,
-and STOP for the user's reply. Do not auto-confirm an AI proposal or infer consent
-from the initial complaint. Once confirmed, let the runner edit/review/release only
-those targets. Attach the selected completed PDF/Markdown paths, not an unreviewed draft or a ZIP. Record
-additional user requirements as new feedback versions; never edit runtime choices.
+## 全局边界
 
-Project source contract applies to every entry, including manually launched Codex:
-layout belongs to the installed project theme, never author/editor output. Do not
-edit CSS, add HTML/inline SVG, per-slide styles/classes or image sizing tricks.
-Use Markdown, mathematics and external assets; split/rewrite dense content. Run
-`mpres source check <output>` before submitting. Theme copies are read-only; the
-service verifies them and rejects violations before accepting a revision.
+用户在任务确认前自行选择模型和强度；运行中不升降级或隐藏 fallback。
+布局由固定主题提供；禁止作者 CSS、正文 HTML、inline SVG、临时图片尺寸和缩字绕过。
+不截图、OCR、模型视觉查 PDF。原生渲染检查由项目程序执行。
+历史反馈必须在 brief 中回顾，但 readback/检查记录不进入学生页。
+数学严谨与证明密度分开；使用学习损失删除反事实，不为先修/核心/时长/引用清单自动辩护。
+作者依本轮 findings 自修和复算；不增加 reviewer 验修轮次。
 
-Student-facing quality is not compliance self-praise detection. Before confirming,
-separate precise mathematical language from proof depth; expose conflicting old
-teaching requirements instead of silently rewriting them. Planning prerequisites,
-time/core labels and internal TXT citations are not student-page defaults. Apply
-the learning-loss deletion counterfactual; retain genuine conditions/attribution,
-not empty disclaimers. Follow the bounded audience_step schema for attention
-candidates; do not auto-delete text by keywords or add a repair-verification reviewer.
+## 继续与交付
+
+./start.sh 启动交互 Codex，--cli 或 mpres 执行控制命令；手动开启 Codex 走同一入口。
+未知外部执行先对账，不盲重发；没有实际 close 证据不释放容量。不得伪造用户同意。
+交付仅引用 delivery_package.state=ready 的 entries[].pdf 和 .markdown；目录不是 ZIP。
+README 的实现边界必须如实保留，测试替身不冒充真实教学或原生浏览器验收。

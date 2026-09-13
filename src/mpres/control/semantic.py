@@ -39,17 +39,9 @@ def result_schema_name(kind: str) -> str:
 
 
 def guidance(root: Path, kind: str) -> str:
-    if kind not in GUIDES:
-        raise MPresError('No semantic guide for a mechanical job')
-    relative=Path('.agents/skills')/GUIDES[kind]/'SKILL.md'
-    path=root/relative
-    if not path.is_file():
-        path=Path(__file__).resolve().parents[3]/relative
-    if not path.is_file():
-        raise MPresError('Install the source checkout with its semantic skills; no implicit old-skill fallback')
-    # Skill metadata helps discovery, not model execution. The role body is small.
-    text=path.read_text(encoding='utf-8')
-    return text.split('---',2)[-1].strip() if text.startswith('---') else text
+    """Compatibility helper; the runner supplies channel/mode to compile_guidance."""
+    from .guidance import compile_guidance
+    return compile_guidance(root, kind)['text']
 
 
 def gate_excerpt(report: dict) -> dict:

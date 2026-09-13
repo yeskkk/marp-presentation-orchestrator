@@ -1,0 +1,26 @@
+{
+  "phase": "production_language",
+  "read_slide_ids": [
+    "p01-l01-s01"
+  ],
+  "summary": "目标句只列教师动作；移除后保留具体共同解问题。",
+  "observations": [],
+  "findings": [
+    {
+      "message": "第一页“目标：定义解与解集，分别论证存在性与唯一性。”是备课动作清单；在 minimal 受众下应从当前共同解问题展开，移去规划口号，不删除后续准确数学含义。",
+      "slide_ids": [
+        "p01-l01-s01"
+      ],
+      "severity": "minor"
+    }
+  ],
+  "attention_checks": [
+    {
+      "candidate_id": "p01-l01-s01@3:4",
+      "disposition": "rewrite",
+      "learning_loss_if_removed": "无解或方程条件的学习损失；具体两式与共同解问题仍在，准确概念由下一页解释。",
+      "reason": "把规划动作改成学生的当前问题，不改数学含义。",
+      "finding_index": 0
+    }
+  ]
+}

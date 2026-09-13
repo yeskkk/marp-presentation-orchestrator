@@ -1,0 +1,11 @@
+{
+  "summary": "移去第一页规划目标句，保留共同解问题及后页的准确定义和代回检查。",
+  "resolutions": [
+    {
+      "finding_id": "example-assigned-finding",
+      "status": "addressed",
+      "explanation": "针对第一页规划口号，删除目标句，以原有两个方程的问题作为入口；后页定义和 (1,1) 代回不变。"
+    }
+  ],
+  "slide_changes": []
+}

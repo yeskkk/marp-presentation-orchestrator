@@ -97,7 +97,7 @@ def initialize_unit_stages(
         directory = stage_root(root, slug, presentation_id, unit_id, stage_id)
         directory.mkdir(parents=True, exist_ok=True)
         artifact = (
-            root / "templates" / "stages" / STAGE_ARTIFACT_TEMPLATES[stage_id]
+            root / "compat" / "legacy" / "templates" / "stages" / STAGE_ARTIFACT_TEMPLATES[stage_id]
         ).read_text(encoding="utf-8")
         for old, replacement in values.items():
             artifact = artifact.replace(old, replacement)

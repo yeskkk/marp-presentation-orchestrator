@@ -312,13 +312,16 @@ class Runner:
                         if target.exists(): target.chmod(0o644)
                         target.write_bytes(src.read_bytes())
                         packet['input_files'].append(str(target))
-        from .semantic import schema, result_schema_name, guidance
+        from .semantic import schema, result_schema_name
         from .feedback import Feedback
         packet['historical_feedback'] = Feedback(self.task).briefing(attempt_id)['feedback']
         packet['as_of_date'] = datetime.now(timezone.utc).date().isoformat()
         packet['required_result']['feedback_checks'] = 'One disposition for every historical feedback id/version, with actual slide excerpts; issue is not a pass; no automatic not_applicable by channel'
         packet['result_schema'] = schema(result_schema_name(job['kind']))
-        packet['semantic_guidance'] = guidance(self.root if hasattr(self, 'root') else self.task.parent.parent, job['kind'])
+        from .guidance import compile_guidance, attach_guidance
+        guide = compile_guidance(self.task.parent.parent, job['kind'], channel=job.get('channel') or None,
+            repair=bool(repair), correction=bool(packet.get('submission_correction') or packet.get('mechanical_findings')))
+        attach_guidance(packet, guide)
         from .semantic import teaching_context
         packet['teaching_context'] = teaching_context(config)
         from .input_packet import compile_inputs,check_budget

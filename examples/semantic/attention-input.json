@@ -1,0 +1,24 @@
+{
+  "phase": "production_language",
+  "read_slide_ids": [
+    "p01-l01-s01"
+  ],
+  "slides": [
+    {
+      "slide_id": "p01-l01-s01",
+      "markdown": "# 同时满足两个条件\n\n目标：定义解与解集，分别论证存在性与唯一性。\n\n$x+y=2$，$x-y=0$。哪一组数同时满足两式？"
+    }
+  ],
+  "attention_candidates": [
+    {
+      "candidate_id": "p01-l01-s01@3:4",
+      "slide_id": "p01-l01-s01",
+      "quote": "目标：定义解与解集，分别论证存在性与唯一性。",
+      "signals": [
+        "planning-field",
+        "method-slogan"
+      ],
+      "question": "删去/改写这段后，当前数学学习具体损失什么？关键词不是定罪，给有内容的保留或删改理由。"
+    }
+  ]
+}

@@ -1,20 +1,37 @@
-# Teaching task
+# 教学任务（备课与用户确认，不是学生页）
 
-Describe the audience, prior knowledge, learning outcomes, scope, core/support
-content, reference-access boundaries, and delivery expectations here.
+## 1. 受众与学习所得
 
-## Confirmation
+请写明学生背景、兴趣和具体学习困难；说明学完能理解或做到什么。
+先修仅是备课假设，必要旧知识应转化为实际回顾问题，不复制“先修清单”到课件。
 
-The user reviews this document, task.yaml and TASK-RUNTIME-PROFILE.yaml together.
-Only an explicit user confirmation authorizes running the approved plan.
-The five independent full-deck reviews, mechanical author self-checks, and
-no-screenshot policy remain mandatory. Runtime choices are fixed after confirmation.
+## 2. 范围、课次与证明深度
 
-## Teaching quality and prior user feedback
+按第几节课组织，不直接照搬教材目录。课次与 brief 在 task.yaml 中保存一处，此处说明总边界。
+规范术语、正确含义和必要条件不可省略；证明深度以用户选择为准，不默认保留所有正确证明。
+请填清必讲内容、可跳过的补充例题、明确不做的内容。核心/补充和时长是教师安排，不是学生标题。
 
-Review the persisted historical feedback shown by `task present`. Use standard
-mathematical terms and exact definitions, concrete recent real-world applications
-with verifiable dates/sources (or clearly labeled simulated data), and explicit
-geometric constructions/diagrams linked to formulas where appropriate. Do not
-replace mathematics with decorative prose. Authors and reviewers must address
-these expectations with actual slide evidence; non-applicability needs a reason.
+## 3. 案例、图示与资料权限
+
+现实材料须参与变量、单位、建模、计算或结果解释；日期不能单独证明案例有用。
+模拟数据要简短标明，不冒充真实统计。几何图或构造要解释与公式的对应。
+列明可访问教材摘录、公共资料范围、缺口和工具限制，不伪造资料已读或近期事实。
+
+## 4. 历史意见与冲突
+
+回顾 task present 展示的持久反馈，指出哪些旧要求仍有效、哪些与本次明确意见冲突。
+不要把“数学规范”理解成“以定义和证明训练为主”。不能在技术迁移时默默改教学授权。
+只在这里记录需要用户决定的差异，实际语义计划仍写 task.yaml。
+
+## 5. 基线、交付和暂停
+
+说明是新建课程、延续已有任务还是基于已发布稿返修；返修目标须对应真实发布记录。
+已有正确内容不为显示工作量重写。返修方案展示后仍需单独明确确认；投诉本身不是批准展开方案。
+交付为每稿同名 PDF、Markdown、主题及资产目录，不默认生成 ZIP。pilot/each 暂停后等用户允许再继续。
+
+## 6. 确认边界
+
+用户一起核对本文件、task.yaml 和 TASK-RUNTIME-PROFILE.yaml，再明确确认。
+运行中不动态更换模型/强度。首次五通道独立审核、机械门禁、固定主题与受限 Markdown 不得跳过。
+作者自修后不新增 reviewer 验修轮次。禁止截图、OCR、模型视觉查 PDF；内部原生渲染由机械工具执行。
+生产回执、资料缺口与反馈处置进入语义结果/数据库，不写到学生幻灯片。

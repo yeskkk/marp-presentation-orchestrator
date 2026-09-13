@@ -179,7 +179,7 @@ def open_maintenance(
         opened_utc = utc_now()
 
     scope_template = (
-        root / "templates" / "structured" / "CORRECTIVE-SCOPE.template.md"
+        root / "compat" / "legacy" / "templates" / "structured" / "CORRECTIVE-SCOPE.template.md"
     ).read_text(encoding="utf-8")
     scope_template = (
         scope_template.replace("[[PRESENTATION_ID]]", presentation_id)
@@ -191,7 +191,7 @@ def open_maintenance(
     ensure_text(source / "CORRECTIVE-SCOPE.md", scope_template)
 
     retrospective = (
-        root / "templates" / "structured" / "MAINTENANCE-RETROSPECTIVE.template.md"
+        root / "compat" / "legacy" / "templates" / "structured" / "MAINTENANCE-RETROSPECTIVE.template.md"
     ).read_text(encoding="utf-8")
     retrospective = retrospective.replace("[[PRESENTATION_ID]]", presentation_id).replace(
         "[[REVISION_NUMBER]]", str(revision)
@@ -199,7 +199,7 @@ def open_maintenance(
     ensure_text(source / "MAINTENANCE-RETROSPECTIVE.md", retrospective)
 
     checklist = (
-        root / "templates" / "structured" / "MAINTENANCE-CHECKLIST.template.yaml"
+        root / "compat" / "legacy" / "templates" / "structured" / "MAINTENANCE-CHECKLIST.template.yaml"
     ).read_text(encoding="utf-8")
     checklist = (
         checklist.replace("[[PRESENTATION_ID]]", presentation_id)
@@ -209,7 +209,7 @@ def open_maintenance(
     ensure_text(source / "MAINTENANCE-CHECKLIST.yaml", checklist)
 
     assignment_template = (
-        root / "templates" / "assignments" / "TASK-maintenance.template.md"
+        root / "compat" / "legacy" / "templates" / "assignments" / "TASK-maintenance.template.md"
     ).read_text(encoding="utf-8")
     assignment = (
         assignment_template.replace("[[PRESENTATION_ID]]", presentation_id)
@@ -279,10 +279,10 @@ def _require_maintenance_assignment(root: Path, base: Path) -> None:
 def _scaffold_review_assignments(root: Path, slug: str, presentation_id: str, base: Path) -> dict[str, Any]:
     task = task_path(root, slug)
     template = (
-        root / "templates" / "assignments" / "TASK-specialist-reviewer.template.md"
+        root / "compat" / "legacy" / "templates" / "assignments" / "TASK-specialist-reviewer.template.md"
     ).read_text(encoding="utf-8")
     report_template = (
-        root / "templates" / "review" / "review-report.template.md"
+        root / "compat" / "legacy" / "templates" / "review" / "review-report.template.md"
     ).read_text(encoding="utf-8")
     request_root = base / "review" / "full" / "request"
     created: list[str] = []

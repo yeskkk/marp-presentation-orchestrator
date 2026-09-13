@@ -12,7 +12,8 @@
   "properties": {
     "summary": {
       "type": "string",
-      "minLength": 1
+      "minLength": 1,
+      "description": "本次真实教学/审核/诊断所得，不是已通过门禁的状态声明。"
     },
     "hypotheses": {
       "type": "array",
@@ -119,7 +120,8 @@
             }
           }
         }
-      }
+      },
+      "description": "按实际请求的全部反馈 id/version 回应，引用真实页内摘录。"
     },
     "expansion": {
       "type": "object",
@@ -256,7 +258,9 @@
             "minLength": 1
           }
         }
-      }
+      },
+      "description": "返修前 diagnose 的问题展开提案；未确认不得执行修改。"
     }
-  }
+  },
+  "description": "只读诊断与可选返修前展开；observed 和 possible 分开，不代表用户授权修改。"
 }

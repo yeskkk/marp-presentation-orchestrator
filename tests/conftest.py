@@ -33,7 +33,7 @@ from mpres.util import read_yaml, utc_now, write_yaml_atomic
 def project_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("MPRES_LOG_MODE", "direct-test")
     source = Path(__file__).resolve().parents[1]
-    for name in ["templates", "themes", ".agents", ".codex"]:
+    for name in ["templates", "compat", "themes", ".agents", ".codex"]:
         shutil.copytree(source / name, tmp_path / name)
     for name in [
         "pyproject.toml",

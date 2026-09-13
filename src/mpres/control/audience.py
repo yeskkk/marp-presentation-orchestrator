@@ -156,6 +156,8 @@ class Audience:
                 'result_schema':result_schema,'reading_protocol':protocol,
                 'attention_candidates':candidates,
                 'limitations':'Historical feedback was briefed earlier; this is not a blind experiment or real student study.'}
+        from .guidance import audience_guidance, attach_guidance
+        attach_guidance(packet, audience_guidance(self.task.parent.parent, next_row['phase']))
         # Audience/prerequisites should be read from confirmed TASK, not author
         # self-checks. Keep this context bounded rather than injecting task records.
         with self.store.transaction() as conn:

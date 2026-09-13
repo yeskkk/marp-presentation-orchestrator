@@ -1,6 +1,6 @@
 {
   "name": "marp-presentation-orchestrator",
-  "version": "0.7.5",
+  "version": "0.8.1",
   "private": true,
   "description": "Pinned Marp CLI runtime for fixed-theme PDF and source-directory delivery.",
   "engines": {

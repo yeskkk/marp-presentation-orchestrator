@@ -1,0 +1,58 @@
+[
+  {
+    "id": "opening-example-not-definition",
+    "role": "marp-writing",
+    "input": "从两类充电设备累计时长建立方程组。",
+    "expected": "把案例作为入口，不当整个概念唯一用途；用要解决的问题概括本课。",
+    "protect": "变量单位及后续建模对应",
+    "automatic_verdict": false
+  },
+  {
+    "id": "standard-not-proof-density",
+    "role": "course-planning",
+    "input": "minimal；同时保留全部正确证明。",
+    "expected": "指出要求冲突并确认；数学准确不推出保留所有证明。",
+    "protect": "术语、条件、必要解释",
+    "automatic_verdict": false
+  },
+  {
+    "id": "recent-but-unused",
+    "role": "resource-design",
+    "input": "单列近期设施统计，后续模型完全不用。",
+    "expected": "让数据服务模型或删除无关材料；不能靠日期证明案例有用。",
+    "protect": "实际使用事实的出处",
+    "automatic_verdict": false
+  },
+  {
+    "id": "unfounded-misreading",
+    "role": "specialist-review",
+    "input": "坐标不代表充电站地理位置。",
+    "expected": "除非上下文有真实误解，否则直接说明坐标是哪两个量。",
+    "protect": "坐标、单位和变量解释",
+    "automatic_verdict": false
+  },
+  {
+    "id": "necessary-assumption",
+    "role": "specialist-review",
+    "input": "假设设备功率在记录期间恒定。",
+    "expected": "保护定义模型的条件，不按“假设”关键词删除。",
+    "protect": "改变该条件会改变模型的关系",
+    "automatic_verdict": false
+  },
+  {
+    "id": "mispaired-resolution",
+    "role": "deck-editing",
+    "input": "finding是参数向量式错；回复说补了另一页数据来源。",
+    "expected": "返回原题，改对应公式并代回；逐项说明相关修复。",
+    "protect": "无关正确内容",
+    "automatic_verdict": false
+  },
+  {
+    "id": "html-css-layout-fix",
+    "role": "problem-diagnosis",
+    "input": "合法表格无边框，要求作者用HTML重写。",
+    "expected": "先核全局主题/工具证据，不允许正文绕过主题。",
+    "protect": "合法Markdown正文",
+    "automatic_verdict": false
+  }
+]
