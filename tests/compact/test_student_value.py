@@ -168,7 +168,8 @@ def test_writer_packet_receives_same_learning_value_without_process_files(compac
     s=prepare(compact_root,count=1);register(s);attempt=s.bind(s.jobs()[0]['id'],'h1')
     packet=Runner(s.task).packet(s.jobs()[0],attempt['id'])
     assert '学习损失' in packet['teaching_context']['rubric']['test']
-    assert '先修' in packet['semantic_guidance'] and '删除反事实' in packet['semantic_guidance']
+    from mpres.control.guidance import read_fragment, skill_root, SHARED
+    assert read_fragment(skill_root(Path(__file__).resolve().parents[2]), SHARED) in packet['semantic_guidance']
     assert not list(s.task.rglob('TEACHING-*.md'))
 
 

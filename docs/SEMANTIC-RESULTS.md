@@ -31,7 +31,7 @@ feedback_checks 的 id/version 必须来自本次 historical_feedback，quote �
 ## 3. 编辑特有字段
 
 resolutions: finding_id、addressed/needs_decision、explanation，说明原问题、具体修改和作者复算。
-不要用补案例的说明回答参数化公式错误；这不是独立验修结果，不新建 reviewer 轮次。
+处置必须回应同一个 finding 的对象与问题，不能以不相关的改进替代；这不是独立验修结果。
 repair_checks: problem_id、addressed/not_found/needs_decision、explanation、真实 slide_ids。
 slide_changes: 原 slide_id、delete/merge、target_slide_id（delete为null）、reason；
 仅确认允许结构调整时使用，累计对应原返修基线。没有删除的页保留 ID。
@@ -46,9 +46,8 @@ learning_loss_if_removed、reason、finding_index。keep 使用 null；remove/re
 前序 completed 步骤不用重做。最终 run 原样保留之前的 findings，同时给整轮真实反馈检查。
 不要为“完整性”制造正面 observations，也不能在最后静默丢掉难修问题。
 
-## 5. 样例怎样使用
+## 5. 维护资料不进入任务
 
-[examples/semantic](../examples/semantic/README.md) 给出四类结果、两个 audience 子步骤及真实小源稿。
-源码第一页面有刻意设置的反例，不能当优良课件模板投入生产。
-示例 ID、反馈版本、已读范围只属于样例；实际作业必须用真实包中的值，不能复制伪造执行证据。
-维护测试验证结构/片段/路由，不证明模型在真实任务中一定做出正确教学判断。
+worker 只使用当前 result_schema、required_result 与真实任务证据，不读取校准样例作为工作方法。
+具体正反例在 tests/fixtures/semantic，仅供源码维护和回归验证，详见开发目录中的语义维护说明。
+它们既不是课件模板，也不构成真实作业的 ID、阅读或执行证明。

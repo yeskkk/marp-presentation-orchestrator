@@ -20,4 +20,4 @@
 不能从旧模板挑选 SELF-CHECK、assignment 或 stage 表单拼成“更完整”的新流程。
 完整步骤见 [README](../README.md)，精确命令见 [操作手册](../docs/OPERATIONS.md)。
 
-结果字段与条件义务见 [SEMANTIC-RESULTS](../docs/SEMANTIC-RESULTS.md)，可验证样例见 [examples](../examples/semantic/README.md)。
+结果字段与条件义务见 [SEMANTIC-RESULTS](../docs/SEMANTIC-RESULTS.md)，维护案例仅供源码工作使用，见 [维护说明](../docs/development/SEMANTIC-MAINTENANCE.md)，不加载到运行任务。

@@ -11,18 +11,20 @@
 | docs/WORKFLOWS | main/维护者 | 新建、续作、两种返修、恢复、迁移分别说明 |
 | docs/OPERATIONS、HOST-PROTOCOL | 操作员/适配器 | 实际 CLI 和 runner.accept，不给 worker 当教学 prompt |
 | docs/CONTENT-CONTRACT | 维护者/内容作者按需 | source_policy、geometry、固定主题 |
-| .agents/skills 六项 | 指定语义角色 | 教学质量、正反例、条件性模式，不记机械状态 |
+| .agents/skills 十项 | 指定语义角色 | 一般判断方法与角色边界，不包含维护校准样例 |
 | templates/compact 三项 | 用户新建任务 | 与 Service.create 和配置验证一致 |
 | control/schemas 四项 | 运行器与模型结果 | JSON Schema 加服务层实际证据验证 |
 
-## v0.8.0 处理
+## 整顿后的边界
 
 旧模板从当前 templates 路径移到 compat/legacy/templates，逐文件保留原字节，仅旧加载器改路径。
 模板数量不靠隐藏 symlink 或双份副本维持；新任务不读兼容目录。
 配置默认值/runtime 不改；TASK 提问方式和注释重写，学生正文与备课字段分开。
 README 原来的同段追加模式替换为导航＋明确工作流，删除“以后支持”与已支持能力矛盾的旧描述。
-v0.8.1 完成六技能本体重写、共同边界和条件小节整合；guidance.py 按实际角色/模式选段，
-其来源写入请求包。增加可校验结果样例、学生注意力正反例和文档路由测试。
+五个审核通道各有完整 skill，guidance.py 按实际角色/模式选取，来源写入请求包。
+TASK 在真实会话首次实质工作时提供一次，后续复用；audience 完整方法首次提供，之后聚焦当前步骤。
+具体事故与可校验结果样例移到 tests/fixtures/semantic，维护方法在 docs/development，均不注入运行输入。
+原 .codex/agents 文件集合、runtime 配置、三份 compact 模板与四类结果 schema 保持不变。
 
 ## 兼容模板完整清单
 

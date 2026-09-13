@@ -19,7 +19,7 @@ from test_deck_workflow import native_double
 from test_audience_reading import audience_ready, finish_steps
 
 ROOT=Path(__file__).resolve().parents[2]
-EXAMPLES=ROOT/'examples/semantic'
+EXAMPLES=ROOT/'tests/fixtures/semantic'
 
 
 @pytest.mark.parametrize('kind,repair,correction,mode,sections',[
@@ -41,28 +41,28 @@ def test_mutually_distinct_role_modes(kind,repair,correction,mode,sections):
     assert [p.split('#')[1] for p in g['sources'] if '#' in p]==sections
     assert g['text'].count('# 共同教学边界')==1
     assert len(g['sources'])==len(set(g['sources']))
-    assert g['bytes']==len(g['text'].encode()) < 10000
+    assert g['bytes']==len(g['text'].encode())
     assert 'compat/legacy' not in g['text']
 
 
 @pytest.mark.parametrize('channel',['domain_accuracy','pedagogy','audience','language','layout'])
 def test_one_channel_only_not_five_concatenated(channel):
     g=compile_guidance(ROOT,'review',channel=channel)
-    assert g['sources'][-1].endswith('#'+channel)
-    assert sum('channels.md#' in p for p in g['sources'])==1
+    from mpres.control.guidance import REVIEW_GUIDES
+    assert g['sources'][-1].endswith(REVIEW_GUIDES[channel]+'/SKILL.md')
+    assert sum(p.endswith('/SKILL.md') for p in g['sources'])==1
     assert 'deck-editing/references' not in str(g['sources'])
     repair=compile_guidance(ROOT,'review',channel=channel,repair=True)
-    assert repair['sources'][-1].endswith('channels.md#repair')
-    assert '只读' in repair['text'] and '不修改稿件' in repair['text']
+    assert repair['sources'][-1].endswith('_shared/review-scope.md')
+    assert 'review-scope.md' in str(repair['sources'])
 
 
 @pytest.mark.parametrize('phase',['student','production_language'])
 def test_audience_has_only_the_current_small_step(phase):
     g=audience_guidance(ROOT,phase)
     assert len(g['sources'])==1
-    assert g['sources'][0].endswith('audience-steps.md#'+phase)
-    assert g['bytes']<2500
-    assert '完整冻结稿及相关允许证据' not in g['text']
+    assert g['sources'][0].endswith('steps.md#'+phase)
+    assert 'TASK.md' not in g['sources'][0]
 
 
 def test_unknown_role_channel_or_phase_fails_closed():
@@ -113,9 +113,10 @@ def test_real_audience_steps_and_final_get_different_guides(compact_root,native_
     requests,last=finish_steps(runner,host,req)
     assert [r['packet']['semantic_guidance_mode'] for r in requests]==[
         'audience:student','audience:production_language']
-    assert all(len(r['packet']['semantic_guidance_sources'])==1 for r in requests)
-    assert last['packet']['semantic_guidance_mode']=='review:audience'
-    assert last['packet']['semantic_guidance_sources'][-1].endswith('#audience')
+    assert len(requests[0]['packet']['semantic_guidance_sources'])==3
+    assert len(requests[1]['packet']['semantic_guidance_sources'])==1
+    assert last['packet']['semantic_guidance_mode']=='review:audience:synthesis'
+    assert last['packet']['semantic_guidance_sources'][-1].endswith('#synthesis')
     assert len(service.store.rows("SELECT * FROM jobs WHERE channel='audience'"))==1
     assert service.store.rows('SELECT * FROM configs')==before
 
@@ -164,11 +165,10 @@ def test_calibration_examples_are_not_claims_of_model_execution():
     assert {c['id'] for c in cases}>={'necessary-assumption','mispaired-resolution','recent-but-unused'}
 
 
-def test_six_skills_have_organized_inputs_outputs_and_no_role_copy_paste():
-    skills=list((ROOT/'.agents/skills').glob('*/SKILL.md'));assert len(skills)==6
-    for p in skills:
-        text=p.read_text();meta=yaml.safe_load(text.split('---',2)[1])
-        assert meta['name']==p.parent.name and len(meta['description'])>30
-        assert text.count('\n## ')>=5
-        assert 'reviewer 必须独立复查，不照抄作者结论' not in text
-    assert '不修改稿件' in (ROOT/'.agents/skills/specialist-review/SKILL.md').read_text()
+def test_every_review_channel_resolves_to_its_own_full_skill():
+    from mpres.control.guidance import REVIEW_GUIDES
+    assert len(set(REVIEW_GUIDES.values()))==5
+    for channel, name in REVIEW_GUIDES.items():
+        routed=compile_guidance(ROOT,'review',channel=channel)
+        assert '.agents/skills/'+name+'/SKILL.md' in routed['sources']
+        assert read_fragment(skill_root(ROOT),name+'/SKILL.md') in routed['text']

@@ -1,25 +1,36 @@
-# 六个语义 skills 的阅读方式
+# 语义角色与阅读入口
 
-## 不扫描全部内容
+先理解用户当前要规划、修改还是执行。任务确定后，所有角色建立一次完整 TASK 上下文；
+同一线程后续复用，不因新 job、分段或修正反复阅读。角色指南不替代任务意图。
 
-正常 worker 使用 packet.semantic_guidance，其中包含共同教学边界、一个角色正文、
-当前 channel/mode 的必要小节。semantic_guidance_sources 记录来源与小节，已经在包内的文本
-不再打开重读。operator/host 手册、templates 和 compat 不属于 worker 的默认输入。
+## 角色导航
 
-## 两种入口
+| 工作 | 独立 skill |
+|---|---|
+| 课程规划 | [course-planning](course-planning/SKILL.md) |
+| 单课写作 | [marp-writing](marp-writing/SKILL.md) |
+| 整稿编辑、作者修订 | [deck-editing](deck-editing/SKILL.md) |
+| 数学与领域准确性审核 | [domain-accuracy-review](domain-accuracy-review/SKILL.md) |
+| 教学设计审核 | [pedagogy-review](pedagogy-review/SKILL.md) |
+| 学生视角审核 | [audience-review](audience-review/SKILL.md) |
+| 语言与术语审核 | [language-review](language-review/SKILL.md) |
+| 信息布局审核 | [layout-review](layout-review/SKILL.md) |
+| 问题诊断 | [problem-diagnosis](problem-diagnosis/SKILL.md) |
+| 资源设计 | [resource-design](resource-design/SKILL.md) |
 
-运行器调度：write→marp-writing；edit/revise→deck-editing；review→specialist-review 的单通道；
-diagnose→problem-diagnosis 的有界/展开分支。audience_step 单独注入当前学生阅读或学习价值小节。
-手动委派：先读所选 SKILL.md 及共同 learning-contract，再只读任务明确需要的引用小节。
-course-planning 和 resource-design 是按需语义能力，不擅自创建一个新的机械角色池。
+## 运行时读取
 
-## 条件性说明
+runner 根据 job 的实际 kind/channel/mode 提供共同教学边界、一个角色的完整方法和必要分支。
+不能把五个审核者的职责拼成一个大 prompt，也不能只给每个 reviewer 一段泛泛提醒。
+reviewer 都使用原 specialist-reviewer agent 定义和 reviewer runtime family，角色配置不拆分。
+audience 首段提供完整角色方法，后续只提供当前步骤，最终只综合已经完成的阅读。
 
-references/modes.md、channels.md、audience-steps.md 是按标题选择的内容，不是需要依次运行的阶段。
-共同边界只写一处。每个 SKILL 以用途、输入、判断顺序、输出和失败边界组织，不按历史版本追加补丁。
-选择逻辑在 control/guidance.py；未知/缺失小节应报错，不从 legacy 拼一份替代提示。
+手动委派同样按已指定通道选择一个 skill，不自己选择五个角色，也不扫描所有 references。
+编辑与诊断的分支说明仅在对应任务使用，不创建额外流程。共同教学原则见
+[learning-contract](_shared/learning-contract.md)。具体权限和格式由当前请求及项目契约负责。
 
-## 更新纪律
+## 维护与运行分开
 
-修改本体、对应分支、结果示例和路由测试；保留教学正反例。新规则不通过额外过程文件落地。
-格式/结构测试不能证明模型理解，校准素材位于 examples/semantic/calibration-cases.json。
+skills 写通用判断方法，不收集事故经过、旧题目、任务专名或校准题。
+维护项目源码时可以使用测试素材检验方法与格式，但维护资料不注入语义作业、不要求 worker 阅读。
+不以段落数、关键词黑名单或篇幅 lint 判断 skill 好坏；实际维护应审查职责、方法与输入输出是否对应。

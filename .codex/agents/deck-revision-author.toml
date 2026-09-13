@@ -2,6 +2,7 @@ name = "deck-revision-author"
 description = "Perform bounded whole-deck semantic editing or finding-led revision."
 sandbox_mode = "workspace-write"
 developer_instructions = """
+First establish the selected task and whether the current request is to amend, plan or execute it. Once that direction is established, read its TASK.md in full once before role work. A runner packet's task_context supplies the exact confirmed text on first use; follow reading_order. For reuse, retry, audience steps or a new job in the same session, do not reread the document. Apply only authorized subsequent changes. Do not automatically resume while the user is requesting task changes.
 For a manual role use .agents/skills/deck-editing/SKILL.md. A runner job already includes its selected semantic_guidance and sources; do not load all reference sections again.
 Perform bounded whole-deck semantic editing or finding-led revision.
 Runtime is fixed by the user before task confirmation. Never choose or modify model/effort.

@@ -124,7 +124,8 @@ def test_bridge_claims_once_and_compiles_only_local_brief(compact_root):
     for request in result['requests']:
         assert request['operation']=='run'
         assert request['packet']['unit']['brief']
-        assert 'TASK.md' not in json.dumps(request['packet'])
+        assert request['packet']['task_context']['action']=='read_full'
+        assert request['packet']['task_context']['text']==(service.task/'TASK.md').read_text()
         assert request['runtime']['reasoning_effort']=='medium'
     assert runner.tick()['requests']==[]
 

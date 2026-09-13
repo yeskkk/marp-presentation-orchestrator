@@ -22,7 +22,7 @@
 python scripts/bootstrap.py --with-figures
 ./start.sh --check
 ./start.sh                         # 交互 Codex：选择任务或确认前规划
-./start.sh --task economics        # 恢复指定任务，采用其固定 planner runtime
+./start.sh --task economics        # 选择已有任务，先确定修改还是继续；采用固定 planner runtime
 ./start.sh --cli task status economics
 ./start.sh --cli toolchain doctor
 ```
@@ -30,11 +30,28 @@ python scripts/bootstrap.py --with-figures
 Codex 需在部署机器单独安装和登录。启动器保留终端、退出码、中断信号、审批和沙箱；
 不会替用户登录、关闭安全策略或在任务运行中临时安装依赖。也可进入本目录手动启动 Codex，
 使用同一份 [AGENTS.md](AGENTS.md)。Windows 入口为 `start.ps1`/`start.cmd`。
-`--task` 恢复的是项目任务，不是猜测某个 Codex conversation ID。
+`--task` 选择项目任务，不默认执行续跑，也不猜测某个 Codex conversation ID。
 
 Python 3.11+；原生完整门禁需要项目固定的 Marp CLI、Node.js、浏览器和相应依赖。
 `--check` 能开始规划不等于原生渲染就绪；`toolchain doctor` 会真实检查，不用替身冒充成功。
 [安装、日常命令和恢复](docs/OPERATIONS.md) · [宿主适配器协议](docs/HOST-PROTOCOL.md)
+
+
+### 2.1 任务上下文只建立一次
+
+启动后先确定用户要新建、修改还是继续，不自动开工。main 和手动角色在任务与当前方向
+确定后，开始实质工作前完整读一次 TASK.md；不能以角色指南代替用户意图。
+已读的同一会话直接复用，只应用后续明确变更，不因换 job、纠错、分段试读重复全文阅读。
+
+runner 将精确确认文本放入首个语义请求的 `task_context`，阅读顺序为任务→角色指导→
+本次工作与反馈→内容。正常有历史反馈时是已有 brief，没有反馈时是已有 run 或首个
+audience_step；不新增一次模型调用。TASK 不放进按需附件、不截断，全文计入既有预算。
+成功的真实回执会记下本 session 的上下文接收记录；以后只传 `reuse` 提示，不重发全文。
+这是对宿主执行协议的记录，不是证明模型理解了任务，也不是让模型写另一份“已阅读”报告。
+
+runner 重启不会清空记录。新真实会话需要自己读一次；旧版在途请求不追溯造阅读记录，
+其下一次新请求建立上下文。`apply_delta` 仅针对已有正式配置版本变更；它不提供新授权
+或跳过确认的入口。会话上下文真的丢失时应如实对账，不能伪称记得；当前 runner 不自动 reset。
 
 ## 3. 完整生产流程及每一步的边界
 
@@ -43,7 +60,7 @@ Python 3.11+；原生完整门禁需要项目固定的 Marp CLI、Node.js、浏�
 | 规划 | main 根据受众、教材摘录、历史反馈安排课次；解决证明深度等冲突 | `TASK.md` 总边界、`task.yaml` 每课 brief；不是学生页文案 |
 | 确认 | 程序展示三份入口，用户明确确认 | 数据库不可变配置快照；只有用户选择 runtime |
 | 准入和领取 | runner 查询真实容量，保留五 reviewer/编辑/恢复余量，按依赖领取 job | 精确 attempt 与 session；并发只是上限 |
-| 开工回顾 | `brief` 携带本次历史反馈，模型短 readback 后才发 `run` | 回执与 usage 入库；不向学生展示回顾声明 |
+| 开工回顾 | 首次请求提供 TASK 全文；已有会话复用。`brief` 携带本次反馈，readback 后才发 `run` | 回执与 usage 入库；不向学生展示回顾声明 |
 | 单课写作 | 本课 brief、必读资料、固定主题；只写 Markdown 与资产 | 新 artifact，经源码门禁；失败回到有界内容修正 |
 | 组装与整稿编辑 | 程序拼接合格课次；短时 editor 处理衔接、符号、案例与叙述 | 整稿候选；没有常驻 author-coordinator |
 | full gate／冻结 | 指定修订执行源码、图示、HTML/DOM、数学和 PDF 结构检查 | 冻结证据；旧稿成功不批准新稿 |
@@ -67,16 +84,25 @@ Python 3.11+；原生完整门禁需要项目固定的 Marp CLI、Node.js、浏�
 不因为带教学词汇就应保留。真实条件、必要模拟数据披露及事实出处不能误删。
 现实资料应参与变量、单位、模型、计算或解释；几何表达必须与公式中的对象对应。
 
-只有六个语义能力：[课程规划](.agents/skills/course-planning/SKILL.md)、
-[写作](.agents/skills/marp-writing/SKILL.md)、[编辑](.agents/skills/deck-editing/SKILL.md)、
-[专项审核](.agents/skills/specialist-review/SKILL.md)、[诊断](.agents/skills/problem-diagnosis/SKILL.md)、
-[资源设计](.agents/skills/resource-design/SKILL.md)。
-规划和资源设计是可用能力，不表示正常 runner 必然为它们建立独立 job。
-worker 只读取自己的包，不默认通读全部 skills、所有教材或兼容模板。
-运行器现在注入“共同边界＋当前角色＋必要模式/通道小节”，并记录 semantic_guidance_sources。
-普通整编不混入 finding 修复；review-first 的修订额外获得确认范围；audience 每个分段只获得
-当前学生阅读/学习价值说明，不同时执行五通道。参考小节是资料分区，不是新的任务阶段。
-[六技能导航](.agents/skills/README.md) · [结果字段及样例](docs/SEMANTIC-RESULTS.md)
+十个语义 skills 分别承担规划、写作、编辑、诊断、资源设计，以及五个对等的独立审核职责：
+[数学与领域](.agents/skills/domain-accuracy-review/SKILL.md)、
+[教学设计](.agents/skills/pedagogy-review/SKILL.md)、
+[学生视角](.agents/skills/audience-review/SKILL.md)、
+[语言](.agents/skills/language-review/SKILL.md)、
+[信息布局](.agents/skills/layout-review/SKILL.md)。
+每个 reviewer 有自己的完整判断方法、证据范围和结束边界，不再从单个 channels 文件取一段提醒。
+**.codex/agents 不拆分**：仍使用 specialist-reviewer 定义及 reviewer runtime family，
+由已分配 channel 选一个 skill，不修改固定模型与强度的配置结构。
+
+所有角色先依据已建立的任务上下文，再读自己的方法。runner 只注入共同教学边界、一个角色
+和当前模式；不会将另四个通道、旧事故示例或维护资料一起加载。
+audience 首段取得完整学生试读 skill，后续段只取得当前焦点，最后只综合已有结果；
+仍是一个会话，不增加首次五通道审核之后的验修角色。
+[角色导航](.agents/skills/README.md) · [语义结果协议](docs/SEMANTIC-RESULTS.md)
+
+规划、写作、编辑和共享原则也已通用化：具体旧题目和事故保留在源码维护测试中，
+不作为运行任务必须阅读的方法库。工具能力与执行限制继续由代码和技术契约负责，
+不塞进共同教学原则，也不以关键词或篇幅 lint 代替人工审读。
 
 main 处理需求、明确反馈、确认边界、语义争议；健康巡检、容量和登记不需要它重新判断。
 author 修内容，不改全局 CSS；reviewer 只提交问题，不代作者改稿；宿主负责真实执行证据，
@@ -156,11 +182,12 @@ edit-first 是另一条兼容路径，不要把两者拼成多一轮流程。旧
 | `control/workflow.py`、`repairs.py`、`delivery.py` | 整稿链、两种返修、历史版本与公开配对目录 |
 | `control/quality.py`、`recovery.py`、`files.py` | 修订门禁、安全恢复与工作副本 |
 | `source_policy.py`、`geometry.py`、`rendering.py`、检查模块 | 表达约束、计算图、固定原生渲染与结构检查 |
-| `.agents/skills/` | 六种语义能力；不是运行手册 |
+| `src/mpres/control/task_context.py` | 真实会话的 TASK 首次提供、复用、变更差异及回执记录 |
+| `.agents/skills/` | 十个独立语义技能：五个内容角色与五个审核通道；不包含维护样例 |
 | `templates/compact/` | 仅三份当前配置模板；[模板导航](templates/README.md) |
 | `compat/legacy/templates/`、`docs/legacy/` | 显式旧入口兼容材料，不注入新任务 |
 | `docs/` | 分流程工作手册、操作/宿主/内容契约、验证与维护说明 |
-| `tests/compact/`、`tests/` | 新控制面与保留的旧回归 |
+| `tests/compact/`、`tests/` | 新控制面与保留的旧回归；`tests/fixtures/semantic/` 只供源码维护 |
 
 数据关系：config → plan item → job → attempt → artifact → gate/check。
 Session 关联 attempt，usage/finding/decision/event 存库。检查、绘图、模型调用在写事务外，
@@ -184,9 +211,8 @@ DB 备份不包含资产，不是完整任务导出。
 固定 Marp 原生 PDF、字体和操作系统行为仍须在部署环境验收。不得以替身通过宣传原生通过。
 [验证口径](docs/VALIDATION.md) · [安全边界](docs/SECURITY.md) · [文档维护与盘点](docs/DOCUMENTATION-INVENTORY.md)
 
-## 最近阶段
+## 本次阶段：v0.8.3
 
-v0.8.1 在 v0.8.0 隔离旧模板与工作流的基础上，重写六个语义 skills，按角色/工作模式选择指南小节，
-补充可验证结果样例与文档维护测试。仍是六技能、四 schema、三用户配置、schema 8；
-不改原任务或 p01、不新增 reviewer 验修、不动态改模型，也不宣称已完成真实宿主/原生 PDF 验收。
-维护方法见 [MAINTAINING-GUIDES](docs/MAINTAINING-GUIDES.md)。
+保留 v0.8.2 的任务确定后会话级 TASK 阅读。五个审核通道改为独立完整 skill，
+原 agent 定义和 runtime family 不拆；共享原则和作者指导改为通用方法，
+具体案例只保存在源码维护测试中。没有新增 skill lint、用户过程表单或 reviewer 验修轮次。

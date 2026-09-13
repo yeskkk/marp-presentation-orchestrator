@@ -20,7 +20,7 @@ def checker():
 def test_active_documentation_links_and_boundaries():
     report=checker()(ROOT)
     assert report['success'],report
-    assert report['semantic_skills']==6
+    assert report['semantic_skills']==10
     assert report['active_configuration_templates']==3
     assert report['legacy_templates']>100
 

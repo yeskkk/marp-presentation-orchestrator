@@ -1,4 +1,4 @@
-"""Four semantic result schemas; six guides, with no workflow instructions to AI."""
+"""Four semantic schemas; role-specific guidance is resolved separately."""
 from __future__ import annotations
 
 import json
@@ -10,8 +10,6 @@ from jsonschema import Draft202012Validator
 from mpres.util import MPresError, SubmissionRejected
 
 SCHEMAS = {'plan','author-result','review-result','diagnosis-result'}
-GUIDES = {'write':'marp-writing','edit':'deck-editing','revise':'deck-editing',
-          'review':'specialist-review','diagnose':'problem-diagnosis'}
 
 
 @lru_cache(maxsize=4)
@@ -38,10 +36,10 @@ def result_schema_name(kind: str) -> str:
     raise MPresError('Mechanical jobs do not request AI result schemas')
 
 
-def guidance(root: Path, kind: str) -> str:
+def guidance(root: Path, kind: str, *, channel: str | None = None) -> str:
     """Compatibility helper; the runner supplies channel/mode to compile_guidance."""
     from .guidance import compile_guidance
-    return compile_guidance(root, kind)['text']
+    return compile_guidance(root, kind, channel=channel)['text']
 
 
 def gate_excerpt(report: dict) -> dict:
@@ -64,8 +62,8 @@ STUDENT_VALUE_RUBRIC = {
         '开场说学生要解决什么，不把一个引例说成整门概念的唯一用途，不把规划动作“定义/论证”当学习动机。',
         '现实资料必须参与变量、单位、建模、计算或解释，不用年份/新闻页单独证明“够新”。',
         '来源的 TXT 行号留在内部；必要事实/图片出处简短可访问，孤立引文不能代替具体解释。',
-        '误区应由当前任务或真实易错点支撑，不能凭空制造“不是地理位置”等免责声明。',
-        '结论说出数学关系或可执行判断，不用“分别论证/保证一般维数”等方法口号充数。',
+        '澄清误解应依据当前表示、真实常见错误或前文语境；没有依据时直接解释正面的数学含义。',
+        '结论应陈述学生可带走的认识、关系或操作能力，不能以证明策略或教学过程名称代替。',
     ],
     'protect': '保留规范术语、数学含义、必要条件和真实数据出处；精确不等于证明密集。不做“定义→知道”等机械替词。',
     'proof_rule': '按已确认的证明深度处理；最低要求是数学准确，不是保留每段正确证明。任务书与后来用户意见冲突时明确指出，不能自行声称它们一致。',

@@ -14,9 +14,10 @@ from test_job_runner import ready, attach_requests
 ROOT=Path(__file__).resolve().parents[2]
 
 
-def test_only_six_semantic_skills_and_no_resident_coordinator():
+def test_review_skills_split_but_agent_configuration_not_split():
     dirs={p.parent.name for p in (ROOT/'.agents/skills').glob('*/SKILL.md')}
-    assert dirs=={'course-planning','marp-writing','deck-editing','specialist-review','problem-diagnosis','resource-design'}
+    assert dirs=={'course-planning','marp-writing','deck-editing','domain-accuracy-review','pedagogy-review','audience-review','language-review','layout-review','problem-diagnosis','resource-design'}
+    assert {p.name for p in (ROOT/'.codex/agents').glob('*.toml')}=={'deck-revision-author.toml','delegated-planner.toml','diagnostic-reviewer.toml','lesson-author.toml','resource-designer.toml','specialist-reviewer.toml'}
     assert not (ROOT/'.codex/agents/author-coordinator.toml').exists()
     assert not (ROOT/'.codex/agents/review-coordinator.toml').exists()
     assert not (ROOT/'.codex/agents/release-coordinator.toml').exists()

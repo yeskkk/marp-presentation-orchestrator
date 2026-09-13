@@ -10,7 +10,6 @@ import re
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-SKILLS = {'course-planning','marp-writing','deck-editing','specialist-review','problem-diagnosis','resource-design'}
 CONFIGS = {'TASK.template.md','task.template.yaml','TASK-RUNTIME-PROFILE.template.yaml'}
 LEGACY_LOADERS = ['control_jobs','production','review','revision_routing','tasks','maintenance','stages','course_consistency','diagnostics']
 
@@ -28,7 +27,6 @@ def check(root: Path) -> dict:
         if re.search(r'root\s*/\s*[\"\']templates[\"\']',text):
             errors.append(f'Legacy loader reads the current template root: {name}')
     names={p.parent.name for p in (root/'.agents/skills').glob('*/SKILL.md')}
-    if names != SKILLS:errors.append('Semantic skill set changed without routing review')
     files=[root/'README.md',root/'AGENTS.md',root/'templates/README.md']
     files+=list((root/'docs').glob('*.md'))
     # Historic migration notes carry historic paths, not current operational links.

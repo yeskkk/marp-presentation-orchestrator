@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.3
+
+- Five independent full review skills, same specialist-reviewer agent and fixed runtime family.
+- General teaching principles and role methods replace task-specific examples.
+- Maintenance/calibration fixtures are outside runtime guidance.
+- Audience receives its complete method first, then bounded step and synthesis instructions.
+- No skill lint, extra model role, repair-verification review or database schema change.
+
+
+## 0.8.2
+
+- Determine amend/plan/resume intent before work; do not force automatic continuation.
+- Supply confirmed TASK once per actual session in the existing semantic request.
+- Reuse session context across jobs/retries/audience chunks; authorized edits are deltas.
+- Keep the existing agent definitions and all runtime/approval boundaries.
+
+
 ## 0.7.0
 
 - First v0.7.x milestone: project-owned, offline Gaia/lead-style default based on

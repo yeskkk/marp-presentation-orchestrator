@@ -8,7 +8,7 @@ SQLite 关系模型管理配置、job、attempt、session、artifact、gate、fi
 
 ## 语义与机械分离
 
-main 处理用户需求和真实决策。六个 skills 只定义教学判断；runner 决定依赖、容量、重试、
+main 处理用户需求和真实决策。十个 skills 只定义教学判断；runner 决定依赖、容量、重试、
 检查与交付。教学结果字段不能宣称 gate/capacity/approval 成功。作者自修后不新增验修 reviewer。
 
 ## 文档与模板同样有生命周期

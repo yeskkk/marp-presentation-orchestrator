@@ -11,12 +11,19 @@ from typing import Any
 
 from mpres.util import MPresError
 
-GUIDANCE_VERSION = '0.8.1'
+GUIDANCE_VERSION = '0.8.3'
 ROLE_GUIDES = {
     'write': 'marp-writing', 'edit': 'deck-editing', 'revise': 'deck-editing',
-    'review': 'specialist-review', 'diagnose': 'problem-diagnosis',
+    'diagnose': 'problem-diagnosis',
 }
-CHANNELS = {'domain_accuracy', 'pedagogy', 'audience', 'language', 'layout'}
+REVIEW_GUIDES = {
+    'domain_accuracy': 'domain-accuracy-review',
+    'pedagogy': 'pedagogy-review',
+    'audience': 'audience-review',
+    'language': 'language-review',
+    'layout': 'layout-review',
+}
+CHANNELS = set(REVIEW_GUIDES)
 SHARED = '_shared/learning-contract.md'
 
 
@@ -66,9 +73,14 @@ def assemble(root: Path, fragments: list[tuple[str, str | None]], mode: str) -> 
 
 def compile_guidance(root: Path, kind: str, *, channel: str | None = None,
                      repair: bool = False, correction: bool = False) -> dict[str, Any]:
-    if kind not in ROLE_GUIDES:
-        raise MPresError('No semantic guide for a mechanical job')
-    role = ROLE_GUIDES[kind]
+    if kind == 'review':
+        if channel not in REVIEW_GUIDES:
+            raise MPresError('A review needs one assigned channel; never guess or load all five')
+        role = REVIEW_GUIDES[channel]
+    else:
+        if kind not in ROLE_GUIDES:
+            raise MPresError('No semantic guide for a mechanical job')
+        role = ROLE_GUIDES[kind]
     fragments = [(SHARED, None), (f'{role}/SKILL.md', None)]
     mode = kind
     if kind == 'edit':
@@ -81,26 +93,31 @@ def compile_guidance(root: Path, kind: str, *, channel: str | None = None,
     elif kind == 'write' and correction:
         fragments.append(('deck-editing/references/modes.md', 'correction')); mode = 'write-correction'
     elif kind == 'review':
-        if channel is not None:
-            if channel not in CHANNELS:
-                raise MPresError(f'Unknown semantic review channel: {channel}')
-            fragments.append(('specialist-review/references/channels.md', channel))
-            mode = 'review:' + channel
+        mode = 'review:' + channel
     elif kind == 'diagnose':
         selected = 'expansion' if repair else 'bounded'
         fragments.append(('problem-diagnosis/references/modes.md', selected)); mode = 'diagnose:' + selected
     if repair and kind in {'edit', 'revise'}:
         fragments.append(('deck-editing/references/modes.md', 'repair'))
     elif repair and kind == 'review':
-        fragments.append(('specialist-review/references/channels.md', 'repair'))
+        fragments.append(('_shared/review-scope.md', None))
     return assemble(root, fragments, mode)
 
 
-def audience_guidance(root: Path, phase: str) -> dict[str, Any]:
+def audience_guidance(root: Path, phase: str, *, introduce: bool = False) -> dict[str, Any]:
     if phase not in {'student', 'production_language'}:
         raise MPresError('Unknown audience guidance phase')
-    return assemble(root, [('specialist-review/references/audience-steps.md', phase)],
-                    'audience:' + phase)
+    fragments = [(SHARED, None), ('audience-review/SKILL.md', None)] if introduce else []
+    fragments.append(('audience-review/references/steps.md', phase))
+    return assemble(root, fragments, 'audience:' + phase)
+
+
+def audience_synthesis_guidance(root: Path, *, repair: bool = False, introduce: bool = False) -> dict[str, Any]:
+    fragments = [(SHARED, None), ('audience-review/SKILL.md', None)] if introduce else []
+    fragments.append(('audience-review/references/steps.md', 'synthesis'))
+    if repair:
+        fragments.append(('_shared/review-scope.md', None))
+    return assemble(root, fragments, 'review:audience:synthesis')
 
 
 def attach_guidance(packet: dict, bundle: dict[str, Any]) -> None:

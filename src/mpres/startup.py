@@ -146,7 +146,7 @@ def build_command(root: Path, report: dict, tail: list[str]) -> list[str]:
             # Arbitrary positional strings might already be a prompt; require a
             # clear route rather than merge it into a second positional prompt.
             raise MPresError('With --task use only value-free Codex flags (e.g. --no-alt-screen); give instructions interactively')
-        command += [f"Continue task tasks/{rt['task']}; read AGENTS.md and its confirmed database state. Do not infer user confirmation."]
+        command += [f"Selected task: tasks/{rt['task']}. First establish whether the user wants to amend the task, plan, or resume; do not automatically start production. Once the task and current direction are established, read TASK.md in full once in this session before substantive role work. If already read, use that context and only subsequent authorized changes. Follow AGENTS.md and inspect actual state; never infer user confirmation."]
     return command
 
 

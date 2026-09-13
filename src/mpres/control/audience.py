@@ -23,9 +23,9 @@ STEP_BUDGET = 48000
 _ATTENTION_SIGNALS = (
     ('planning-field', re.compile(r'^(?:先修|预备知识|核心|扩展|教学目标|目标|本课目标)\s*[:：]|核心.*\d+.*分钟')),
     ('producer-voice', re.compile(r'教学假设|教学模拟|本页已|已按.*要求|资料缺口|另行提供|已明确标|本课使用.*规范术语')),
-    ('invented-misunderstanding', re.compile(r'不代表.*地理位置|不是.*地理坐标')),
+    ('invented-misunderstanding', re.compile(r'(?:并不|不)(?:代表|意味着|等于|表示)')),
     ('internal-source', re.compile(r'\.txt.*(?:行|L\d|:\d)|L\d+[-–]L?\d+|^(?:阅读|参考文献|引用材料|资料来源)\s*[:：]')),
-    ('method-slogan', re.compile(r'分别论证|代数证明保证|保证结论适用于|几何图形.*几何图形')),
+    ('method-slogan', re.compile(r'(?:结论|总结).*(?:论证|证明|讨论|分析)|(?:证明|论证).*(?:保证|确保)')),
 )
 
 
@@ -117,6 +117,15 @@ class Audience:
         rows=self.store.rows("SELECT detail_json FROM events WHERE kind='audience.contract' AND json_extract(detail_json,'$.attempt_id')=? ORDER BY id DESC LIMIT 1",(attempt_id,))
         return json.loads(rows[0]['detail_json'])['version'] if rows else 1
 
+    def guidance_introduced(self, attempt_id):
+        from .guidance import GUIDANCE_VERSION
+        return bool(self.store.rows(
+            "SELECT id FROM events WHERE kind IN ('audience.step_requested','provider.run_requested') "
+            "AND json_extract(detail_json,'$.attempt_id')=? "
+            "AND json_extract(detail_json,'$.semantic_guidance_version')=? "
+            "AND json_extract(detail_json,'$.role_introduction')=1 LIMIT 1",
+            (attempt_id, GUIDANCE_VERSION)))
+
     def request(self, job, attempt, runtime):
         self.ensure(attempt['id'])
         rows=self.rows(attempt['id']);next_row=next((r for r in rows if r['state']!='completed'),None)
@@ -157,23 +166,27 @@ class Audience:
                 'attention_candidates':candidates,
                 'limitations':'Historical feedback was briefed earlier; this is not a blind experiment or real student study.'}
         from .guidance import audience_guidance, attach_guidance
-        attach_guidance(packet, audience_guidance(self.task.parent.parent, next_row['phase']))
+        attach_guidance(packet, audience_guidance(self.task.parent.parent, next_row['phase'], introduce=not self.guidance_introduced(attempt['id'])))
         # Audience/prerequisites should be read from confirmed TASK, not author
         # self-checks. Keep this context bounded rather than injecting task records.
         with self.store.transaction() as conn:
             cfg=self.service.confirmed(conn);settings=json.loads(cfg['settings_json'])
             from .semantic import teaching_context
             packet['teaching_context']=teaching_context(settings)
-            packet['confirmed_task_brief']=cfg['task_text']
+            # TASK is session context, never repeated for every page chunk.
             budget=settings.get('context_budget_bytes',262144)
         from .input_packet import compile_inputs,check_budget
+        from .task_context import attach as attach_task_context
+        attach_task_context(self.service, attempt, packet)
         compile_inputs(self.task,packet)
         check_budget(packet,budget)
         with self.store.transaction() as conn:
             row=conn.execute('SELECT state FROM audience_steps WHERE attempt_id=? AND sequence=?',(attempt['id'],next_row['sequence'])).fetchone()
             if row['state']!='pending':return None
+            from .task_context import requested as request_task_context
+            request_task_context(conn, self.service, attempt, f"audience:{attempt['id']}:{next_row['sequence']}", packet)
             conn.execute("UPDATE audience_steps SET state='dispatched' WHERE attempt_id=? AND sequence=?",(attempt['id'],next_row['sequence']))
-            event(conn,'audience.step_requested',{'attempt_id':attempt['id'],'sequence':next_row['sequence'],'phase':next_row['phase'],'artifact_id':job['input_artifact_id'],'slide_ids':targets},job['id'])
+            event(conn,'audience.step_requested',{'attempt_id':attempt['id'],'sequence':next_row['sequence'],'phase':next_row['phase'],'artifact_id':job['input_artifact_id'],'slide_ids':targets, 'semantic_guidance_version':packet['semantic_guidance_version'], 'role_introduction':'.agents/skills/audience-review/SKILL.md' in packet['semantic_guidance_sources']},job['id'])
         return {'operation':'audience_step','request_id':f"audience:{attempt['id']}:{next_row['sequence']}",
                 'attempt_id':attempt['id'],'sequence':next_row['sequence'],'session_id':attempt['session_id'],'runtime':runtime,'packet':packet}
 

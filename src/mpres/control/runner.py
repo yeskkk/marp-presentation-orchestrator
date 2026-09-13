@@ -325,6 +325,8 @@ class Runner:
         from .semantic import teaching_context
         packet['teaching_context'] = teaching_context(config)
         from .input_packet import compile_inputs,check_budget
+        from .task_context import attach as attach_task_context
+        attach_task_context(self.service, self.service.attempt(attempt_id), packet)
         compile_inputs(self.task,packet,references=deck_references)
         check_budget(packet,config.get('context_budget_bytes',262144))
         packet['sandbox_enforced_by_project']=False
@@ -459,6 +461,10 @@ class Runner:
                 return audience.request(job,attempt,runtime)
             packet=self.packet(job,attempt['id'])
             if applies(job):
+                from .guidance import audience_synthesis_guidance, attach_guidance
+                attach_guidance(packet, audience_synthesis_guidance(self.task.parent.parent,
+                    repair=bool(packet.get('repair_scope')),
+                    introduce=not audience.guidance_introduced(attempt['id'])))
                 packet['audience_reading']=audience.final_context(attempt['id'])
                 packet['instructions']='Final historical-feedback comparison and finding synthesis. Preserve the earlier student/production-language findings verbatim; do not claim author self-reports are evidence. Do not re-review author repairs.'
         else:
@@ -471,17 +477,31 @@ class Runner:
             from .repairs import Repairs
             scope=Repairs(self.task).context(job)
             if scope: packet['repair_scope']=scope
-        if len(encode(packet).encode()) > self.settings().get('context_budget_bytes',262144):
-            raise MPresError('Historical feedback exceeds the context budget; never silently truncate it')
+        if operation == 'brief':
+            from .task_context import attach as attach_task_context
+            attach_task_context(self.service, attempt, packet)
+        from .input_packet import check_budget
+        packet.setdefault('required_text_bytes', 0)
+        packet.pop('context_bytes', None)
+        check_budget(packet, self.settings().get('context_budget_bytes',262144))
         with self.store.transaction() as conn:
             current=conn.execute('SELECT * FROM attempt_briefings WHERE attempt_id=?',(attempt['id'],)).fetchone()
             if current[flag]: return None
+            from .task_context import requested as request_task_context
+            request_task_context(conn, self.service, attempt, ('brief:' if operation=='brief' else '')+attempt['id'], packet)
             conn.execute('UPDATE attempt_briefings SET '+flag+'=1 WHERE attempt_id=?',(attempt['id'],))
-            event(conn,'provider.'+operation+'_requested',{'attempt_id':attempt['id'],'context_bytes':packet.get('context_bytes',len(encode(packet).encode()))},job['id'])
+            event(conn,'provider.'+operation+'_requested',{'attempt_id':attempt['id'],'context_bytes':packet.get('context_bytes',len(encode(packet).encode())), 'semantic_guidance_version':packet.get('semantic_guidance_version'), 'role_introduction':'.agents/skills/audience-review/SKILL.md' in packet.get('semantic_guidance_sources',[])},job['id'])
         return {'operation':operation,'request_id':('brief:' if operation=='brief' else '')+attempt['id'],
                 'attempt_id':attempt['id'],'session_id':attempt['session_id'],'runtime':runtime,'packet':packet}
 
     def accept(self, request: dict, response: dict) -> dict:
+        from .task_context import validate_response_request, received
+        detail = validate_response_request(self.service, request)
+        result = self._accept(request, response)
+        received(self.service, detail, response.get('receipt'))
+        return result
+
+    def _accept(self, request: dict, response: dict) -> dict:
         if not isinstance(response,dict):
             raise MPresError('Provider response must be a JSON object')
         if request['operation']=='capabilities':

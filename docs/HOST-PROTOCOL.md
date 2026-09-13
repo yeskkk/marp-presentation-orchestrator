@@ -24,6 +24,27 @@ Runner 生成 operation/request_id/job/attempt/session、精确 runtime 和输�
 
 ## 3. 输入包及模型工作范围
 
+### TASK 的会话级输入协议
+
+`reading_order` 是阅读顺序，不能依赖 JSON 字段序列。对所有语义 operation：
+
+- `task_context.action=read_full`：先完整读取 `text`（确认版本 TASK.md 原文），再处理角色任务。
+- `reuse`：本 session 已收到同任务全文，不要重新读磁盘文件。换 job、retry、audience 段不重读。
+- `apply_delta`：只应用提供的已确认 `delta`，沿用原全文；不是自动授权改 TASK 或 runtime。
+
+宿主必须把指定内容真正提供给同一持续会话；正常返回原有 receipt 表示已经执行请求中的
+必读协议。没有新增操作、额外模型调用或 AI 自证表单。引擎只记录“宿主完成了带阅读指令的请求”，
+不能据此断言模型理解正确。丢失、无效回执不会创建接收记录；重放同一回执幂等。
+旧已派发请求没有此字段时不追溯拒收，也不据旧 usage 猜测已经读过；后续请求再建立上下文。
+
+main／手动子线程遵守 AGENTS 的一次阅读入口；非 runner 线程的阅读不由数据库伪造回执。
+不要让宿主每次 run 都新建一段空上下文，却仍返回同一个 session handle。真正换会话必须
+登记新 handle；当前项目没有自动 reset 的隐式语义。完整 TASK 超预算应在派发前报告，
+不是截断、删正文或偷偷提高预算。存在 task_context 时，不能只读 input_files 而忽略它。
+
+### 内容与资源
+
+
 `input_files` 里的必读文本必须完整提供；不能先自动摘要/截断整稿再让 reviewer 宣称读过。
 `resource_manifest` 是允许按需访问的准确文件，不自动内联 SVG/XML/PDF/主题/脚本。
 引用资源清单不证明已读；不能默认读取整个任务目录，也不能执行 reproduction_source。
@@ -66,3 +87,13 @@ bridge 有实际工具回合，不宣传为零模型控制成本。unknown 状�
 用真实宿主验证每个 operation、重复 request 的幂等性、短回执和部分用量、异常断线、
 过期 inventory、budget 失败与恢复。再做小规模课程与原生渲染，不把 fixture 当生产接线。
 当前源码不包含用户任务里所有本地 bridge 补丁，文档整理也不会自动安装/接通它们。
+
+## 角色指南的精确路由
+
+review 的 channel 映射到 domain-accuracy-review、pedagogy-review、audience-review、
+language-review 或 layout-review；agent 名和 runtime 不变。未知或缺失 channel 不猜测。
+初次 audience 分段包含完整角色方法；后续只给当前步骤，最终 run 为 synthesis。
+维护案例不在输入读取清单中。宿主按 semantic_guidance 执行，不主动扫描全部 skills。
+
+升级中的 audience attempt 若以前没有收到当前版完整方法，会在下一条新请求（必要时最终汇总）补入一次。
+已派发请求及已完成分段不重做、不改写，TASK 已有阅读记录仍复用。
