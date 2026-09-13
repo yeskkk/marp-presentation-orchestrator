@@ -117,3 +117,20 @@ python scripts/verify_theme.py --output /path/to/new-theme-evidence
 打开待改文稿，固定使用数据库确认 runtime。沿用分支严格核对，取消/EOF 不执行 Codex。
 纯机械命令保持无交互。选择“不修改”不会自动确认新的课件批次，选择“修改”不等于批准改完后的内容。
 启动器不结束已经运行的外部作业；有在途作业时应先在会话中查询真实状态，不能伪造取消。
+
+## 局部恢复与原回执重接收
+
+先看 `runner outstanding SLUG` 和 `runner tick SLUG` 返回的 `pending_responses`。
+已有真实回执时修接收规则后用 `runner replay SLUG REQUEST_ID`；没有回执时先向真实宿主对账，
+不能 replay 伪造数据。下一未派发步骤因本地输入失败而阻断时，修正原因后用
+`runner resume-input SLUG ATTEMPT_ID`，随后 tick；不会重读此前已完成的所有页面。
+命令失败会保留原始输入和错误，不自动豁免 schema 或证据。
+
+## 有效政策与选定批次
+
+`task policy-show SLUG` 给出有效TASK修订、容量、输入预算和各自来源事件。
+新文本/限制用 `task policy-present SLUG [--handle-limit N] [--context-budget-bytes N]` 展示，
+真实确认后 `task policy-confirm SLUG --presentation-id N --by user`。不接受更改模型或整份plan。
+已有明确的历史授权自动建立索引，不从一般feedback猜测；旧event、配置和usage不改写。
+`batch present SLUG --presentation P ...` / `batch confirm SLUG BATCH_ID --by user` 只启动所选
+尚未交付稿，完成后暂停。它不是自动教学拆分，未知页数估计仍需planner关注。

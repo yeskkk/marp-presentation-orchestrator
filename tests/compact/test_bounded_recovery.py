@@ -133,7 +133,7 @@ def test_rejected_receipt_replay_does_not_requeue_twice(compact_root):
     assert r.accept(req,res)['already_recorded']
     assert len(s.store.rows("SELECT * FROM events WHERE kind='attempt.content_rejected'"))==1
     bad={**res,'runtime':{**res['runtime'],'model':'different'}}
-    with pytest.raises(MPresError,match='runtime'):r.accept(req,bad)
+    with pytest.raises(MPresError,match='Conflicting provider response'):r.accept(req,bad)
 
 
 def test_invalid_runtime_is_never_content_retry(compact_root,native_double):

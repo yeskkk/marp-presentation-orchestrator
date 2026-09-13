@@ -181,7 +181,7 @@ def test_missing_confirmed_form_is_rejected_before_acceptance(compact_root,nativ
             response['result']['repair_checks']=response['result']['repair_checks'][:-1]
         return response
     r.invoke=incomplete;last=r.run(cycles=20,interval=0)
-    assert any(x['status']=='uncertain' for x in last.get('results',[]))
+    assert any(x['status']=='response_rejected' for x in last.get('results',[]))
     assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='.mpres/releases/p01/r001/p01.pdf'
     assert not s.store.rows("SELECT * FROM release_versions WHERE revision=2 AND state='committed'")
 
@@ -234,7 +234,7 @@ def test_reviewer_cannot_skip_a_confirmed_related_problem(compact_root,native_do
         if req['operation']=='run' and req['packet']['kind']=='review':out['result']['repair_checks']=[]
         return out
     r.invoke=bad_review;last=r.run(cycles=100,interval=0)
-    assert any(x['status']=='uncertain' for x in last.get('results',[]))
+    assert any(x['status']=='response_rejected' for x in last.get('results',[]))
     assert s.store.rows('SELECT pdf_path FROM releases')[0]['pdf_path']=='.mpres/releases/p01/r001/p01.pdf'
 
 

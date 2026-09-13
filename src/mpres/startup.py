@@ -64,7 +64,9 @@ def task_runtime(root: Path, slug: str, *, editing: bool = False) -> dict:
             # malformed. A task-edit request never authorizes a runtime change.
             runtime = json.loads(row['runtime_json'])
             from mpres.control.service import settings_document
-            expected = {'TASK.md': row['task_text'], 'task.yaml': json.loads(row['settings_json']),
+            from mpres.control.policy import resolve
+            effective=resolve(conn,row,readonly=True)
+            expected = {'TASK.md': effective['task_text'], 'task.yaml': json.loads(row['settings_json']),
                         'TASK-RUNTIME-PROFILE.yaml': runtime}
             for name, value in expected.items():
                 try:

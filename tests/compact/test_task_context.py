@@ -110,7 +110,9 @@ def test_packet_preview_never_marks_task_read(compact_root):
 def test_existing_requests_do_not_gain_fabricated_read_history(compact_root):
     s,r,a,q=launch(compact_root)
     # Simulate a genuinely old, already-dispatched request, not a fresh bypass.
-    with s.store.transaction() as c:c.execute('DELETE FROM events WHERE kind=?',(REQUESTED,))
+    with s.store.transaction() as c:
+        c.execute('DELETE FROM host_requests WHERE request_id=?',(q['request_id'],))
+        c.execute('DELETE FROM events WHERE kind=?',(REQUESTED,))
     q['packet'].pop('task_context');q['packet'].pop('reading_order')
     r.accept(q,response(q))
     assert not s.store.rows('SELECT * FROM events WHERE kind=?',(ACCEPTED,))

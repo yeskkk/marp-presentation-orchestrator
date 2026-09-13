@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.8
+
+- Index explicit TASK, capacity and context-budget authorizations by configuration without rewriting the original snapshots.
+- Add exact present/confirm operational amendments; preserve fixed runtime and per-job retry scopes.
+- Support selected existing presentation batches across binding, scheduling, capacity and publication.
+- Pause after all selected decks are delivered without admitting unselected work.
+- Add schema 10 relations; no automatic semantic course splitting or native Codex bridge rewiring.
+
+## 0.8.7
+
+- Store exact dispatch requests and incoming host responses in additive schema 9.
+- Record real usage before semantic acceptance; retain rejected payloads and prohibit conflicting overwrites.
+- Replay saved responses locally without a provider call after a deterministic receiver fix.
+- Keep completed audience steps and reserved attempts when the next input cannot be dispatched; add bounded resume-input.
+- No provider-specific raw-log scan/timeout changes and no invented recovery of old host receipts.
+
+
 ## 0.8.3
 
 - Five independent full review skills, same specialist-reviewer agent and fixed runtime family.

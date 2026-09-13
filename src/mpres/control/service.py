@@ -208,7 +208,9 @@ class Service:
         row = conn.execute('SELECT configs.* FROM configs JOIN task ON task.config_id=configs.id').fetchone()
         if row is None:
             raise MPresError('Task has not been confirmed by the user')
-        expected = {'settings':json.loads(row['settings_json']),'runtime':json.loads(row['runtime_json']),
+        from .policy import resolve
+        row = resolve(conn, row)
+        expected = {'settings':json.loads(row['document_settings_json']),'runtime':json.loads(row['runtime_json']),
                     'task_text':row['task_text'],'task_digest':row['task_digest']}
         if self.documents() != expected:
             raise MPresError('Confirmed task files changed. Restore them; runtime changes during execution are forbidden')
@@ -314,6 +316,10 @@ class Service:
                 from .repairs import Repairs
                 if not Repairs.proposal_job(conn, job_id):
                     raise MPresError('Task is paused or completed')
+            from .batches import active, targets
+            batch=active(conn)
+            if batch and job['presentation'] not in targets(conn,batch['id']):
+                raise MPresError('Job is outside the confirmed production batch')
             if job['state'] != 'queued':
                 raise MPresError('Job is not queued')
             if job['kind']=='write':

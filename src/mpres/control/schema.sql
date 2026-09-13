@@ -1,4 +1,4 @@
-PRAGMA user_version = 8;
+PRAGMA user_version = 10;
 CREATE TABLE task (
     singleton INTEGER PRIMARY KEY CHECK (singleton=1), title TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('draft','running','paused','completed')),
@@ -169,3 +169,38 @@ CREATE TABLE audience_steps (
 
 ALTER TABLE repair_cases ADD COLUMN mode TEXT NOT NULL DEFAULT 'edit-first' CHECK(mode IN ('edit-first','review-first'));
 ALTER TABLE repair_cases ADD COLUMN allow_slide_changes INTEGER NOT NULL DEFAULT 0 CHECK(allow_slide_changes IN (0,1));
+
+CREATE TABLE host_requests (
+    request_id TEXT PRIMARY KEY, attempt_id TEXT REFERENCES attempts(id),
+    operation TEXT NOT NULL CHECK(operation IN ('create','brief','run','audience_step')),
+    session_id TEXT REFERENCES sessions(id), request_json TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'issued' CHECK(state IN ('issued','received','rejected','accepted')),
+    created_at TEXT NOT NULL, accepted_at TEXT, last_error TEXT
+);
+CREATE TABLE host_responses (
+    request_id TEXT PRIMARY KEY REFERENCES host_requests(request_id),
+    response_json TEXT NOT NULL, received_at TEXT NOT NULL
+);
+CREATE INDEX host_requests_attempt ON host_requests(attempt_id,created_at);
+CREATE INDEX host_requests_state ON host_requests(state,created_at);
+CREATE INDEX events_kind_job_id ON events(kind,job_id,id);
+CREATE INDEX events_request_kind ON events(kind,json_extract(detail_json,'$.request_id'),id);
+
+CREATE TABLE policy_values (
+ config_id INTEGER NOT NULL REFERENCES configs(id), name TEXT NOT NULL,
+ event_id INTEGER NOT NULL REFERENCES events(id), PRIMARY KEY(config_id,name)
+);
+CREATE TABLE policy_cursor (singleton INTEGER PRIMARY KEY CHECK(singleton=1), event_id INTEGER NOT NULL);
+INSERT INTO policy_cursor VALUES(1,0);
+CREATE INDEX events_kind_id ON events(kind,id);
+CREATE TABLE production_batches (
+ id TEXT PRIMARY KEY, config_id INTEGER NOT NULL REFERENCES configs(id),
+ state TEXT NOT NULL CHECK(state IN ('presented','running','completed')),
+ snapshot_json TEXT NOT NULL, created_at TEXT NOT NULL, confirmed_at TEXT, confirmed_by TEXT
+);
+CREATE UNIQUE INDEX one_running_batch ON production_batches(state) WHERE state='running';
+CREATE TABLE production_batch_targets (
+ batch_id TEXT NOT NULL REFERENCES production_batches(id),
+ presentation TEXT NOT NULL REFERENCES decks(presentation), ordinal INTEGER NOT NULL,
+ PRIMARY KEY(batch_id,presentation), UNIQUE(batch_id,ordinal)
+);

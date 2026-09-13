@@ -149,7 +149,7 @@ def test_context_overflow_blocks_before_external_execution(compact_root):
     result=runner.tick()
     assert result['requests']==[]
     assert service.jobs()[0]['state']=='blocked'
-    assert service.store.rows('SELECT state FROM attempts')[0]['state']=='failed'
+    assert service.store.rows('SELECT state FROM attempts')[0]['state']=='reserved'
     assert service.store.rows('SELECT state FROM sessions')[0]['state']=='open'
 
 
@@ -194,9 +194,9 @@ def test_stale_capability_receipt_blocks_admission(compact_root):
 def test_database_v1_upgrade_preserves_confirmed_profile(compact_root):
     service=prepare(compact_root)
     before=service.store.rows('SELECT * FROM configs')
-    c=service.store.connect();c.execute('DROP TABLE audience_steps');c.execute('DROP TABLE release_versions');c.execute('DROP TABLE repair_jobs');c.execute('DROP TABLE repair_targets');c.execute('DROP TABLE attempt_briefings');c.execute('DROP TABLE feedback_rules');c.execute('DROP TABLE releases');c.execute('DROP TABLE decks');c.execute('DROP TABLE repair_cases');c.execute('DROP TABLE gate_runs');c.execute('DROP TABLE runtime_host');c.execute('DROP TABLE pool_slots');c.execute('ALTER TABLE task DROP COLUMN author_slots_limit');c.execute('PRAGMA user_version=1');c.close()
+    c=service.store.connect();c.execute('DROP TABLE IF EXISTS production_batch_targets');c.execute('DROP TABLE IF EXISTS production_batches');c.execute('DROP TABLE IF EXISTS policy_values');c.execute('DROP TABLE IF EXISTS policy_cursor');c.execute('DROP INDEX IF EXISTS events_kind_id');c.execute('DROP TABLE IF EXISTS host_responses');c.execute('DROP TABLE IF EXISTS host_requests');c.execute('DROP INDEX IF EXISTS events_kind_job_id');c.execute('DROP INDEX IF EXISTS events_request_kind');c.execute('DROP TABLE IF EXISTS host_responses');c.execute('DROP TABLE IF EXISTS host_requests');c.execute('DROP INDEX IF EXISTS events_kind_job_id');c.execute('DROP INDEX IF EXISTS events_request_kind');c.execute('DROP TABLE audience_steps');c.execute('DROP TABLE release_versions');c.execute('DROP TABLE repair_jobs');c.execute('DROP TABLE repair_targets');c.execute('DROP TABLE attempt_briefings');c.execute('DROP TABLE feedback_rules');c.execute('DROP TABLE releases');c.execute('DROP TABLE decks');c.execute('DROP TABLE repair_cases');c.execute('DROP TABLE gate_runs');c.execute('DROP TABLE runtime_host');c.execute('DROP TABLE pool_slots');c.execute('ALTER TABLE task DROP COLUMN author_slots_limit');c.execute('PRAGMA user_version=1');c.close()
     assert service.store.rows('SELECT * FROM configs')==before
-    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==8;c.close()
+    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==10;c.close()
 
 
 def test_command_adapter_runs_jobs_without_main_scheduling(compact_root,tmp_path):

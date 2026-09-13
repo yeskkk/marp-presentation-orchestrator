@@ -180,15 +180,18 @@ class Audience:
         attach_task_context(self.service, attempt, packet)
         compile_inputs(self.task,packet)
         check_budget(packet,budget)
+        request = {'operation':'audience_step','request_id':f"audience:{attempt['id']}:{next_row['sequence']}",
+                   'attempt_id':attempt['id'],'sequence':next_row['sequence'],'session_id':attempt['session_id'],'runtime':runtime,'packet':packet}
         with self.store.transaction() as conn:
             row=conn.execute('SELECT state FROM audience_steps WHERE attempt_id=? AND sequence=?',(attempt['id'],next_row['sequence'])).fetchone()
             if row['state']!='pending':return None
             from .task_context import requested as request_task_context
             request_task_context(conn, self.service, attempt, f"audience:{attempt['id']}:{next_row['sequence']}", packet)
+            from .host_journal import issue
+            issue(conn, request)
             conn.execute("UPDATE audience_steps SET state='dispatched' WHERE attempt_id=? AND sequence=?",(attempt['id'],next_row['sequence']))
             event(conn,'audience.step_requested',{'attempt_id':attempt['id'],'sequence':next_row['sequence'],'phase':next_row['phase'],'artifact_id':job['input_artifact_id'],'slide_ids':targets, 'semantic_guidance_version':packet['semantic_guidance_version'], 'role_introduction':'.agents/skills/audience-review/SKILL.md' in packet['semantic_guidance_sources']},job['id'])
-        return {'operation':'audience_step','request_id':f"audience:{attempt['id']}:{next_row['sequence']}",
-                'attempt_id':attempt['id'],'sequence':next_row['sequence'],'session_id':attempt['session_id'],'runtime':runtime,'packet':packet}
+        return request
 
     def pending(self, attempt_id):
         self.ensure(attempt_id)

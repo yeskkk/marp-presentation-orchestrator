@@ -120,7 +120,13 @@ class Workflow:
             case=conn.execute("SELECT id FROM repair_cases WHERE state='running'").fetchone()
             if case:
                 return {r['presentation'] for r in conn.execute("SELECT d.presentation FROM decks d JOIN repair_targets t ON t.presentation=d.presentation WHERE t.case_id=? AND d.phase NOT IN ('delivered','blocked') ORDER BY d.ordinal LIMIT 2",(case['id'],))}
+            from .batches import active, targets
+            batch=active(conn)
             decks = conn.execute("SELECT * FROM decks WHERE phase<>'delivered' ORDER BY ordinal").fetchall()
+            if batch:
+                selected=set(targets(conn,batch['id']))
+                decks=[d for d in decks if d['presentation'] in selected]
+                return set() if not decks or decks[0]['phase']=='blocked' else {d['presentation'] for d in decks[:2]}
             # Failed/uncertain current work does not speculate more downstream work.
             if not decks or decks[0]['phase'] == 'blocked':
                 return set()
@@ -186,6 +192,8 @@ class Workflow:
         require_text(actor, 'User confirmation attribution');require_text(note, 'Feedback/continuation note')
         with self.store.transaction() as conn:
             self.service.confirmed(conn)
+            from .batches import active
+            if active(conn):raise MPresError('Continue the current batch; do not reopen the full queue')
             row = conn.execute("SELECT * FROM decisions WHERE kind='delivery-feedback' AND resolved_at IS NULL ORDER BY id LIMIT 1").fetchone()
             if not row or conn.execute('SELECT status FROM task').fetchone()[0] != 'paused':
                 raise MPresError('No delivery feedback pause to continue')
@@ -506,7 +514,9 @@ class Workflow:
                     settings=json.loads(cfg['settings_json'])
                     remaining=conn.execute("SELECT count(*) FROM decks WHERE phase<>'delivered'").fetchone()[0]
                     delivered=conn.execute("SELECT count(*) FROM decks WHERE phase='delivered'").fetchone()[0]
-                    if not remaining:conn.execute("UPDATE task SET status='completed'")
+                    from .batches import completed as complete_batch
+                    if complete_batch(conn,deck['presentation']):pass
+                    elif not remaining:conn.execute("UPDATE task SET status='completed'")
                     elif settings['delivery']=='each' or (settings['delivery']=='pilot' and delivered==1):
                         conn.execute("UPDATE task SET status='paused'")
                         if not conn.execute("SELECT 1 FROM decisions WHERE kind='delivery-feedback' AND presentation=?",(deck['presentation'],)).fetchone():

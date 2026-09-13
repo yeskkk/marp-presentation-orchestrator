@@ -27,6 +27,13 @@ def build_parser() -> argparse.ArgumentParser:
         if action=='confirm': cmd.add_argument('--by',required=True)
     backup = task.add_parser('backup-db'); backup.add_argument('slug'); backup.add_argument('destination',type=Path)
     imp = task.add_parser('import-legacy'); imp.add_argument('old_task',type=Path); imp.add_argument('--slug',required=True)
+    op=task.add_parser('policy-show');op.add_argument('slug')
+    op=task.add_parser('policy-present');op.add_argument('slug');op.add_argument('--handle-limit',type=int);op.add_argument('--context-budget-bytes',type=int)
+    op=task.add_parser('policy-confirm');op.add_argument('slug');op.add_argument('--presentation-id',type=int,required=True);op.add_argument('--by',required=True)
+    batch=sub.add_parser('batch').add_subparsers(dest='operation',required=True)
+    op=batch.add_parser('present');op.add_argument('slug');op.add_argument('--presentation',action='append',required=True)
+    op=batch.add_parser('confirm');op.add_argument('slug');op.add_argument('batch_id');op.add_argument('--by',required=True)
+    op=batch.add_parser('status');op.add_argument('slug')
     session = sub.add_parser('session').add_subparsers(dest='operation',required=True)
     register = session.add_parser('register'); register.add_argument('slug'); register.add_argument('--handle',required=True)
     register.add_argument('--family',choices=['planner','author','reviewer'],required=True)
@@ -59,6 +66,9 @@ def build_parser() -> argparse.ArgumentParser:
     gates=artifact.add_parser('gates'); gates.add_argument('slug'); gates.add_argument('artifact_id')
     interrupt=artifact.add_parser('interrupt-gate'); interrupt.add_argument('slug'); interrupt.add_argument('gate_id')
     interrupt.add_argument('--reason',required=True)
+    for name in ('replay','resume-input'):
+        cmd=runner.add_parser(name);cmd.add_argument('slug')
+        cmd.add_argument('identity')
     workflow=sub.add_parser('workflow').add_subparsers(dest='operation',required=True)
     for name in ('advance','status','materialize','bundle','continue','retry-checks','retry-publish','recover-assembly'):
         cmd=workflow.add_parser(name);cmd.add_argument('slug')
@@ -110,7 +120,19 @@ def main(argv: list[str] | None = None) -> int:
         else:
             safe_id(args.slug,label='task slug')
             service=Service(root/'tasks'/args.slug)
-            if args.command=='repair':
+            if args.command=='batch':
+                from .batches import Batches
+                batches=Batches(service.task)
+                if args.operation=='present':result=batches.present(args.presentation)
+                elif args.operation=='confirm':result=batches.confirm(args.batch_id,args.by)
+                else:result=batches.status()
+            elif args.command=='task' and args.operation.startswith('policy-'):
+                from .policy import Policy
+                policy=Policy(service.task)
+                if args.operation=='policy-show':result=policy.show()
+                elif args.operation=='policy-present':result=policy.present(handle_limit=args.handle_limit,context_budget_bytes=args.context_budget_bytes)
+                else:result=policy.confirm(args.presentation_id,args.by)
+            elif args.command=='repair':
                 from .repairs import Repairs, RepairDelivery
                 repair=Repairs(service.task)
                 if args.operation=='open':result=repair.open(args.report,args.presentation,args.by,mode=args.mode,allow_slide_changes=args.allow_slide_changes)
@@ -154,6 +176,8 @@ def main(argv: list[str] | None = None) -> int:
                 if args.operation=='host':result=runner.observe_host(json_input(args.report))
                 elif args.operation=='attach':result=runner.attach(args.slot,args.handle,args.model,args.effort,args.receipt)
                 elif args.operation=='accept':result=runner.accept(json_input(args.request),json_input(args.response))
+                elif args.operation=='replay':result=runner.replay(args.identity)
+                elif args.operation=='resume-input':result=runner.resume_input(args.identity)
                 elif args.operation=='run':result=runner.run(args.cycles,args.interval)
                 else:result=getattr(runner,args.operation)()
             elif args.command=='task':
@@ -180,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(result,dict) and result.get('delivery_package', {}).get('state')=='failed': return 2
         if isinstance(result,dict) and result.get('success') is False: return 2
         if isinstance(result,dict) and (result.get('status')=='blocked' or result.get('state') in {'failed','interrupted'}): return 2
+        if isinstance(result,dict) and any(x.get('status')=='response_rejected' for x in result.get('results',[])): return 2
         if isinstance(result,dict) and any(x.get('status')=='uncertain' for x in result.get('results',[])): return 3
         return 0
     except (MPresError,sqlite3.Error,OSError,ValueError,TypeError) as exc:

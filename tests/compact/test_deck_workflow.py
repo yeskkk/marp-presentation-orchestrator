@@ -163,7 +163,7 @@ def test_missing_full_tool_blocks_before_any_reviewer(compact_root,monkeypatch):
 def test_invented_review_evidence_never_becomes_finding(compact_root,native_double):
     service=full_task(compact_root,decks=1);host=Host(malformed='review')
     _,last=run_host(service,host)
-    assert any(r['status']=='uncertain' for r in last.get('results',[]))
+    assert any(r['status']=='response_rejected' for r in last.get('results',[]))
     assert not service.store.rows('SELECT * FROM findings')
     assert not list((service.task/'deliverables').iterdir())
 
@@ -171,7 +171,7 @@ def test_invented_review_evidence_never_becomes_finding(compact_root,native_doub
 def test_revision_cannot_omit_a_finding(compact_root,native_double):
     service=full_task(compact_root,decks=1);host=Host(findings=True,malformed='revision')
     _,last=run_host(service,host)
-    assert any(r['status']=='uncertain' for r in last.get('results',[]))
+    assert any(r['status']=='response_rejected' for r in last.get('results',[]))
     assert not service.store.rows('SELECT * FROM releases')
 
 

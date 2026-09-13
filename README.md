@@ -49,7 +49,7 @@ Python 3.11+；原生完整门禁需要项目固定的 Marp CLI、Node.js、浏�
 “不修改”分支仍要求磁盘输入与确认快照一致，遇到差异明确停止，不能悄悄接受。
 本地选择随启动提示传给 main，不再重复问一次；手动进入 Codex 时 main 承担这一询问。
 它只确定本次对话方向，不恢复/取消已经在外部运行的作业，也不批准新批次、权限、预算或 TASK 变更。
-生产派发仍经过原有确认与状态门。旧任务政策修订和精确 p02/p03 批次迁移尚未在本阶段实现。
+生产派发仍经过确认与状态门。修改 TASK 后使用下方的 policy-present／policy-confirm；沿用不等于批准下一批。
 
 ### 2.1 任务上下文只建立一次
 
@@ -191,7 +191,7 @@ tasks/<slug>/
 报告不进学生 Markdown，不要求模型编写或用户逐条豁免。交付状态的每个 entry 含 `warning_report`，宿主应一并告知用户。
 
 本阶段实现了早期页数检查和发布保护；语义拆分仍由planner完成，不会自动在第100页切断。
-精确批次与旧任务计划重分配尚未加入，不能把当前版当成完整的p02/p03自动续做方案。
+精确批次已支持选择既有课件，但内容重分配／子稿映射仍未加入；超限课件须先由planner制定拆分，不能把批次选择当成自动拆稿。
 
 ## 7. 已发布稿件的定向返修
 
@@ -224,10 +224,12 @@ edit-first 是另一条兼容路径，不要把两者拼成多一轮流程。旧
 | 位置 | 职责 |
 |---|---|
 | `src/mpres/cli.py`、`startup.py` | compact 默认入口、显式 legacy 分支、交互启动 |
-| `control/service.py`、`store.py`、`schema.sql`、`migrate_*.sql` | 确认/绑定/提交与短事务，schema 8 |
+| `control/service.py`、`store.py`、`schema.sql`、`migrate_*.sql` | 确认/绑定/提交与短事务，schema 10 |
 | `control/runner.py`、`input_packet.py`、`audience.py` | 宿主请求、容量、必读/按需输入、分步阅读 |
 | `control/semantic.py`、`guidance.py`、`schemas/`、`feedback.py` | 语义指南、四类结果、真实反馈版本与回执 |
 | `control/workflow.py`、`repairs.py`、`delivery.py` | 整稿链、两种返修、历史版本与公开配对目录 |
+| `control/policy.py`、`batches.py` | 明确授权的有效值与精确批次；不猜教学拆分 |
+| `control/host_journal.py` | 已派发请求与原始回执的关联、拒收状态和无模型重接收 |
 | `control/quality.py`、`recovery.py`、`files.py` | 修订门禁、安全恢复与工作副本 |
 | `source_policy.py`、`geometry.py`、`rendering.py`、检查模块 | 表达约束、计算图、固定原生渲染与结构检查 |
 | `src/mpres/control/task_context.py` | 真实会话的 TASK 首次提供、复用、变更差异及回执记录 |
@@ -251,19 +253,76 @@ mpres --root . task backup-db economics /safe/path/task.sqlite3
 ```
 
 配置/教学授权/runtime 不会因打开旧任务被暗中改写。数据库增量迁移只做技术结构变化；
-本轮文档整顿不升级 schema。旧发布、原图、usage 和既有回执保留，不追认旧审核采用新指令。
+旧发布、原图、usage 和既有回执保留；技术迁移不追认旧审核采用新指令。
 新任务只加载当前三个模板；历史文件制任务另走只读 `task import-legacy`。
-DB 备份不包含资产，不是完整任务导出。
+DB 备份不包含资产，不是完整任务导出。schema 8/9 增量升级到10时增加宿主请求／回执、授权索引和精确生产批次关系；不导入或修改旧宿主日志，不凭历史 attempt 猜测原始回执。
 
 测试通过证明协议、约束、状态和恢复分支，不证明真实模型教学质量。真实宿主接线、
 固定 Marp 原生 PDF、字体和操作系统行为仍须在部署环境验收。不得以替身通过宣传原生通过。
 [验证口径](docs/VALIDATION.md) · [安全边界](docs/SECURITY.md) · [文档维护与盘点](docs/DOCUMENTATION-INVENTORY.md)
 
-## 本阶段更新：v0.8.6
+## 10. 回执接收和局部恢复
 
-在 v0.8.5 基础上加入每次交互启动的本地 TASK 修改选择，并开放安全的修改入口：已编辑的
-文件不妨碍进入修订对话，模型始终使用已确认配置。保留一次会话级 TASK 上下文，不新增
-worker 回执或模型调用。页数分级、直接交付警告和问题引用归一化继续生效。
+外部调用与结果接受分开：`host_requests` 在派发标记的同一短事务中保存准确请求，
+`host_responses` 在语义校验前保存真实响应。原始响应不是通过证明；runtime、usage、
+页面证据和结果结构仍必须验证。回执冲突不能覆盖，未收到响应不能以重发来猜执行状态。
 
-尚未合并真实 Codex bridge 的事件增量查询、超时/步骤恢复，也未实现 p02/p03 的精确批次与
-自动规划分稿。当前估计超限会要求 planner 先拆分，不声称程序会自行决定教学切点。
+```bash
+mpres --root . runner outstanding economics
+mpres --root . runner replay economics REQUEST_ID
+mpres --root . runner resume-input economics ATTEMPT_ID
+```
+
+`replay` 只重接收数据库已有的准确响应，没有模型调用，也不修改 reviewer 结论。
+适合修复确定性接收器 bug 后再验证；仍不符合证据要求的响应仍拒收。新传输如果返回不同
+内容，不会替换旧回执；本版尚不提供人工改 JSON 的规范化授权接口。
+
+`resume-input` 只释放当前 attempt 的“下一未派发步骤”的输入阻断。TASK/权限/预算不变；
+已接受的阅读段、findings、brief 与 usage 不变。根因未解决时下一次编译仍阻断。
+它不重置作业尝试预算，不重启模型，不处理已经派发／执行未知的步骤。
+
+命令模式在执行结果已可信返回但语义拒收时返回 `response_rejected`，而不是标记整个执行
+未知；缺少可信 runtime/usage 或丢失回执仍须对账。bridge 模式使用相同接收与重放入口。
+旧宿主私有日志的全量扫描、并行路由与固定超时还未在本版接入，不能因新增回执表宣称已经修完。
+
+## 11. 有效授权与选定课件续做
+
+初始配置不覆盖。程序以 `policy_values` 索引引用三类明确授权事件：TASK正文修订、容量上限、
+输入预算。历史 `task.text_amended`、`capacity.authorized`、`context_budget.authorized` 自动按
+类型和配置归属导入；不从普通 feedback 文本推断许可，不扩大某个 job 的额外重试授权。
+不明配置归属、无确认来源或类型错误的事件会报告问题，不静默采用。主任务库仍是唯一真源。
+
+```bash
+mpres --root . task policy-show economics
+# 修改 TASK.md 后展示精确文本差异；下面两项只在用户确实要求时填写
+mpres --root . task policy-present economics --handle-limit 16 --context-budget-bytes 1048576
+# 真正展示并得到用户确认后，使用返回的 presentation_id
+mpres --root . task policy-confirm economics --presentation-id 123 --by user
+
+# 仅选择已经存在的计划ID；这不是前缀匹配，也不等于把pilot改成all
+mpres --root . batch present economics --presentation p02 --presentation p03
+# 向用户展示返回范围、页数估计和当前基线，再登记真实确认
+mpres --root . batch confirm economics BATCH_ID --by user
+mpres --root . runner run economics
+mpres --root . batch status economics
+```
+
+TASK修订需暂停且无在途作业；纯容量/预算变更还允许在所有在途 attempt 都是本地未派发
+输入阻断的安全位置确认。不能编辑 runtime 或计划字段绕过此入口。当前 `task.yaml` 保留初始
+确认字节；`policy-show` 显示实际生效限制及来源。旧配置、jobs、发布和usage不因政策索引被重写。
+已读会话只收到已确认 TASK 差异，旧在途请求仍按实际收到的旧版本验证。
+
+批次确认同时约束 runner 准入、直接 job bind、当前+next 窗口和发布后的暂停。选定课件全部
+交付后强制暂停，不启动未选择课件；已发布p01不能作为生产批次再次选择，应走repair。
+确认前如果政策或目标状态变化，需要重新展示，而不是套用陈旧授权。批次不会更改原delivery
+配置，也不会删除原队列。估计>100的选择会被拒；未知估计明确warning，不假装已规划完成。
+
+这是“选定已有交付稿”的范围控制，不是“按教学目标自动拆成子稿”。本版尚未提供
+p02-01/p02-02 等分配关系及完整旧计划重组，不能承诺超长p02会自动变为合格短稿。
+真实Codex bridge的原始日志增量投影、并行turn接线与进展超时仍需后续版本，现有宿主协议未替换。
+
+## 本阶段更新：v0.8.8
+
+在可恢复回执与局部输入步骤之上，统一明确授权的有效值，接通限定课件批次的呈现、确认、
+准入和交付暂停。自动迁移只建立索引，保留历史内容和用量；新范围仍需要真实用户确认。
+本版不是原任务p02/p03已生产完成的证明，也不将确定性宿主/渲染替身称为原生验收。

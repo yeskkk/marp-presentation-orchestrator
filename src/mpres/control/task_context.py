@@ -17,11 +17,26 @@ ACCEPTED = 'session.task_context_received'
 
 
 def _previous(conn, session_id):
-    return conn.execute(
+    row = conn.execute(
         "SELECT e.id,e.detail_json,c.task_text FROM events e JOIN configs c "
         "ON c.id=json_extract(e.detail_json,'$.config_id') WHERE e.kind=? "
         "AND json_extract(e.detail_json,'$.session_id')=? ORDER BY e.id DESC LIMIT 1",
         (ACCEPTED, session_id)).fetchone()
+    if row:
+        row=dict(row);row['task_text']=_text(conn,json.loads(row['detail_json']))
+    return row
+
+
+def _text(conn, detail):
+    revision=detail.get('task_revision',0)
+    if revision:
+        row=conn.execute("SELECT id,kind,detail_json FROM events WHERE id=? AND kind='task.text_amended'",(revision,)).fetchone()
+        if not row:raise MPresError('Missing authorized TASK revision')
+        from .policy import validate_event
+        cid,name,text=validate_event(conn,row)
+        if cid!=detail['config_id']:raise MPresError('TASK revision belongs to another configuration')
+        return text
+    return conn.execute('SELECT task_text FROM configs WHERE id=?',(detail['config_id'],)).fetchone()[0]
 
 
 def context(service, attempt, conn=None):
@@ -34,7 +49,7 @@ def context(service, attempt, conn=None):
     if not row or not row['session_id'] or row['session_id'] != attempt['session_id']:
         raise MPresError('TASK context requires the actual bound session')
     old = _previous(conn, row['session_id'])
-    result = {'version': 1, 'config_id': config['id'], 'session_id': row['session_id'],
+    result = {'version': 1, 'config_id': config['id'], 'task_revision':config.get('task_revision',0), 'session_id': row['session_id'],
               'source': str(service.task / 'TASK.md'), 'policy': 'once_per_session_per_task'}
     if old and old['task_text'] == config['task_text']:
         result.update(action='reuse', baseline_event_id=old['id'],
@@ -42,7 +57,7 @@ def context(service, attempt, conn=None):
     elif old:
         previous = json.loads(old['detail_json'])
         result.update(action='apply_delta', baseline_event_id=old['id'],
-                      base_config_id=previous['config_id'],
+                      base_config_id=previous['config_id'], base_task_revision=previous.get('task_revision',0),
                       delta=''.join(difflib.unified_diff(old['task_text'].splitlines(keepends=True),
                           config['task_text'].splitlines(keepends=True),
                           fromfile='previously-read/TASK.md', tofile='confirmed/TASK.md')),
@@ -72,9 +87,10 @@ def requested(conn, service, attempt, request_id, packet):
         raise MPresError('TASK context changed before dispatch; recompile the request')
     detail = {'request_id': request_id, 'attempt_id': attempt['id'],
               'session_id': attempt['session_id'], 'config_id': ctx['config_id'],
-              'action': ctx['action']}
+              'action': ctx['action'], 'task_revision':ctx.get('task_revision',0)}
     if ctx['action'] == 'apply_delta':
         detail['base_config_id'] = ctx['base_config_id']
+        detail['base_task_revision'] = ctx.get('base_task_revision',0)
     rows = conn.execute("SELECT detail_json FROM events WHERE kind=? AND json_extract(detail_json,'$.request_id')=?",
                         (REQUESTED, request_id)).fetchall()
     if rows:
@@ -102,15 +118,16 @@ def validate_response_request(service, request):
             raise MPresError('Response request has different TASK context identity')
         if request.get('attempt_id') != detail['attempt_id'] or request.get('session_id') != detail['session_id']:
             raise MPresError('Response belongs to a different task session/attempt')
-        config = conn.execute('SELECT task_text FROM configs WHERE id=?', (detail['config_id'],)).fetchone()
+        if supplied.get('task_revision',0)!=detail.get('task_revision',0):raise MPresError('Response TASK amendment identity differs')
+        config={'task_text':_text(conn,detail)}
         if detail['action'] == 'read_full' and supplied.get('text') != config['task_text']:
             raise MPresError('Dispatched TASK text was changed or truncated')
         if detail['action'] == 'apply_delta':
-            base = conn.execute('SELECT task_text FROM configs WHERE id=?', (detail['base_config_id'],)).fetchone()
+            base={'task_text':_text(conn,{'config_id':detail['base_config_id'],'task_revision':detail.get('base_task_revision',0)})}
             expected_delta = ''.join(difflib.unified_diff(base['task_text'].splitlines(keepends=True),
                 config['task_text'].splitlines(keepends=True), fromfile='previously-read/TASK.md',
                 tofile='confirmed/TASK.md'))
-            if supplied.get('base_config_id') != detail['base_config_id'] or supplied.get('delta') != expected_delta:
+            if supplied.get('base_config_id') != detail['base_config_id'] or supplied.get('base_task_revision',0)!=detail.get('base_task_revision',0) or supplied.get('delta') != expected_delta:
                 raise MPresError('Dispatched TASK change was modified')
         return detail
 
@@ -130,7 +147,7 @@ def received(service, detail, receipt):
                 raise MPresError('Conflicting TASK context receipt')
             return
         old = _previous(conn, detail['session_id'])
-        if old and json.loads(old['detail_json'])['config_id'] > detail['config_id']:
+        if old and (json.loads(old['detail_json'])['config_id'],json.loads(old['detail_json']).get('task_revision',0)) > (detail['config_id'],detail.get('task_revision',0)):
             return  # a late older receipt must not regress the current context
         job = conn.execute('SELECT job_id FROM attempts WHERE id=?', (detail['attempt_id'],)).fetchone()
         event(conn, ACCEPTED, payload, job['job_id'])

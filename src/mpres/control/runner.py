@@ -83,10 +83,15 @@ class Runner:
         # A pool definition is a reservation, not an actual model handle. Writer
         # slots are adjustable within the user upper bound; runtimes never change.
         decks=settings['presentations']
+        from .batches import active as active_batch
         repairing=conn.execute("SELECT id FROM repair_cases WHERE state IN ('diagnosing','proposed','presented','running') ORDER BY created_at DESC LIMIT 1").fetchone()
         repair_scope={x[0] for x in conn.execute('SELECT presentation FROM repair_targets WHERE case_id=?',(repairing['id'],))} if repairing else set()
         if repair_scope:
             decks=[d for d in decks if d['id'] in repair_scope]
+        elif (batch := active_batch(conn)):
+            from .batches import targets
+            selected=set(targets(conn,batch['id']))
+            decks=[d for d in decks if d['id'] in selected]
         elif settings['delivery'] in {'pilot','each'}:
             continued=conn.execute("SELECT count(*) FROM events WHERE kind='task.delivery_continued'").fetchone()[0]
             if settings['delivery']=='each' or not continued:
@@ -189,7 +194,10 @@ class Runner:
             event(conn,'pool.creation_uncertain',{'slot_id':slot_id,'reason':reason})
 
     def outstanding(self) -> dict:
-        return {'creations':self.store.rows("SELECT * FROM pool_slots WHERE state IN ('creating','uncertain')"),
+        from .host_journal import HostJournal
+        return {'responses':HostJournal(self.service).pending(),
+                'local_input_blocks':self.store.rows("SELECT a.id,a.job_id,a.error FROM attempts a JOIN jobs j ON a.job_id=j.id WHERE a.state='reserved' AND j.state='blocked'"),
+                'creations':self.store.rows("SELECT * FROM pool_slots WHERE state IN ('creating','uncertain')"),
                 'executions':self.store.rows("SELECT id,job_id,session_id,state,provider_receipt,error FROM attempts WHERE state IN ('reserved','running','uncertain')"),
                 'audience_steps':self.store.rows("SELECT attempt_id,sequence,phase,artifact_id,slide_ids_json,state FROM audience_steps WHERE state<>'completed' ORDER BY attempt_id,sequence")}
 
@@ -333,15 +341,45 @@ class Runner:
         return packet
 
     def _blocked_packet(self, attempt_id: str, error: Exception) -> None:
-        # This path is called strictly before external dispatch. It can safely
-        # release the local claim, unlike an ambiguous external launch failure.
+        # This failure happened before dispatch of the NEXT step. Completed
+        # brief/readings and provider usage belong to the same continuing attempt.
         with self.store.transaction() as conn:
             a=conn.execute('SELECT * FROM attempts WHERE id=?',(attempt_id,)).fetchone()
-            conn.execute("UPDATE attempts SET state='failed',finished_at=?,error=? WHERE id=?",(utc_now(),str(error),attempt_id))
+            if not a or a['state'] != 'reserved':
+                raise MPresError('Input block is only valid before external dispatch')
+            if conn.execute("SELECT 1 FROM host_requests WHERE attempt_id=? AND state<>'accepted'",(attempt_id,)).fetchone():
+                return  # another runner already issued this step; do not cancel it
+            if conn.execute("SELECT 1 FROM audience_steps WHERE attempt_id=? AND state='dispatched'",(attempt_id,)).fetchone():
+                return
+            conn.execute("UPDATE attempts SET error=? WHERE id=?",(str(error),attempt_id))
             conn.execute("UPDATE jobs SET state='blocked' WHERE id=?",(a['job_id'],))
+            detail={'error':str(error),'job_id':a['job_id'],'attempt_id':attempt_id,'scope':'next_undispatched_step'}
             conn.execute('INSERT INTO decisions(kind,presentation,detail_json) SELECT ?,presentation,? FROM jobs WHERE id=?',
-                         ('input-boundary',encode({'error':str(error),'job_id':a['job_id']}),a['job_id']))
-            event(conn,'packet.blocked_before_dispatch',{'error':str(error)},a['job_id'])
+                         ('input-boundary',encode(detail),a['job_id']))
+            event(conn,'packet.blocked_before_dispatch',detail,a['job_id'])
+
+    def resume_input(self, attempt_id: str) -> dict:
+        """Retry input compilation in-place after fixing local cause; no new budget."""
+        with self.store.transaction() as conn:
+            self.service.confirmed(conn)
+            a=conn.execute('SELECT * FROM attempts WHERE id=?',(attempt_id,)).fetchone()
+            if not a or a['state']!='reserved':
+                raise MPresError('Only a locally blocked reserved attempt can resume')
+            job=conn.execute('SELECT * FROM jobs WHERE id=?',(a['job_id'],)).fetchone()
+            decisions=conn.execute("SELECT id FROM decisions WHERE kind='input-boundary' AND resolved_at IS NULL AND json_extract(detail_json,'$.attempt_id')=?",(attempt_id,)).fetchall()
+            if job['state']!='blocked' or not decisions:
+                raise MPresError('No matching local input block')
+            if conn.execute("SELECT 1 FROM host_requests WHERE attempt_id=? AND state<>'accepted'",(attempt_id,)).fetchone():
+                raise MPresError('Issued request needs receipt reconciliation, not resume-input')
+            b=conn.execute('SELECT * FROM attempt_briefings WHERE attempt_id=?',(attempt_id,)).fetchone()
+            if b and b['run_dispatched'] or conn.execute("SELECT 1 FROM audience_steps WHERE attempt_id=? AND state='dispatched'",(attempt_id,)).fetchone():
+                raise MPresError('A step has already been dispatched')
+            conn.execute("UPDATE jobs SET state='running' WHERE id=?",(a['job_id'],))
+            conn.execute('UPDATE attempts SET error=NULL WHERE id=?',(attempt_id,))
+            for d in decisions:
+                conn.execute('UPDATE decisions SET resolved_at=?,answer=? WHERE id=?',(utc_now(),'Retry compilation of the same unissued step; no permission change',d['id']))
+            event(conn,'packet.input_resumed',{'attempt_id':attempt_id},a['job_id'])
+        return {'attempt_id':attempt_id,'state':'reserved','provider_calls':0,'next_action':'runner tick'}
 
     def tick(self) -> dict:
         """Reserve and return exact operations, never a narrative launch plan.
@@ -365,6 +403,11 @@ class Runner:
             return {'status': 'awaiting_confirmation' if repair_status['awaiting_confirmation'] else task_status, 'repairs':repair_status, 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': full}
         if full and not (workflow.allowed() | proposals):
             return {'status': 'blocked', 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': True}
+        from .host_journal import HostJournal
+        pending_responses=HostJournal(self.service).pending()
+        if pending_responses:
+            return {'status':'blocked','reason':'Saved provider response awaits revalidation; do not rerun the model',
+                    'requests':[],'pending_responses':pending_responses}
         capacity=self.ensure_pool()
         if not capacity['ok']:
             if capacity.get('needs_host_observation'):
@@ -407,6 +450,8 @@ class Runner:
                                  'runtime':{'family':slot['family'],'model':slot['model'],'reasoning_effort':slot['effort']}}
                         conn.execute("UPDATE pool_slots SET state='creating' WHERE id=?",(slot['id'],))
                         event(conn,'provider.create_requested',request)
+                        from .host_journal import issue
+                        issue(conn, request)
                         requests.append(request)
                         if kind=='write': pending_creates+=1
                         break
@@ -437,7 +482,7 @@ class Runner:
                 if request: requests.append(request)
             except Exception as exc:
                 self._blocked_packet(attempt['id'],exc)
-        for attempt in self.store.rows("SELECT a.* FROM attempts a JOIN attempt_briefings b ON b.attempt_id=a.id WHERE a.state='reserved' AND (b.acknowledgement_json IS NOT NULL OR b.snapshot_json='[]') AND b.run_dispatched=0"):
+        for attempt in self.store.rows("SELECT a.* FROM attempts a JOIN jobs j ON j.id=a.job_id JOIN attempt_briefings b ON b.attempt_id=a.id WHERE j.state='running' AND a.state='reserved' AND (b.acknowledgement_json IS NOT NULL OR b.snapshot_json='[]') AND b.run_dispatched=0"):
             try:
                 request=self.execution_request(self.service.job(attempt['job_id']),attempt)
                 if request: requests.append(request)
@@ -484,22 +529,44 @@ class Runner:
         packet.setdefault('required_text_bytes', 0)
         packet.pop('context_bytes', None)
         check_budget(packet, self.settings().get('context_budget_bytes',262144))
+        request = {'operation':operation,'request_id':('brief:' if operation=='brief' else '')+attempt['id'],
+                   'attempt_id':attempt['id'],'session_id':attempt['session_id'],'runtime':runtime,'packet':packet}
         with self.store.transaction() as conn:
             current=conn.execute('SELECT * FROM attempt_briefings WHERE attempt_id=?',(attempt['id'],)).fetchone()
             if current[flag]: return None
             from .task_context import requested as request_task_context
             request_task_context(conn, self.service, attempt, ('brief:' if operation=='brief' else '')+attempt['id'], packet)
+            from .host_journal import issue
+            issue(conn, request)
             conn.execute('UPDATE attempt_briefings SET '+flag+'=1 WHERE attempt_id=?',(attempt['id'],))
             event(conn,'provider.'+operation+'_requested',{'attempt_id':attempt['id'],'context_bytes':packet.get('context_bytes',len(encode(packet).encode())), 'semantic_guidance_version':packet.get('semantic_guidance_version'), 'role_introduction':'.agents/skills/audience-review/SKILL.md' in packet.get('semantic_guidance_sources',[])},job['id'])
-        return {'operation':operation,'request_id':('brief:' if operation=='brief' else '')+attempt['id'],
-                'attempt_id':attempt['id'],'session_id':attempt['session_id'],'runtime':runtime,'packet':packet}
+        return request
 
     def accept(self, request: dict, response: dict) -> dict:
         from .task_context import validate_response_request, received
+        if request.get('operation') == 'capabilities':
+            return self._accept(request, response)
         detail = validate_response_request(self.service, request)
-        result = self._accept(request, response)
-        received(self.service, detail, response.get('receipt'))
+        from .host_journal import HostJournal
+        journal = HostJournal(self.service)
+        journal.receive(request, response)
+        try:
+            journal.validate_execution(request, response)
+            # A genuine completed request established its TASK context even if its
+            # semantic result needs parser/format repair; do not force another read.
+            received(self.service, detail, response.get('receipt'))
+            result = self._accept(request, response)
+        except Exception as exc:
+            journal.state(request['request_id'], error=str(exc))
+            raise
+        journal.state(request['request_id'], accepted=True)
         return result
+
+    def replay(self, request_id: str) -> dict:
+        # Revalidate saved response only; never contact or restart a model.
+        from .host_journal import HostJournal
+        request, response = HostJournal(self.service).replay_data(request_id)
+        return self.accept(request, response)
 
     def _accept(self, request: dict, response: dict) -> dict:
         if not isinstance(response,dict):
@@ -611,7 +678,17 @@ class Runner:
                 return {'request_id':request['request_id'],'status':'accepted','result':result}
             except Exception as exc:
                 if request['operation']=='create':self.creation_uncertain(request['slot_id'],str(exc))
-                elif request['operation']!='capabilities':self.service.uncertain(request['attempt_id'],str(exc))
+                elif request['operation']!='capabilities':
+                    from .host_journal import HostJournal
+                    journal=HostJournal(self.service)
+                    try:
+                        saved_request,saved_response=journal.replay_data(request['request_id'])
+                        journal.validate_execution(saved_request,saved_response)
+                    except Exception:
+                        self.service.uncertain(request['attempt_id'],str(exc))
+                    else:
+                        return {'request_id':request['request_id'],'status':'response_rejected',
+                                'error':str(exc),'recovery':'runner replay; no model call'}
                 return {'request_id':request['request_id'],'status':'uncertain','error':str(exc)}
             finally:
                 with self.store.transaction() as conn:
@@ -627,7 +704,7 @@ class Runner:
         last={}
         for _ in range(cycles):
             last=self.run_once()
-            if not last['requests'] or any(x['status']=='uncertain' for x in last.get('results',[])):
+            if not last['requests'] or any(x['status'] in {'uncertain','response_rejected'} for x in last.get('results',[])):
                 break
             if interval:time.sleep(interval)
         return last

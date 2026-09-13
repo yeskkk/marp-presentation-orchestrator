@@ -97,3 +97,16 @@ language-review 或 layout-review；agent 名和 runtime 不变。未知或缺�
 
 升级中的 audience attempt 若以前没有收到当前版完整方法，会在下一条新请求（必要时最终汇总）补入一次。
 已派发请求及已完成分段不重做、不改写，TASK 已有阅读记录仍复用。
+
+## 持久回执与重接收（v0.8.7）
+
+每个 create/brief/run/audience_step 派发请求在主任务库有唯一 `request_id`，包括准确 JSON。
+返回时必须保留该请求及真实响应。接收器先存原始回执再校验；失败时保存 `last_error`，
+不会丢掉已有真实 usage 或将完整响应放进下一次模型输入来要求重做。
+调用 `runner replay SLUG REQUEST_ID` 只重跑接收器，不触发外部执行。修复接收代码后可重用原响应；
+错误页证据和错误 runtime 不会因此通过。不同响应不能覆盖同一 request 的已存内容。
+
+`response_rejected` 表示回执可信但结果未被接受，区别于调用超时或通信断开造成的 uncertain。
+编译错误且该步尚未派发时，只阻断 job 的下一步；`runner resume-input SLUG ATTEMPT_ID` 在
+根因修复后允许同 attempt 重新编译。已派发但无回执不能使用这个入口；没有自动增加预算。
+旧在途请求可以在已有派发记录/准确绑定验证后导入主库，不能凭传入一个 JSON 伪造派发。
