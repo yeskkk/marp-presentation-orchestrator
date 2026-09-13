@@ -36,7 +36,8 @@ class Feedback:
             data = json.loads(row['payload_json'])
             if not data['enabled']:
                 continue
-            if presentation is not None and data['presentations'] and presentation not in data['presentations']:
+            from .planning import ancestors
+            if presentation is not None and data['presentations'] and not set(ancestors(conn,presentation)).intersection(data['presentations']):
                 continue
             result.append({**data, 'version': row['version']})
         return result

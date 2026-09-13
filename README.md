@@ -191,7 +191,7 @@ tasks/<slug>/
 报告不进学生 Markdown，不要求模型编写或用户逐条豁免。交付状态的每个 entry 含 `warning_report`，宿主应一并告知用户。
 
 本阶段实现了早期页数检查和发布保护；语义拆分仍由planner完成，不会自动在第100页切断。
-精确批次已支持选择既有课件，但内容重分配／子稿映射仍未加入；超限课件须先由planner制定拆分，不能把批次选择当成自动拆稿。
+精确批次支持既有课件及其确认的子稿；先由 planner 决定学习边界，再通过 plan 接口保存分配。批次不按页码自动拆稿。
 
 ## 7. 已发布稿件的定向返修
 
@@ -224,7 +224,7 @@ edit-first 是另一条兼容路径，不要把两者拼成多一轮流程。旧
 | 位置 | 职责 |
 |---|---|
 | `src/mpres/cli.py`、`startup.py` | compact 默认入口、显式 legacy 分支、交互启动 |
-| `control/service.py`、`store.py`、`schema.sql`、`migrate_*.sql` | 确认/绑定/提交与短事务，schema 10 |
+| `control/service.py`、`store.py`、`schema.sql`、`migrate_*.sql` | 确认/绑定/提交与短事务，schema 11 |
 | `control/runner.py`、`input_packet.py`、`audience.py` | 宿主请求、容量、必读/按需输入、分步阅读 |
 | `control/semantic.py`、`guidance.py`、`schemas/`、`feedback.py` | 语义指南、四类结果、真实反馈版本与回执 |
 | `control/workflow.py`、`repairs.py`、`delivery.py` | 整稿链、两种返修、历史版本与公开配对目录 |
@@ -255,7 +255,7 @@ mpres --root . task backup-db economics /safe/path/task.sqlite3
 配置/教学授权/runtime 不会因打开旧任务被暗中改写。数据库增量迁移只做技术结构变化；
 旧发布、原图、usage 和既有回执保留；技术迁移不追认旧审核采用新指令。
 新任务只加载当前三个模板；历史文件制任务另走只读 `task import-legacy`。
-DB 备份不包含资产，不是完整任务导出。schema 8/9 增量升级到10时增加宿主请求／回执、授权索引和精确生产批次关系；不导入或修改旧宿主日志，不凭历史 attempt 猜测原始回执。
+DB 备份不包含资产，不是完整任务导出。schema 8/9/10 增量升级到11时增加宿主请求／回执、授权索引、精确批次和交付分配关系；不导入或修改旧宿主日志，不凭历史 attempt 猜测原始回执。
 
 测试通过证明协议、约束、状态和恢复分支，不证明真实模型教学质量。真实宿主接线、
 固定 Marp 原生 PDF、字体和操作系统行为仍须在部署环境验收。不得以替身通过宣传原生通过。
@@ -283,7 +283,7 @@ mpres --root . runner resume-input economics ATTEMPT_ID
 
 命令模式在执行结果已可信返回但语义拒收时返回 `response_rejected`，而不是标记整个执行
 未知；缺少可信 runtime/usage 或丢失回执仍须对账。bridge 模式使用相同接收与重放入口。
-旧宿主私有日志的全量扫描、并行路由与固定超时还未在本版接入，不能因新增回执表宣称已经修完。
+原生 bridge 的增量证据投影、并行路由和双期限见下节；单独新增业务回执不构成宿主验证。
 
 ## 11. 有效授权与选定课件续做
 
@@ -299,7 +299,7 @@ mpres --root . task policy-present economics --handle-limit 16 --context-budget-
 # 真正展示并得到用户确认后，使用返回的 presentation_id
 mpres --root . task policy-confirm economics --presentation-id 123 --by user
 
-# 仅选择已经存在的计划ID；这不是前缀匹配，也不等于把pilot改成all
+# 选择已确认内容范围；父范围通过数据库映射展开，不按前缀匹配，不把pilot改成all
 mpres --root . batch present economics --presentation p02 --presentation p03
 # 向用户展示返回范围、页数估计和当前基线，再登记真实确认
 mpres --root . batch confirm economics BATCH_ID --by user
@@ -317,12 +317,114 @@ TASK修订需暂停且无在途作业；纯容量/预算变更还允许在所有
 确认前如果政策或目标状态变化，需要重新展示，而不是套用陈旧授权。批次不会更改原delivery
 配置，也不会删除原队列。估计>100的选择会被拒；未知估计明确warning，不假装已规划完成。
 
-这是“选定已有交付稿”的范围控制，不是“按教学目标自动拆成子稿”。本版尚未提供
-p02-01/p02-02 等分配关系及完整旧计划重组，不能承诺超长p02会自动变为合格短稿。
-真实Codex bridge的原始日志增量投影、并行turn接线与进展超时仍需后续版本，现有宿主协议未替换。
+这是“选定已确认范围”的生产控制。p02-01/p02-02 等分配关系由下面的 plan 接口
+另行呈现和确认；系统不会自行决定教学切点，也不会承诺未重新验收的旧长稿自动合格。
+真实模型和部署环境仍需联调；本版本提供正式适配器，不冒称供应商端已验收。
 
-## 本阶段更新：v0.8.8
+## 原生 Codex bridge：执行、证据与恢复
 
-在可恢复回执与局部输入步骤之上，统一明确授权的有效值，接通限定课件批次的呈现、确认、
-准入和交付暂停。自动迁移只建立索引，保留历史内容和用量；新范围仍需要真实用户确认。
-本版不是原任务p02/p03已生产完成的证明，也不将确定性宿主/渲染替身称为原生验收。
+`mpres bridge run SLUG` 是已确认任务的前台适配器入口，不是启动时跳过 TASK 修改询问的捷径。
+先通过 start.sh 选择本次任务方向、确认范围并完成环境/登录准备，再运行它；不自动登录、
+不安装 Codex，不覆盖审批或沙箱，不更换模型。它调用 `codex app-server` 的默认 stdio。
+
+```bash
+# 离线：只读取已有日志并增量更新旁路索引，不调用模型
+mpres --root . bridge index economics
+mpres --root . bridge status economics
+# 在线：执行 runner 已经事务性准入的准确请求
+mpres --root . bridge run economics --cycles 100
+# 只对账既有请求，不重新 start 模型 turn
+mpres --root . bridge reconcile economics REQUEST_ID
+```
+
+主业务库仍决定请求是否已接受。`.mpres/codex-bridge.sqlite3` 保留原始协议证据及准确
+请求/响应；旧 accepted 标记不是另一套业务状态。`.mpres/codex-index.sqlite3` 是可重建投影：
+RPC身份、线程运行设置、turn终态/最终结果/累计用量，以及已处理wire游标。每次只查询主键
+游标之后的有限批次，原始流式文本不再全量复制进索引。索引丢失可重建，但不得删除原始
+journal。归档恢复或源文件替换时，使用新的索引文件，不把旧游标硬套到另一份日志。
+
+一个stdout读取者分发所有响应；RPC按id匹配，通知按(threadId, turnId)定位。多个被runner
+准入的线程可并行，同一线程不并行执行两个turn。线程池/容量/作者独立性继续由业务库
+控制。不存在进程级“当前请求”来猜通知归属，也不把一个线程的token计给另一个。
+
+库存读取用thread/loaded/list；仅对缺失的已登记身份使用不带turn历史的thread/read。
+不会为每次库存探测resume全部线程、扫描全对话找usage。供应商没有提供可查询全局硬上限
+时，报告明确的“已确认适配器本地上限”，不宣称探测到了全局容量，也不释放无close证明的
+句柄。无真实累计用量基线的旧线程不能推断为0。
+
+超时分两类：provider_timeout_seconds仍是已确认的单turn总墙钟上限；可在确认前设置
+provider_idle_timeout_seconds作为无有效进展期限，省略则等于总上限。文本/工具输出增量、
+真实完成项或增长的用量可以刷新idle，普通heartbeat不可以；总预算不会被刷新，旧任务的
+1200秒不会被悄悄延长。超时/断线仅报告待对账，不盲目重发或假装中断已经完成。
+明确interrupted/failed的turn不能冒充成功；续作范围/预算仍需既有控制授权。
+
+已保存completed与usage、但响应接收丢失时，可以直接重建真实回执；必要时显式reconcile
+查询指定thread历史。缺少终态或用量等证据仍阻断，不能从作者文字推断程序完成。
+本版本没有对旧临时补丁进行整体移植；不提供任意人工改回执再假装原结果的接口。
+
+测试区分真实本地JSON-RPC子进程、确定性语义/渲染替身、真实归档增量索引与真正模型调用。
+前面三种不等于真实Codex登录、供应商服务、教材质量或Marp PDF的端到端验收。
+协议依据：OpenAI Codex App Server官方文档（https://developers.openai.com/codex/app-server）。
+
+## 规划内容范围与交付稿的映射
+
+一章、一组课次和一个 PDF 不再必须同名。`control/planning.py` 管理确认后的有序
+课次分配；`delivery_parts` 保存父范围与实际子稿，`plan_item_origins` 保存课次与原稿
+来源，`plan_changes` 保存精确的展示/确认依据。原 configs、plan_items、jobs 和发布记录
+不被覆盖。现有 schema 8/9/10 会通过短事务升级到 11，无须清空旧任务。
+
+新任务在确认前直接在 task.yaml 规划合适的课件。已有暂停任务需要拆分尚未组装的范围时：
+
+```bash
+mpres --root . plan show linear-algebra-v7
+mpres --root . plan present linear-algebra-v7 --proposal /path/to/proposed-partition.json
+# 展示返回的实际范围、资料复用与估计，取得真实确认后：
+mpres --root . plan confirm linear-algebra-v7 PLAN_CHANGE_ID --by "用户明确确认分配"
+mpres --root . batch present linear-algebra-v7 --presentation p02 --presentation p03
+# 查看展开后的准确子稿，确认后才开始生产：
+mpres --root . batch confirm linear-algebra-v7 BATCH_ID --by "用户确认仅完成本批"
+mpres --root . bridge run linear-algebra-v7 --cycles 200
+```
+
+下面是接口说明用的输入，课次切点和页数必须由实际教学规划决定，不能直接复制作为
+用户任务的已确认方案；不要求在任务目录再维护一份过程文档：
+
+```json
+{"parents":[{"presentation":"p02","parts":[
+  {"id":"p02-01","title":"第一组学习目标","estimated_pages":80,"units":["l07","l08","l09"]},
+  {"id":"p02-02","title":"第二组学习目标","estimated_pages":80,"units":["l10","l11"]}
+]}]}
+```
+
+分配必须完整、有序、无重复，不能删除原课次、添加未授权课次或改 runtime。每份估计
+1–100页；单一课次本身太长需要先做语义拆解，不在第100页机械切文件。不拆分而只补
+估计时可以让唯一 part 保持父稿 id，并列出全部课次。尚未确认的方案可用 `plan cancel`
+取消；已确认分配不自动改写。暂停且尚未组装时，可再次呈现并确认估计/标题调整，或将仅记录估计的范围拆分；旧确认完整保留。已在编辑/审核的稿件、已发布 p01、活动批次或活动返修
+不能套用这个规划入口。切点错误或教学范围改变仍需新的明确规划，不暗中重排。
+
+选择父范围时，batch 按数据库关系展开所有实际子稿，而不是匹配文件名前缀；父子范围
+重叠选择会报错。原父稿作业仍保留作历史，但不可再绑定；只派发当前子稿，选定范围
+全部交付后暂停，p04 不会因分成更多 PDF 自动开始。Workflow 状态单独显示被替代范围。
+
+子稿继承原 presentation 的已确认 runtime 及反馈范围。原作者/审核参与历史也向子稿
+继承，不能换一个 id 后让原作者自审。旧 accepted/import 内容只作为新作者工作副本的
+起点（兼容 section.md）；会重新提供当前主题并再算已声明数学图。它不是通过新门禁的
+证据，也不改原 SVG、Markdown、PDF 或旧 gate。必读资料沿课次关系保留；同一真实
+会话不因此重读完整 TASK。
+
+运行中121–130页仍只记 warning，超过130页为error；最终新交付不超过120页。
+每份公开目录继续包含 PDF、同名 Markdown、资源和 WARNINGS.md/JSON。没有自动ZIP，
+没有新增审核者验修轮次，没有为确认后的任务自动切换模型。
+
+## 当前验证边界
+
+程序的增量桥接和分配关系都有真实归档回放/迁移检查；端到端队列测试的模型和完整
+PDF渲染仍是明确标识的替身，不代表实际模型教学质量或部署机器原生 Marp 已通过。
+真实服务必须完成 Codex 登录、固定工具链检查、准确 runtime/usage 回执；权限请求
+不会自动同意。未知执行先对账，不允许因需要继续而假设已关闭或重复启动。
+
+## 本阶段更新：v0.8.10
+
+- v0.8.9：按 RPC/thread/turn 的增量桥接，原始证据不重扫、已登记独立请求可并发。
+- v0.8.10：确认的交付分配、来源与runtime继承、父范围批次展开、完整范围交付后暂停。
+- 两阶段分别打包；v0.8.10 包含前一阶段代码。旧教学配置与三个用户入口不被迁移覆盖。

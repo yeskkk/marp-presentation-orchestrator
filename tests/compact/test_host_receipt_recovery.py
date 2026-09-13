@@ -140,13 +140,13 @@ def test_raw_journal_migration_is_additive_and_idempotent(compact_root):
     service,runner=ready(compact_root,count=1)
     saved={t:service.store.rows(f'SELECT * FROM {t}') for t in ('configs','jobs','events')}
     conn=service.store.connect()
-    conn.execute('DROP TABLE IF EXISTS production_batch_targets');conn.execute('DROP TABLE IF EXISTS production_batches');conn.execute('DROP TABLE IF EXISTS policy_values');conn.execute('DROP TABLE IF EXISTS policy_cursor');conn.execute('DROP INDEX IF EXISTS events_kind_id');conn.execute('DROP TABLE IF EXISTS host_responses');conn.execute('DROP TABLE IF EXISTS host_requests');conn.execute('DROP INDEX IF EXISTS events_kind_job_id');conn.execute('DROP INDEX IF EXISTS events_request_kind');
+    conn.execute('DROP TABLE IF EXISTS plan_item_origins');conn.execute('DROP TABLE IF EXISTS delivery_parts');conn.execute('DROP TABLE IF EXISTS plan_changes');conn.execute('DROP TABLE IF EXISTS production_batch_targets');conn.execute('DROP TABLE IF EXISTS production_batches');conn.execute('DROP TABLE IF EXISTS policy_values');conn.execute('DROP TABLE IF EXISTS policy_cursor');conn.execute('DROP INDEX IF EXISTS events_kind_id');conn.execute('DROP TABLE IF EXISTS host_responses');conn.execute('DROP TABLE IF EXISTS host_requests');conn.execute('DROP INDEX IF EXISTS events_kind_job_id');conn.execute('DROP INDEX IF EXISTS events_request_kind');
     conn.execute('DROP TABLE IF EXISTS host_responses');conn.execute('DROP TABLE IF EXISTS host_requests')
     conn.execute('DROP INDEX IF EXISTS events_kind_job_id');conn.execute('DROP INDEX IF EXISTS events_request_kind')
     conn.execute('PRAGMA user_version=8');conn.close()
     for _ in range(2):
         conn=Store(service.task).connect()
-        assert conn.execute('PRAGMA user_version').fetchone()[0]==10
+        assert conn.execute('PRAGMA user_version').fetchone()[0]==11
         assert conn.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
         assert not conn.execute('PRAGMA foreign_key_check').fetchall()
         conn.close()

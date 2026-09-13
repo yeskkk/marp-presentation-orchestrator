@@ -86,7 +86,7 @@ bridge 有实际工具回合，不宣传为零模型控制成本。unknown 状�
 
 用真实宿主验证每个 operation、重复 request 的幂等性、短回执和部分用量、异常断线、
 过期 inventory、budget 失败与恢复。再做小规模课程与原生渲染，不把 fixture 当生产接线。
-当前源码不包含用户任务里所有本地 bridge 补丁，文档整理也不会自动安装/接通它们。
+正式Codex适配器见下节，不整体继承旧任务的本地补丁；需要部署的真实服务能力检查。
 
 ## 角色指南的精确路由
 
@@ -110,3 +110,48 @@ language-review 或 layout-review；agent 名和 runtime 不变。未知或缺�
 编译错误且该步尚未派发时，只阻断 job 的下一步；`runner resume-input SLUG ATTEMPT_ID` 在
 根因修复后允许同 attempt 重新编译。已派发但无回执不能使用这个入口；没有自动增加预算。
 旧在途请求可以在已有派发记录/准确绑定验证后导入主库，不能凭传入一个 JSON 伪造派发。
+
+## 原生 Codex bridge：执行、证据与恢复
+
+`mpres bridge run SLUG` 是已确认任务的前台适配器入口，不是启动时跳过 TASK 修改询问的捷径。
+先通过 start.sh 选择本次任务方向、确认范围并完成环境/登录准备，再运行它；不自动登录、
+不安装 Codex，不覆盖审批或沙箱，不更换模型。它调用 `codex app-server` 的默认 stdio。
+
+```bash
+# 离线：只读取已有日志并增量更新旁路索引，不调用模型
+mpres --root . bridge index economics
+mpres --root . bridge status economics
+# 在线：执行 runner 已经事务性准入的准确请求
+mpres --root . bridge run economics --cycles 100
+# 只对账既有请求，不重新 start 模型 turn
+mpres --root . bridge reconcile economics REQUEST_ID
+```
+
+主业务库仍决定请求是否已接受。`.mpres/codex-bridge.sqlite3` 保留原始协议证据及准确
+请求/响应；旧 accepted 标记不是另一套业务状态。`.mpres/codex-index.sqlite3` 是可重建投影：
+RPC身份、线程运行设置、turn终态/最终结果/累计用量，以及已处理wire游标。每次只查询主键
+游标之后的有限批次，原始流式文本不再全量复制进索引。索引丢失可重建，但不得删除原始
+journal。归档恢复或源文件替换时，使用新的索引文件，不把旧游标硬套到另一份日志。
+
+一个stdout读取者分发所有响应；RPC按id匹配，通知按(threadId, turnId)定位。多个被runner
+准入的线程可并行，同一线程不并行执行两个turn。线程池/容量/作者独立性继续由业务库
+控制。不存在进程级“当前请求”来猜通知归属，也不把一个线程的token计给另一个。
+
+库存读取用thread/loaded/list；仅对缺失的已登记身份使用不带turn历史的thread/read。
+不会为每次库存探测resume全部线程、扫描全对话找usage。供应商没有提供可查询全局硬上限
+时，报告明确的“已确认适配器本地上限”，不宣称探测到了全局容量，也不释放无close证明的
+句柄。无真实累计用量基线的旧线程不能推断为0。
+
+超时分两类：provider_timeout_seconds仍是已确认的单turn总墙钟上限；可在确认前设置
+provider_idle_timeout_seconds作为无有效进展期限，省略则等于总上限。文本/工具输出增量、
+真实完成项或增长的用量可以刷新idle，普通heartbeat不可以；总预算不会被刷新，旧任务的
+1200秒不会被悄悄延长。超时/断线仅报告待对账，不盲目重发或假装中断已经完成。
+明确interrupted/failed的turn不能冒充成功；续作范围/预算仍需既有控制授权。
+
+已保存completed与usage、但响应接收丢失时，可以直接重建真实回执；必要时显式reconcile
+查询指定thread历史。缺少终态或用量等证据仍阻断，不能从作者文字推断程序完成。
+本版本没有对旧临时补丁进行整体移植；不提供任意人工改回执再假装原结果的接口。
+
+测试区分真实本地JSON-RPC子进程、确定性语义/渲染替身、真实归档增量索引与真正模型调用。
+前面三种不等于真实Codex登录、供应商服务、教材质量或Marp PDF的端到端验收。
+协议依据：OpenAI Codex App Server官方文档（https://developers.openai.com/codex/app-server）。

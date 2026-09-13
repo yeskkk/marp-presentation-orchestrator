@@ -76,7 +76,7 @@ def snapshot(task: Path, source: Path, *, fixed_theme: bool = False) -> tuple[st
     return artifact_id, relative
 
 
-def prepare_edit_source(task: Path, source: Path, target: Path) -> dict:
+def prepare_edit_source(task: Path, source: Path, target: Path, *, entrypoint: str = 'presentation.md') -> dict:
     """Prepare a NEW author work copy and regenerate declared figures there.
 
     The original immutable artifact is never modified. Existing nonempty author
@@ -89,6 +89,8 @@ def prepare_edit_source(task: Path, source: Path, target: Path) -> dict:
     from mpres.source_policy import install_theme, inspect_markdown
     import json
     import errno
+    if not isinstance(entrypoint,str) or Path(entrypoint).name!=entrypoint or not entrypoint.endswith('.md'):
+        raise MPresError('Invalid source Markdown entrypoint')
     if not target.resolve().is_relative_to((task/'.mpres/work').resolve()):
         raise MPresError('Automatic figure preparation is restricted to a task author work directory')
     target = inside(task,target.relative_to(task).as_posix())
@@ -101,8 +103,8 @@ def prepare_edit_source(task: Path, source: Path, target: Path) -> dict:
     for entry in source.rglob('*'):
         if entry.is_symlink(): raise MPresError('Cannot prepare an author copy from symlinked evidence')
         relative=entry.relative_to(source)
-        if entry.is_file() and (relative.as_posix()=='presentation.md' or relative.parts[0]=='assets'):
-            safe_file(task,entry);files.append((entry,relative))
+        if entry.is_file() and (relative.as_posix()==entrypoint or relative.parts[0]=='assets'):
+            safe_file(task,entry);files.append((entry,Path('presentation.md') if relative.as_posix()==entrypoint else relative))
     # Validate all mathematical inputs first. Unknown versions require explicit implementation,
     # never a downgrade, removal of the .plot.json, or execution of submitted Python.
     for entry,relative in files:

@@ -25,7 +25,7 @@ mpres --root . runner outstanding economics
 mpres --root . task metrics economics
 ```
 
-command 模式 runner 在前台机械循环；bridge 需要宿主转发精确请求，不是 main 重新规划。
+command 模式 runner 在前台机械循环；Codex 可用 bridge run 直接执行精确请求，其它 bridge 由宿主转发，不是 main 重新规划。
 正常无请求或已知阻断后 run 会返回，不承诺在后台继续。不要安排模型健康轮询。
 metrics 的已知值和覆盖范围分开，缺值不是零，turn/usage行不当然等于底层模型调用次数。
 
@@ -134,3 +134,18 @@ python scripts/verify_theme.py --output /path/to/new-theme-evidence
 已有明确的历史授权自动建立索引，不从一般feedback猜测；旧event、配置和usage不改写。
 `batch present SLUG --presentation P ...` / `batch confirm SLUG BATCH_ID --by user` 只启动所选
 尚未交付稿，完成后暂停。它不是自动教学拆分，未知页数估计仍需planner关注。
+
+原生Codex的离线索引、执行和对账命令见 [HOST-PROTOCOL](HOST-PROTOCOL.md)。
+
+
+## 尚未交付范围的拆分与续做
+
+先暂停并处理真实在途作业，`plan show` 读取有效分配。`plan present --proposal FILE`
+接收内容范围到交付稿的完整有序分配；程序不能决定教学切点。`plan confirm ID --by ...`
+只确认分配，不启动作者。新的 `batch present` 展开父范围和子稿后再确认生产批次。
+已展示后输入或来源变化会拒绝旧确认；没有活跃生产时，同一确认重复执行是无副作用的。
+已发布稿和正在整稿编辑/审核的稿件必须走现有返修路径，不能通过规划替换其发布记录。
+
+子稿使用原范围配置的模型与推理强度，并继承作者参与历史。仅在新的工作目录中准备
+旧单元稿；历史通过的门禁不随来源复制。若一个单元需要拆成更多课次，应先明确教学
+目标与范围，不得在这条只分配既有课次的接口里伪造一个新单元。

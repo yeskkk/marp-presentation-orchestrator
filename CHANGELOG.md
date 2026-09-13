@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.10
+
+Confirmed delivery partitions, exact parent-to-child batch expansion, source and fixed-runtime inheritance, additive schema 11.
+
+# v0.8.9
+
+增量宿主证据投影、真实JSON-RPC并行路由、可恢复请求、idle与总预算分开；不变更既有授权。
+
+# Changelog
+
 ## 0.8.8
 
 - Index explicit TASK, capacity and context-budget authorizations by configuration without rewriting the original snapshots.

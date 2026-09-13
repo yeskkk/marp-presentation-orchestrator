@@ -104,7 +104,12 @@ class Workflow:
                 conn.execute("INSERT OR IGNORE INTO decks(presentation,config_id,ordinal,phase) VALUES(?,?,?,'units')", (deck['id'], cfg['id'], i))
 
     def status(self) -> dict:
-        return {'enabled': self.enabled(), 'decks': self.store.rows('SELECT * FROM decks ORDER BY ordinal'),
+        with self.store.transaction() as conn:
+            cfg=self.service.confirmed(conn)
+            order={d['id']:i for i,d in enumerate(json.loads(cfg['settings_json'])['presentations'])}
+            rows=[dict(r) for r in conn.execute('SELECT * FROM decks')]
+        return {'enabled': self.enabled(), 'decks': sorted((r for r in rows if r['presentation'] in order),key=lambda r:order[r['presentation']]),
+                'superseded_scopes':[r['presentation'] for r in rows if r['presentation'] not in order],
                 'decisions': self.store.rows('SELECT * FROM decisions WHERE resolved_at IS NULL'),
                 'releases': self.store.rows('SELECT * FROM releases ORDER BY created_at'),
                 'delivery_package': Delivery(self.task).status()}
@@ -122,7 +127,8 @@ class Workflow:
                 return {r['presentation'] for r in conn.execute("SELECT d.presentation FROM decks d JOIN repair_targets t ON t.presentation=d.presentation WHERE t.case_id=? AND d.phase NOT IN ('delivered','blocked') ORDER BY d.ordinal LIMIT 2",(case['id'],))}
             from .batches import active, targets
             batch=active(conn)
-            decks = conn.execute("SELECT * FROM decks WHERE phase<>'delivered' ORDER BY ordinal").fetchall()
+            order={d['id']:i for i,d in enumerate(settings['presentations'])}
+            decks = sorted((r for r in conn.execute("SELECT * FROM decks WHERE phase<>'delivered'") if r['presentation'] in order),key=lambda r:order[r['presentation']])
             if batch:
                 selected=set(targets(conn,batch['id']))
                 decks=[d for d in decks if d['presentation'] in selected]
@@ -411,7 +417,12 @@ class Workflow:
         if len(rows)!=5 or {r['channel'] for r in rows}!=set(CHANNELS) or len({r['session_id'] for r in rows})!=5:
             raise MPresError('Release requires five distinct successful full-deck reviewer sessions')
         for row in rows:
-            conflicts=self.store.rows("SELECT 1 FROM participation WHERE session_id=? AND presentation=? AND kind IN ('write','edit','revise')",(row['session_id'],deck['presentation']))
+            from .planning import inherited_history
+            conn=self.store.connect()
+            try:
+                conflicts=[r for r in inherited_history(conn,row['session_id'],deck['presentation']) if r['kind'] in {'write','edit','revise'}]
+            finally:
+                conn.close()
             if conflicts:
                 raise MPresError('Reviewer independence was violated')
         from .repairs import Repairs
@@ -512,8 +523,10 @@ class Workflow:
                         event(conn,'repair.completed',{'case_id':case_id})
                 else:
                     settings=json.loads(cfg['settings_json'])
-                    remaining=conn.execute("SELECT count(*) FROM decks WHERE phase<>'delivered'").fetchone()[0]
-                    delivered=conn.execute("SELECT count(*) FROM decks WHERE phase='delivered'").fetchone()[0]
+                    effective={d['id'] for d in settings['presentations']}
+                    states=[r['phase'] for r in conn.execute('SELECT presentation,phase FROM decks') if r['presentation'] in effective]
+                    remaining=sum(s!='delivered' for s in states)
+                    delivered=sum(s=='delivered' for s in states)
                     from .batches import completed as complete_batch
                     if complete_batch(conn,deck['presentation']):pass
                     elif not remaining:conn.execute("UPDATE task SET status='completed'")

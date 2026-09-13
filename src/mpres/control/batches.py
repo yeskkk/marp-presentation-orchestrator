@@ -29,12 +29,19 @@ class Batches:
         if not selected or len(selected)!=len(set(selected)):raise MPresError('Select distinct presentation IDs')
         decks={r['presentation']:dict(r) for r in conn.execute('SELECT * FROM decks')}
         if any(p not in decks for p in selected):raise MPresError('Unknown presentation; select an approved ID, not a prefix')
+        requested=list(selected)
+        from .planning import leaves
+        selected=[child for pid in requested for child in leaves(conn,pid)]
+        if len(selected)!=len(set(selected)):raise MPresError('Overlapping parent/child scopes; select each content range once')
+        order={d['id']:i for i,d in enumerate(json.loads(cfg['settings_json'])['presentations'])}
+        if any(p not in order for p in selected):raise MPresError('Selection is not an effective delivery scope')
         if any(decks[p]['phase']=='delivered' for p in selected):raise MPresError('Do not include delivered decks; use repair instead')
-        selected=sorted(selected,key=lambda p:decks[p]['ordinal'])
+        selected=sorted(selected,key=lambda p:order[p])
         from .inspection import plan_checks
         settings=json.loads(cfg['settings_json']);checks=plan_checks(settings)
         if any(not checks[p]['success'] for p in selected):raise MPresError('Selected planned deck exceeds 100 pages; replan before writing')
-        return {'config_id':cfg['id'],'policy_sources':cfg.get('policy_sources',{}),'presentations':selected,
+        return {'config_id':cfg['id'],'policy_sources':cfg.get('policy_sources',{}),'plan_sources':cfg.get('plan_sources',[]),
+                'requested_presentations':requested,'presentations':selected,
                 'decks':[decks[p] for p in selected],'page_estimates':{p:checks[p] for p in selected},
                 'units':[dict(r) for r in conn.execute('SELECT * FROM plan_items WHERE config_id=? ORDER BY ordinal',(cfg['id'],)) if r['presentation'] in selected],
                 'stop_after':'all_selected_delivered','unselected_work':'not_admitted'}
@@ -60,7 +67,11 @@ class Batches:
                 return {'batch_id':batch_id,'already_confirmed':True}
             if row['state']!='presented':raise MPresError('Batch cannot be reopened')
             snapshot=json.loads(row['snapshot_json'])
-            if self._snapshot(conn,snapshot['presentations'])!=snapshot:raise MPresError('Batch or policy changed after presentation; present it again')
+            current=self._snapshot(conn,snapshot.get('requested_presentations',snapshot['presentations']))
+            # Old presented batches remain exact only if no partition was added.
+            expected=dict(snapshot)
+            expected.setdefault('requested_presentations',snapshot['presentations']);expected.setdefault('plan_sources',[])
+            if current!=expected:raise MPresError('Batch or policy changed after presentation; present it again')
             conn.execute("UPDATE production_batches SET state='running',confirmed_at=?,confirmed_by=? WHERE id=?",(utc_now(),actor,batch_id))
             conn.execute("UPDATE task SET status='running'")
             # Resolve delivery feedback only: independent semantic issues remain.
@@ -70,7 +81,7 @@ class Batches:
         return {'batch_id':batch_id,'already_confirmed':False,'scope':snapshot['presentations']}
 
     def status(self):
-        return [{**r,'presentations':[t['presentation'] for t in self.store.rows('SELECT presentation FROM production_batch_targets WHERE batch_id=? ORDER BY ordinal',(r['id'],))]} for r in self.store.rows('SELECT id,state,created_at,confirmed_at,confirmed_by FROM production_batches ORDER BY created_at')]
+        return [{**r,'requested_presentations':json.loads(r['snapshot_json']).get('requested_presentations',json.loads(r['snapshot_json'])['presentations']),'presentations':[t['presentation'] for t in self.store.rows('SELECT presentation FROM production_batch_targets WHERE batch_id=? ORDER BY ordinal',(r['id'],))]} for r in self.store.rows('SELECT id,state,created_at,confirmed_at,confirmed_by,snapshot_json FROM production_batches ORDER BY created_at')]
 
 
 def completed(conn,presentation):

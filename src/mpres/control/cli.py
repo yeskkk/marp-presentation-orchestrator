@@ -30,6 +30,20 @@ def build_parser() -> argparse.ArgumentParser:
     op=task.add_parser('policy-show');op.add_argument('slug')
     op=task.add_parser('policy-present');op.add_argument('slug');op.add_argument('--handle-limit',type=int);op.add_argument('--context-budget-bytes',type=int)
     op=task.add_parser('policy-confirm');op.add_argument('slug');op.add_argument('--presentation-id',type=int,required=True);op.add_argument('--by',required=True)
+    plan=sub.add_parser('plan').add_subparsers(dest='operation',required=True)
+    op=plan.add_parser('show');op.add_argument('slug')
+    op=plan.add_parser('present');op.add_argument('slug');op.add_argument('--proposal',type=Path,required=True)
+    for action in ('confirm','cancel'):
+        op=plan.add_parser(action);op.add_argument('slug');op.add_argument('plan_change_id');op.add_argument('--by',required=True)
+    bridge=sub.add_parser('bridge').add_subparsers(dest='operation',required=True)
+    for action in ('index','status','run','reconcile'):
+        op=bridge.add_parser(action);op.add_argument('slug')
+        if action in {'index','status'}:
+            op.add_argument('--journal',type=Path);op.add_argument('--index',type=Path)
+        else:
+            op.add_argument('--codex',default='codex')
+            if action=='run':op.add_argument('--cycles',type=int,default=100)
+            else:op.add_argument('request_id')
     batch=sub.add_parser('batch').add_subparsers(dest='operation',required=True)
     op=batch.add_parser('present');op.add_argument('slug');op.add_argument('--presentation',action='append',required=True)
     op=batch.add_parser('confirm');op.add_argument('slug');op.add_argument('batch_id');op.add_argument('--by',required=True)
@@ -120,7 +134,23 @@ def main(argv: list[str] | None = None) -> int:
         else:
             safe_id(args.slug,label='task slug')
             service=Service(root/'tasks'/args.slug)
-            if args.command=='batch':
+            if args.command=='plan':
+                from .planning import Planning
+                planning=Planning(service.task)
+                if args.operation=='present':result=planning.present(json.loads(args.proposal.read_text(encoding='utf-8')))
+                elif args.operation=='confirm':result=planning.confirm(args.plan_change_id,args.by)
+                elif args.operation=='cancel':result=planning.cancel(args.plan_change_id,args.by)
+                else:result=planning.show()
+            elif args.command=='bridge':
+                if args.operation in {'index','status'}:
+                    from .codex_index import WireIndex
+                    index=WireIndex(args.journal or service.task/'.mpres'/'codex-bridge.sqlite3',args.index)
+                    result={**index.sync(),**index.summary()}
+                else:
+                    from .codex_bridge import CodexBridge
+                    with CodexBridge(service.task,executable=args.codex) as bridge:
+                        result=bridge.drive(args.cycles) if args.operation=='run' else bridge.reconcile(args.request_id)
+            elif args.command=='batch':
                 from .batches import Batches
                 batches=Batches(service.task)
                 if args.operation=='present':result=batches.present(args.presentation)

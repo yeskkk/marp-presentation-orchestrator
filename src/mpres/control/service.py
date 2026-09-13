@@ -31,7 +31,7 @@ def require_text(value: Any, label: str) -> str:
 def settings_document(value: Any) -> dict:
     if not isinstance(value, dict):
         raise MPresError('task.yaml must be a mapping')
-    allowed = {'schema_version','engine','title','delivery','author_concurrency','max_attempts','provider','presentations','context_budget_bytes','provider_timeout_seconds','quality','workflow','recovery','teaching'}
+    allowed = {'schema_version','engine','title','delivery','author_concurrency','max_attempts','provider','presentations','context_budget_bytes','provider_timeout_seconds','provider_idle_timeout_seconds','quality','workflow','recovery','teaching'}
     if set(value) - allowed:
         raise MPresError(f'Unknown task settings: {sorted(set(value)-allowed)}')
     if value.get('schema_version') != 1 or value.get('engine') != 'compact':
@@ -59,7 +59,7 @@ def settings_document(value: Any) -> dict:
     for key in ('supports_close','supports_reset'):
         if type(p[key]) is not bool:
             raise MPresError(f'provider.{key} must be a boolean')
-    for key in ('context_budget_bytes','provider_timeout_seconds'):
+    for key in ('context_budget_bytes','provider_timeout_seconds','provider_idle_timeout_seconds'):
         if key in value and (type(value[key]) is not int or value[key]<1):
             raise MPresError(f'{key} must be a positive integer')
     if value.get('workflow', 'authoring') not in {'authoring', 'full'}:
@@ -214,12 +214,16 @@ class Service:
                     'task_text':row['task_text'],'task_digest':row['task_digest']}
         if self.documents() != expected:
             raise MPresError('Confirmed task files changed. Restore them; runtime changes during execution are forbidden')
-        return dict(row)
+        from .planning import effective_config
+        return effective_config(conn, row)
 
     def ensure_job(self, conn: sqlite3.Connection, *, key: str, presentation: str, kind: str,
                    plan_item_id: int | None = None, round: int = 0, channel: str = '',
                    artifact: str | None = None, needs: tuple[str,...] = ()) -> str:
         config = self.confirmed(conn)
+        from .planning import superseded
+        if superseded(conn, presentation):
+            raise MPresError('This content scope has been partitioned; use its approved delivery parts')
         family = 'reviewer' if kind in {'review','diagnose'} else 'author' if kind in {'write','edit','revise'} else None
         if not conn.execute('SELECT 1 FROM plan_items WHERE config_id=? AND presentation=?',(config['id'],presentation)).fetchone():
             raise MPresError('Job presentation is outside the approved plan')
@@ -253,8 +257,10 @@ class Service:
 
     def materialize(self) -> list[dict]:
         with self.store.transaction() as conn:
-            self.confirmed(conn)
+            cfg=self.confirmed(conn)
+            active={d['id'] for d in json.loads(cfg['settings_json'])['presentations']}
             for p in conn.execute('SELECT * FROM plan_items ORDER BY ordinal').fetchall():
+                if p['presentation'] not in active: continue
                 self.ensure_job(conn,key=f"write:{p['id']}",presentation=p['presentation'],kind='write',plan_item_id=p['id'])
         return self.jobs()
 
@@ -271,8 +277,9 @@ class Service:
         config = self.confirmed(conn)
         if job['kind'] not in ROLES:
             raise MPresError('Mechanical jobs have no model runtime')
+        from .planning import runtime_origin
         return resolve_runtime(json.loads(config['runtime_json']),ROLES[job['kind']],
-                               channel=job['channel'] or None,presentation_id=job['presentation'])
+                               channel=job['channel'] or None,presentation_id=runtime_origin(conn,job['presentation']))
 
     def register_session(self, handle: str, family: str, model: str, effort: str, receipt: str) -> dict:
         require_text(handle,'provider handle')
@@ -295,7 +302,8 @@ class Service:
             return False
         if conn.execute("SELECT 1 FROM attempts WHERE session_id=? AND state IN ('reserved','running','uncertain')",(session['id'],)).fetchone():
             return False
-        history = conn.execute('SELECT * FROM participation WHERE session_id=? AND presentation=?',(session['id'],job['presentation'])).fetchall()
+        from .planning import inherited_history
+        history = inherited_history(conn,session['id'],job['presentation'])
         if job['family'] == 'reviewer' and any(x['kind'] in {'write','edit','revise'} for x in history):
             return False
         if job['kind'] == 'review' and any(x['kind']=='review' and x['round']==job['round'] and x['channel']!=job['channel'] for x in history):
@@ -312,6 +320,9 @@ class Service:
             job = conn.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
             if job is None:
                 raise MPresError('Unknown job ID; no state has been written')
+            from .planning import superseded
+            if superseded(conn,job['presentation']):
+                raise MPresError('Superseded parent is not an executable delivery job')
             if conn.execute('SELECT status FROM task').fetchone()[0] != 'running':
                 from .repairs import Repairs
                 if not Repairs.proposal_job(conn, job_id):

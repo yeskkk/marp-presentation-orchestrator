@@ -60,6 +60,7 @@ class Runner:
             return self._capacity(conn)
 
     def _capacity(self, conn) -> dict:
+        from .planning import runtime_origin
         config=self.service.confirmed(conn);settings=json.loads(config['settings_json'])
         runtime=json.loads(config['runtime_json']);provider=settings['provider']
         record=conn.execute('SELECT * FROM runtime_host WHERE singleton=1').fetchone()
@@ -99,18 +100,18 @@ class Runner:
                 decks=[d for d in decks if d['id'] not in delivered][:1]
         fixed={};writers={}
         for deck in decks:
-            spec=resolve_runtime(runtime,'lesson-author',presentation_id=deck['id'])
+            spec=resolve_runtime(runtime,'lesson-author',presentation_id=runtime_origin(conn,deck['id']))
             key=(spec['model'],spec['reasoning_effort'])
             writers[key]=max(writers.get(key,0),min(settings['author_concurrency'],len(deck['units'])))
-            spec=resolve_runtime(runtime,'deck-revision-author',presentation_id=deck['id'])
+            spec=resolve_runtime(runtime,'deck-revision-author',presentation_id=runtime_origin(conn,deck['id']))
             key=('edit','',spec['model'],spec['reasoning_effort'],0)
             fixed[key]={'kind':'edit','channel':'','family':'author','model':spec['model'],'effort':spec['reasoning_effort'],'ordinal':0}
             for channel in CHANNELS:
-                spec=resolve_runtime(runtime,'specialist-reviewer',channel=channel,presentation_id=deck['id'])
+                spec=resolve_runtime(runtime,'specialist-reviewer',channel=channel,presentation_id=runtime_origin(conn,deck['id']))
                 key=('review',channel,spec['model'],spec['reasoning_effort'],0)
                 fixed[key]={'kind':'review','channel':channel,'family':'reviewer','model':spec['model'],'effort':spec['reasoning_effort'],'ordinal':0}
         for job in conn.execute("SELECT j.* FROM jobs j JOIN repair_jobs r ON r.job_id=j.id JOIN repair_cases c ON c.id=r.case_id WHERE r.stage='proposal' AND c.state='diagnosing'"):
-            spec=resolve_runtime(runtime,'diagnostic-reviewer',presentation_id=job['presentation'])
+            spec=resolve_runtime(runtime,'diagnostic-reviewer',presentation_id=runtime_origin(conn,job['presentation']))
             key=('review','diagnosis',spec['model'],spec['reasoning_effort'],0)
             fixed[key]={'kind':'review','channel':'diagnosis','family':'reviewer','model':spec['model'],'effort':spec['reasoning_effort'],'ordinal':0}
         existing_slots=conn.execute('SELECT * FROM pool_slots').fetchall()
@@ -222,11 +223,18 @@ class Runner:
             for index,relative in enumerate(dict.fromkeys(json.loads(item['sources_json']))):
                 target=snapshot_reference(self.task,relative,inputs,index)
                 packet['input_files'].append(str(target))
-            imported=self.store.rows("SELECT * FROM artifacts WHERE presentation=? AND unit=? AND origin='import' ORDER BY created_at DESC LIMIT 1",(job['presentation'],item['unit']))
+            from .planning import source_artifact, runtime_origin
+            with self.store.transaction() as conn:
+                previous=source_artifact(conn,item)
+                packet['content_origin']=runtime_origin(conn,job['presentation'])
+            imported=[previous] if previous else []
             if imported:
                 packet['existing_unverified_source']=str(self.task/imported[0]['path'])
                 packet['input_files'].extend(str(p) for p in (self.task/imported[0]['path']).rglob('*') if p.is_file() and (p.name in {imported[0]['entrypoint'],'theme.css'} or 'assets' in p.relative_to(self.task/imported[0]['path']).parts))
-                packet['constraints'].append('Reuse existing content as a starting point; imported status is not gate approval')
+                packet['constraints'].append('Reuse existing content as a starting point; historical or imported status is not current gate approval. Preserve relevant content, not an obsolete layout or scope.')
+                if job['kind']=='write':
+                    from .files import prepare_edit_source
+                    packet['source_preparation']=prepare_edit_source(self.task,self.task/imported[0]['path'],output,entrypoint=imported[0]['entrypoint'])
         if job['input_artifact_id']:
             artifact=self.store.rows('SELECT * FROM artifacts WHERE id=?',(job['input_artifact_id'],))[0]
             path=inside(self.task,artifact['path'])
