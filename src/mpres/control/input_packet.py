@@ -7,12 +7,20 @@ from __future__ import annotations
 import os
 import stat
 import tempfile
+import re
 from pathlib import Path
 from mpres.util import MPresError
 from .files import inside
 from .store import encode
 
 REFERENCE_SUFFIXES={'.md','.txt','.json','.csv'}
+
+
+def task_text_references(task: Path, task_text: str, directory: Path) -> list[str]:
+    """Expose explicitly named local textbooks without inlining whole books."""
+    names = dict.fromkeys(re.findall(r'`(sources/[^`\n]+\.txt)`', task_text))
+    return [str(snapshot_reference(task, name, directory / 'task-references', index))
+            for index, name in enumerate(names)]
 
 
 def safe_file(task: Path,path: str|Path) -> Path:
@@ -27,23 +35,43 @@ def safe_file(task: Path,path: str|Path) -> Path:
 
 
 def snapshot_reference(task: Path,relative: str,directory: Path,index: int) -> Path:
+    """Content-addressed read-only resource; each attempt pins a tiny receipt.
+
+    No symlinks or writable hardlink into the cache. Copies for editing are separate.
+    A changed source cannot silently replace an already-pinned execution input.
+    """
+    import hashlib
+    import json
     source=inside(task,relative)
     if source.suffix.lower() not in REFERENCE_SUFFIXES:
         raise MPresError('Approved references must be extracted text/data, not PDF or executable files')
     safe_file(task,source);directory.mkdir(parents=True,exist_ok=True)
-    target=directory/f'{index:03d}-{source.name}';data=source.read_bytes()
-    if target.exists():
-        if safe_file(task,target).read_bytes()!=data:
-            raise MPresError('Approved input snapshot changed; do not mutate an execution packet')
-        return target
-    fd,temporary=tempfile.mkstemp(prefix='.reference-',dir=directory);pending=Path(temporary)
-    try:
-        with os.fdopen(fd,'wb') as f:f.write(data);f.flush();os.fsync(f.fileno())
-        pending.chmod(0o444)
-        try:os.link(pending,target)
-        except FileExistsError:
-            if safe_file(task,target).read_bytes()!=data:raise MPresError('Conflicting concurrent reference snapshot')
-    finally:pending.unlink(missing_ok=True)
+    data=source.read_bytes();digest=hashlib.sha256(data).hexdigest()
+    # Previously dispatched v0.8 snapshots remain immutable and addressable.
+    legacy=directory/f'{index:03d}-{source.name}'
+    if legacy.exists():
+        if safe_file(task,legacy).read_bytes()!=data:raise MPresError('Approved input snapshot changed; do not mutate an execution packet')
+        return legacy
+    target=inside(task,f'.mpres/resource-cache/{digest}{source.suffix.lower()}')
+    target.parent.mkdir(parents=True,exist_ok=True)
+    pin=directory/f'{index:03d}-{source.name}.reference.json'
+    receipt={'version':1,'source':relative,'sha256':digest,'cache_path':target.relative_to(task).as_posix(),'bytes':len(data)}
+    if pin.exists() and json.loads(safe_file(task,pin).read_text())!=receipt:
+        raise MPresError('Approved input snapshot changed; do not mutate an execution packet')
+    def immutable_write(path,content):
+        if path.exists():
+            if safe_file(task,path).read_bytes()!=content:raise MPresError('Conflicting immutable reference cache')
+            return
+        fd,name=tempfile.mkstemp(prefix='.reference-',dir=path.parent);pending=Path(name)
+        try:
+            with os.fdopen(fd,'wb') as f:f.write(content);f.flush();os.fsync(f.fileno())
+            pending.chmod(0o444)
+            try:os.link(pending,path)
+            except FileExistsError:
+                if safe_file(task,path).read_bytes()!=content:raise MPresError('Conflicting concurrent reference snapshot')
+        finally:pending.unlink(missing_ok=True)
+    immutable_write(target,data)
+    immutable_write(pin,(encode(receipt)+'\n').encode())
     return target
 
 
@@ -62,13 +90,14 @@ def compile_inputs(task: Path,packet: dict,*,references: list[str]|None=None) ->
             required.append(name);continue
         else:kind='binary_resource'
         resources.append({'path':name,'kind':kind,'bytes':path.stat().st_size,'read_policy':'on_demand',
-                          'read_when':'Inspect when relevant to this judgment; listing is not proof of inspection.'})
+                          'read_when':'Inspect when relevant to this judgment; listing is not proof of inspection.',
+                          'access':{'read':True,'modify':False,'execute':'in_output_copy_if_explicitly_authorized' if kind=='reproduction_source' else False}})
     packet['input_files']=required;packet['resource_manifest']=resources
     packet['input_policy']={
         'version':1,
         'input_files':'Read every listed text file in full. Never summarize/truncate before the worker reads it.',
         'resource_manifest':'Available via permitted tools. Do not auto-inline SVG/PDF/CSS/scripts/references. Read relevant resources and report unavailable evidence.',
-        'reproduction_source':'Read as source only; this manifest does not grant execution permission.',
+        'reproduction_source':'Inspect as source first. This manifest grants no new permission and does not revoke explicit TASK authorization. When TASK permits Python plotting, inspect and run the reproduction script in your output work copy; preserve archived inputs.',
         'coverage':'A resource listing is not a reading receipt. All subsequent reads enter actual usage.'}
     packet['attachment_bytes']=sum(x['bytes'] for x in resources)
     packet['required_text_bytes']=sum(Path(p).stat().st_size for p in required)

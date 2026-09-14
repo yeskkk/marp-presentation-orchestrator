@@ -505,6 +505,13 @@ class Service:
                     raise MPresError('Attempt is no longer accepting results')
                 if job['kind']=='review':
                     event(conn, 'review.result_received', {'attempt_id':attempt_id,'receipt':row['provider_receipt'],'raw_result':raw_result},job['id'])
+                    relocations=[]
+                    for old,new in zip(raw_result.get('feedback_checks',[]),result.get('feedback_checks',[])):
+                        for before,after in zip(old.get('evidence',[]),new.get('evidence',[])):
+                            if before['slide_id']!=after['slide_id']:
+                                relocations.append({'feedback_id':old['id'],'quote':before['quote'],'from':before['slide_id'],'to':after['slide_id']})
+                    if relocations:
+                        event(conn,'review.exact_quote_relocated',{'attempt_id':attempt_id,'artifact_id':job['input_artifact_id'],'relocations':relocations},job['id'])
                     findings = result.get('findings')
                     if not isinstance(findings,list) or job['input_artifact_id'] is None:
                         raise MPresError('Review requires findings and a frozen input revision')

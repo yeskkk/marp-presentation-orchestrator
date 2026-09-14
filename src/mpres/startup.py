@@ -28,7 +28,7 @@ except ModuleNotFoundError as exc:
 
 # Compatibility with explicit v0.6.15 mechanical invocations. No arguments now
 # means interactive work, never --help. Unknown tokens must not become CLI jobs.
-CLI_COMMANDS = {'task','runner','artifact','workflow','repair','feedback','toolchain','legacy','source','session','job'}
+CLI_COMMANDS = {'task','runner','artifact','workflow','repair','feedback','toolchain','legacy','source','session','job','bridge','storage','report','supervision','exercise','resource','figure'}
 CORE_MODULES = ('yaml','jsonschema','fitz','playwright','bs4','PIL','requests','pypdf','markdown_it')
 
 
@@ -138,7 +138,7 @@ def preflight(root: Path, *, slug: str | None = None) -> dict:
     if figures:
         warnings.append('Optional drawing modules missing: '+', '.join(figures)+'; install .[figures] before plotting')
     return {'success':not errors,'root':str(root),'python':sys.executable,'codex':codex,
-            'runtime':runtime,'codex_flags':[flag for flag in ('--cd','--model','--config') if flag in help_text], 'render_dependencies_present':render_ready,
+            'runtime':runtime,'codex_flags':[flag for flag in ('--cd','--model','--config','--sandbox','--ask-for-approval') if flag in help_text], 'render_dependencies_present':render_ready,
             'native_render_verified':False,'errors':errors,'warnings':warnings}
 
 
@@ -188,7 +188,11 @@ def build_command(root: Path, report: dict, tail: list[str]) -> list[str]:
                 arg.startswith(('--model=','--config=','--profile=')) or
                 (arg.startswith(('-m','-c','-p')) and not arg.startswith('--'))):
             raise MPresError('With --task, model/config/profile overrides are forbidden; edit the task runtime before confirmation')
+    if report.get('permissions'):
+        from mpres.permissions import validate_tail
+        validate_tail(tail)
     command = [report['codex'],'--cd',str(root)]
+    if report.get('permissions'):command += report['permissions']['argv']
     rt = report['runtime']
     if rt:
         command += ['--model',rt['model'],'--config',
@@ -218,13 +222,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[2])
     parser.add_argument('--task', help='Continue an existing compact task using its fixed planner runtime')
     parser.add_argument('--check', action='store_true', help='Local preflight only; no model session or task changes')
+    parser.add_argument('--permissions', choices=('read-only','workspace','workspace-network','full'))
+    parser.add_argument('--approval', choices=('on-request','never'), default=None)
+    parser.add_argument('--allow-full-access', action='store_true')
+    parser.add_argument('--intent', choices=('edit','keep','exit'), help='Explicit local choice; does not authorize production')
+    parser.add_argument('--print-command', action='store_true', help='Noninteractive preview only; requires --intent and --permissions')
     parser.add_argument('codex_args', nargs=argparse.REMAINDER, help='Codex flags after -- (no task/runtime overrides)')
     # Mechanical operations must remain possible without Codex or a terminal.
     if '--cli' in args:
         pos = args.index('--cli')
         prefix = parser.parse_args(args[:pos])
-        if prefix.task or prefix.check:
-            parser.error('--cli cannot be combined with --task or --check')
+        if prefix.task or prefix.check or prefix.permissions or prefix.approval or prefix.allow_full_access or prefix.intent or prefix.print_command:
+            parser.error('--cli cannot be combined with interactive launch options')
         from mpres.cli import main as cli
         return cli(['--root',str(prefix.root.resolve()),*args[pos+1:]])
     # Backwards compatible form: start.sh workflow --help.
@@ -239,18 +248,25 @@ def main(argv: list[str] | None = None) -> int:
             raise MPresError('Launch from an intact project source tree')
         tail = parsed.codex_args
         if tail[:1] == ['--']:tail=tail[1:]
+        from mpres import permissions
+        permission_choice=permissions.selection(parsed.permissions,parsed.approval or 'on-request',allow_full=parsed.allow_full_access) if parsed.permissions else None
+        if parsed.allow_full_access and parsed.permissions!='full':raise MPresError('--allow-full-access requires --permissions full')
         if parsed.check:
             report = preflight(root,slug=parsed.task)
+            if permission_choice:
+                permissions.validate_flags(permission_choice,report['codex_flags']);report['permissions']=permission_choice
             print(json.dumps(report,ensure_ascii=False,indent=2))
             return 0 if report['success'] else 2
-        if not sys.stdin.isatty() or not sys.stdout.isatty():
+        if parsed.print_command and (not parsed.intent or not permission_choice):
+            raise MPresError('--print-command requires explicit --intent and --permissions; no inferred consent')
+        if not parsed.print_command and (not sys.stdin.isatty() or not sys.stdout.isatty()):
             raise MPresError('Interactive launch requires a terminal. Use --check or --cli in scripts; no automatic noninteractive model call.')
         # Environment checks do not read/validate a possibly edited TASK first.
         report = preflight(root)
         if report['errors']:
             raise MPresError('\n'.join(report['errors']))
-        slug = choose_task(root, parsed.task)
-        intent = choose_intent(slug)
+        slug = parsed.task if parsed.print_command else choose_task(root, parsed.task)
+        intent = parsed.intent or choose_intent(slug)
         if intent == 'exit':
             print('已退出；未启动模型，未修改任务。')
             return 0
@@ -262,7 +278,13 @@ def main(argv: list[str] | None = None) -> int:
                     raise MPresError(f'Installed Codex does not advertise {flag}; cannot enforce the selected task runtime')
             if report['runtime']['changed_inputs']:
                 print('未确认的文件改动：'+', '.join(report['runtime']['changed_inputs'])+'；仍使用数据库已确认的模型与强度。',file=sys.stderr)
+        report['permissions']=permission_choice or permissions.choose(parsed.approval or 'on-request')
+        permissions.validate_flags(report['permissions'],report['codex_flags'])
         command = build_command(root,report,tail)
+        if parsed.print_command:
+            print(json.dumps({'command':command,'permissions':report['permissions'],'startup_intent':intent,'runtime':report['runtime'],'model_started':False},ensure_ascii=False,indent=2))
+            return 0
+        print('本次权限请求（宿主实际生效策略须进入会话核对）：'+json.dumps(report['permissions'],ensure_ascii=False),file=sys.stderr)
         for message in report['warnings']:
             print('Preflight: '+message,file=sys.stderr)
         if report['runtime']:
@@ -272,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
             print('Planning session uses your Codex configuration. Before production choose a task and reopen with --task.',file=sys.stderr)
         env={**os.environ,'MPRES_ROOT':str(root)}
         env['MPRES_STARTUP_INTENT']=intent
+        env['MPRES_PERMISSION_SELECTION']=json.dumps(report['permissions'],ensure_ascii=False)
         if slug:env['MPRES_TASK_SLUG']=slug
         else:env.pop('MPRES_TASK_SLUG',None)
         if os.name == 'posix':

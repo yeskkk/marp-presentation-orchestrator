@@ -220,7 +220,7 @@ def test_native_bridge_full_pipeline_with_explicit_fake_server(compact_root,nati
     from test_deck_workflow import full_task
     service=full_task(compact_root,decks=1,units=2)
     server=tmp_path/'codex-fixture'
-    server.write_text('#!'+sys.executable+'\n'+Path(__file__).with_name('fake_codex_server.py').read_text())
+    server.write_text('#!'+sys.executable+'\nimport sys\nsys.path[:0]='+repr([str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[2]/'src')])+'\n'+Path(__file__).with_name('fake_codex_server.py').read_text())
     server.chmod(0o755)
     with CodexBridge(service.task,executable=str(server)) as b:
         result=b.drive(120)
@@ -244,7 +244,7 @@ def test_bridge_replay_uses_business_journal_not_legacy_accepted_bit(compact_roo
     from test_deck_workflow import full_task
     service=full_task(compact_root,decks=1,units=1)
     server=tmp_path/'codex-fixture'
-    server.write_text('#!'+sys.executable+'\n'+Path(__file__).with_name('fake_codex_server.py').read_text());server.chmod(0o755)
+    server.write_text('#!'+sys.executable+'\nimport sys\nsys.path[:0]='+repr([str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[2]/'src')])+'\n'+Path(__file__).with_name('fake_codex_server.py').read_text());server.chmod(0o755)
     with CodexBridge(service.task,executable=str(server)) as b:
         b.drive(120)
         before=service.store.rows('SELECT * FROM usage')

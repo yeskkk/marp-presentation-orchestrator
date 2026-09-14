@@ -112,7 +112,7 @@ def test_migration_v2_retains_every_config(compact_root):
     service=prepare(compact_root);before=service.store.rows('SELECT * FROM configs')
     c=service.store.connect();c.execute('DROP TABLE IF EXISTS plan_item_origins');c.execute('DROP TABLE IF EXISTS delivery_parts');c.execute('DROP TABLE IF EXISTS plan_changes');c.execute('DROP TABLE IF EXISTS production_batch_targets');c.execute('DROP TABLE IF EXISTS production_batches');c.execute('DROP TABLE IF EXISTS policy_values');c.execute('DROP TABLE IF EXISTS policy_cursor');c.execute('DROP INDEX IF EXISTS events_kind_id');c.execute('DROP TABLE IF EXISTS host_responses');c.execute('DROP TABLE IF EXISTS host_requests');c.execute('DROP INDEX IF EXISTS events_kind_job_id');c.execute('DROP INDEX IF EXISTS events_request_kind');c.execute('DROP TABLE audience_steps');c.execute('DROP TABLE release_versions');c.execute('DROP TABLE repair_jobs');c.execute('DROP TABLE repair_targets');c.execute('DROP TABLE attempt_briefings');c.execute('DROP TABLE feedback_rules');c.execute('DROP TABLE releases');c.execute('DROP TABLE decks');c.execute('DROP TABLE repair_cases');c.execute('DROP TABLE gate_runs');c.execute('PRAGMA user_version=2');c.close()
     assert service.store.rows('SELECT * FROM configs')==before
-    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==11;c.close()
+    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==__import__('mpres.control.store',fromlist=['Store']).Store.SCHEMA_VERSION;c.close()
 
 
 def test_pending_gate_requires_explicit_interruption_before_retry(compact_root):

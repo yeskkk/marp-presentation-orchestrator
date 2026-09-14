@@ -211,11 +211,17 @@ class Runner:
         packet={'job_id':job['id'],'kind':job['kind'],'presentation':job['presentation'],
                 'channel':job['channel'] or None,'writable_directory':str(output),
                 'required_result':{'summary':'Concrete semantic outcome, not a process report'},
-                'constraints':['Use provided material and verifiable public sources within the approved topic; cite event dates and sources, label hypothetical data. If tools/evidence are unavailable report the gap, never fabricate','Do not change task config, DB, evidence or runtime',
+                'constraints':['Follow TASK requirements for materials and attribution. Plausible teaching examples may use invented or simplified data; do not impose news verification or citations when TASK excludes them. Keep mathematical relationships correct and never invent a claimed source.','Do not change task config, DB, evidence or runtime',
                                'No screenshots, OCR or model-vision PDF checking',
                                'Do not author workflow status, assignment files or gate receipts'],
                 'input_files':[]}
         deck_references=[]
+        from .input_packet import task_text_references
+        with self.store.transaction() as conn:
+            task_text=self.service.confirmed(conn)['task_text']
+        task_references=task_text_references(self.task,task_text,inputs)
+        deck_references.extend(task_references)
+        packet['input_files'].extend(task_references)
         if job['plan_item_id']:
             item=self.store.rows('SELECT * FROM plan_items WHERE id=?',(job['plan_item_id'],))[0]
             packet['unit']={'id':item['unit'],'title':item['title'],'brief':item['brief']}
@@ -292,6 +298,10 @@ class Runner:
                     packet['input_files'].append(str(pdf))
                     packet['mechanical_evidence'] = gate_excerpt(json.loads(full_gate['detail_json']))
                 packet['required_result']['findings'] = 'Exactly message, slide_ids (existing canonical IDs), severity (minor/major/critical); [] permitted'
+            if job['kind'] in {'edit','revise'}:
+                decisions=self.store.rows("SELECT detail_json FROM events WHERE kind='deck.author_decision_continued' AND json_extract(detail_json,'$.job_id')=? ORDER BY id DESC LIMIT 1",(job['id'],))
+                if decisions:
+                    packet['author_decision']=json.loads(decisions[0]['detail_json'])
             if job['kind']=='revise':
                 from .workflow import current_findings
                 decks=self.store.rows('SELECT * FROM decks WHERE presentation=?',(job['presentation'],))
@@ -323,7 +333,7 @@ class Runner:
                 for src in prior.rglob('*'):
                     if src.is_symlink(): raise MPresError('Prior draft contains a symlink')
                     rel=src.relative_to(prior)
-                    if src.is_file() and (rel.as_posix()=='presentation.md' or rel.parts[0]=='assets'):
+                    if src.is_file() and (rel.as_posix() in {'presentation.md','exercises.json'} or rel.parts[0]=='assets'):
                         target=output/rel;target.parent.mkdir(parents=True,exist_ok=True)
                         if target.exists(): target.chmod(0o644)
                         target.write_bytes(src.read_bytes())
@@ -333,7 +343,10 @@ class Runner:
         packet['historical_feedback'] = Feedback(self.task).briefing(attempt_id)['feedback']
         packet['as_of_date'] = datetime.now(timezone.utc).date().isoformat()
         packet['required_result']['feedback_checks'] = 'One disposition for every historical feedback id/version, with actual slide excerpts; issue is not a pass; no automatic not_applicable by channel'
-        packet['result_schema'] = schema(result_schema_name(job['kind']))
+        from copy import deepcopy
+        packet['result_schema'] = deepcopy(schema(result_schema_name(job['kind'])))
+        from .exercises import attach as attach_exercises
+        attach_exercises(packet, path if job.get('input_artifact_id') else None)
         from .guidance import compile_guidance, attach_guidance
         guide = compile_guidance(self.task.parent.parent, job['kind'], channel=job.get('channel') or None,
             repair=bool(repair), correction=bool(packet.get('submission_correction') or packet.get('mechanical_findings')))
@@ -500,6 +513,8 @@ class Runner:
                 'release_pipeline_enabled':full, 'workflow':workflow_report}
 
     def execution_request(self, job: dict, attempt: dict) -> dict | None:
+        from .preflight import require_job_inputs
+        require_job_inputs(self.service, job)
         from .feedback import Feedback
         brief=Feedback(self.task).briefing(attempt['id'])
         operation='run' if brief['acknowledged'] else 'brief'
@@ -518,6 +533,9 @@ class Runner:
                 attach_guidance(packet, audience_synthesis_guidance(self.task.parent.parent,
                     repair=bool(packet.get('repair_scope')),
                     introduce=not audience.guidance_introduced(attempt['id'])))
+                packet.pop('exercise_review',None)  # coverage already accepted on isolated student steps
+                if 'exercise_checks' in packet['result_schema']['required']:
+                    packet['result_schema']['required'].remove('exercise_checks')
                 packet['audience_reading']=audience.final_context(attempt['id'])
                 packet['instructions']='Final historical-feedback comparison. Earlier accepted findings are merged by the control plane automatically. Return only NEW findings; link requirements via finding_refs (step:sequence:index or new:index, indices start at 1). Do not copy existing messages; do not claim author self-reports are evidence. Do not re-review author repairs.'
         else:
@@ -645,6 +663,14 @@ class Runner:
             return {'attempt_id':attempt_id,'submission_rejected':True,'already_recorded':True}
         from mpres.util import SubmissionRejected
         try:
+            from .exercises import validate_author, validate_checks
+            if request['packet'].get('exercise_contract') and isinstance(result,dict) and source:
+                validate_author(source,result,required=True)
+            if request['packet'].get('exercise_review') and job.get('channel')=='pedagogy' and isinstance(result,dict):
+                artifact=self.store.rows('SELECT path FROM artifacts WHERE id=?',(job['input_artifact_id'],))[0]
+                from mpres.marp_source import parse_deck
+                allowed={s.slide_id for s in parse_deck(self.task/artifact['path']/'presentation.md').slides}
+                validate_checks(result,request['packet']['exercise_review'],allowed)
             return self.service.submit(attempt_id,result,source=source)
         except SubmissionRejected as exc:
             # Only authored source/result schema errors are automatically corrected.
@@ -680,6 +706,8 @@ class Runner:
         tick=self.tick()
         def execute(request):
             started=time.monotonic()
+            from .cost_report import wall_now
+            wall_started=wall_now()
             try:
                 response=self.invoke(request)
                 result=self.accept(request,response)
@@ -700,7 +728,7 @@ class Runner:
                 return {'request_id':request['request_id'],'status':'uncertain','error':str(exc)}
             finally:
                 with self.store.transaction() as conn:
-                    event(conn,'provider.duration',{'request_id':request['request_id'],'seconds':time.monotonic()-started})
+                    event(conn,'provider.duration',{'request_id':request['request_id'],'seconds':time.monotonic()-started,'started_at':wall_started,'finished_at':wall_now(),'invocation_kind':'provider_invoke'})
         with ThreadPoolExecutor(max_workers=max(1,len(tick['requests']))) as pool:
             results=list(pool.map(execute,tick['requests']))
         return {**tick,'results':results}
@@ -709,10 +737,12 @@ class Runner:
         """Foreground runner until idle/blocked; no model-based periodic observer."""
         if cycles<1 or interval<0:
             raise MPresError('Invalid runner cycle bounds')
-        last={}
+        last={};budget_exhausted=True
         for _ in range(cycles):
             last=self.run_once()
             if not last['requests'] or any(x['status'] in {'uncertain','response_rejected'} for x in last.get('results',[])):
+                budget_exhausted=False
                 break
             if interval:time.sleep(interval)
-        return last
+        from .supervision import terminal
+        return terminal(self.service,last,'runner.run',forced_reason='Authorized foreground cycle budget reached; inspect state before continuing' if budget_exhausted else None)

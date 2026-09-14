@@ -95,7 +95,7 @@ class Quality:
                          (state, utc_now(), encode(report), report.get('pdf_path'), gate_id))
             for name, detail in report.get('checks', {}).items():
                 conn.execute('INSERT INTO checks(artifact_id,name,success,detail_json,created_at) VALUES(?,?,?,?,?)',
-                             (artifact_id, name, int(detail.get('success') is True), encode({'gate_id': gate_id, **detail}), utc_now()))
+                             (artifact_id, name, int(detail.get('success') is True), encode({'storage_schema':'gate-check-reference-v1','gate_id':gate_id,'check_name':name}), utc_now()))
             event(conn, 'gate.finished', {'gate_id': gate_id, 'artifact_id': artifact_id, 'state': state, 'seconds': report['seconds']})
         return {**self.latest(artifact_id, level), 'already_recorded': False}
 

@@ -59,7 +59,22 @@ def effective_config(conn, config):
     return result
 
 
+def fresh_source_cutoff(conn, presentation):
+    scope=set(ancestors(conn,presentation))
+    for row in conn.execute("SELECT proposal_json,baseline_json FROM plan_changes WHERE state='confirmed' ORDER BY rowid DESC"):
+        proposal=json.loads(row['proposal_json'])
+        fresh={p['presentation'] for p in proposal['parents'] if p.get('source_mode')=='fresh'}
+        if scope & fresh:
+            baseline=json.loads(row['baseline_json'])
+            return max(p['artifact_cutoff'] for p in baseline['parents'] if p['deck']['presentation'] in scope & fresh)
+    return None
+
+
 def source_artifact(conn, plan):
+    cutoff=fresh_source_cutoff(conn,plan['presentation'])
+    if cutoff is not None:
+        row=conn.execute("SELECT r.* FROM artifacts r JOIN attempts a ON a.id=r.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.plan_item_id=? AND a.state='succeeded' AND r.rowid>? ORDER BY r.rowid DESC LIMIT 1",(plan['id'],cutoff)).fetchone()
+        return dict(row) if row else None
     # Prefer current accepted unit work, then an explicitly recorded baseline,
     # then a legacy import. Existence does not confer current gate approval.
     row=conn.execute("SELECT r.* FROM artifacts r JOIN attempts a ON a.id=r.attempt_id JOIN jobs j ON j.id=a.job_id WHERE j.plan_item_id=? AND a.state='succeeded' ORDER BY r.created_at DESC,r.rowid DESC LIMIT 1",(plan['id'],)).fetchone()
@@ -95,7 +110,9 @@ class Planning:
         old={r['presentation']:dict(r) for r in conn.execute('SELECT * FROM decks')}
         selected=set();new_ids=set();normalized=[];baseline=[]
         for allocation in proposal['parents']:
-            if not isinstance(allocation,dict) or set(allocation)!={'presentation','parts'}:raise MPresError('Allocation requires presentation and parts only')
+            if not isinstance(allocation,dict) or set(allocation) not in ({'presentation','parts'},{'presentation','parts','source_mode'}):raise MPresError('Allocation requires presentation, parts and optional source_mode')
+            source_mode=allocation.get('source_mode','reuse')
+            if source_mode not in ('reuse','fresh'):raise MPresError('Source mode must be reuse or fresh')
             parent=allocation['presentation']
             if not isinstance(parent,str):raise MPresError('Parent ID must be text')
             safe_id(parent,label='parent presentation')
@@ -122,8 +139,9 @@ class Planning:
                 assigned.extend(units);new_ids.add(pid)
                 normalized_parts.append({'id':pid,'title':title,'estimated_pages':pages,'units':units})
             if assigned!=[p['unit'] for p in plans]:raise MPresError('Units must form a complete ordered partition; no loss, duplication, new unit or unapproved reordering')
-            normalized.append({'presentation':parent,'parts':normalized_parts})
+            normalized.append({'presentation':parent,'parts':normalized_parts,**({'source_mode':source_mode} if 'source_mode' in allocation else {})})
             baseline.append({'deck':d,'plans':plans,
+                **({'artifact_cutoff':conn.execute('SELECT COALESCE(MAX(rowid),0) FROM artifacts').fetchone()[0]} if source_mode=='fresh' else {}),
                 'prior_allocation':[dict(r) for r in conn.execute('SELECT * FROM delivery_parts WHERE presentation=? OR parent=? ORDER BY rowid',(parent,parent))],
                 'sources':{str(p['id']):source_artifact(conn,p) for p in plans},
                 'jobs':[dict(r) for r in conn.execute('SELECT * FROM jobs WHERE presentation=? ORDER BY id',(parent,))]})

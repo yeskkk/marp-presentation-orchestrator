@@ -1,3 +1,15 @@
+## 0.9.2
+
+- Audited schema 12; read-only storage inspection, pinned cleanup plans, protected retention, cooperative locks, VACUUM, canonical gate reports, lean resume.
+
+## 0.9.1
+
+- Exercise coverage/isolated questions, conservative evidence normalization, pre-paid resource preflight, immutable deduplicated text cache.
+
+# v0.9.0
+
+运行副本修复归并、活动教学规则与桥接回归基线。详见 docs/releases/v0.9.0.md。
+
 # Changelog
 
 ## 0.8.10

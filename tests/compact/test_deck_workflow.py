@@ -89,6 +89,10 @@ class Host:
             else:
                 assert (output/'presentation.md').is_file(), 'Editor must get a real writable copy'
                 assert (output/'presentation.md').stat().st_mode & 0o200
+            if packet.get('exercise_contract'):
+                from exercise_fixtures import empty_manifest
+                empty_manifest(output)
+                result['exercise_checked_slide_ids']=[]
             if kind=='revise':
                 result['resolutions']=[{'finding_id':f['finding_id'],'status':'addressed','explanation':'Clarified the coordinate units at the cited slide.'} for f in packet['findings']]
                 if self.malformed=='revision':result['resolutions']=[]
@@ -207,7 +211,7 @@ def test_failed_native_gate_can_retry_without_model_call(compact_root,native_dou
     assert service.status()['status']=='completed'
 
 
-def test_source_failure_is_routed_to_bounded_editor(compact_root,native_double):
+def test_invalid_metadata_is_rejected_before_gate_with_bounded_author_retries(compact_root,native_double):
     service=full_task(compact_root,decks=1,units=1);host=Host()
     def bad_unit(req):
         response=host(req)
@@ -217,9 +221,12 @@ def test_source_failure_is_routed_to_bounded_editor(compact_root,native_double):
     runner=Runner(service.task);runner.invoke=bad_unit;runner.run(cycles=60,interval=0)
     assert service.status()['status']=='running'
     deck=Workflow(service.task).status()['decks'][0]
-    assert deck['phase']=='blocked' and 'budget' in deck['block_reason']
+    assert deck['phase']=='blocked'
+    # The new manifest must resolve stable pages; invalid metadata is now
+    # rejected before snapshot/gate rather than spending two editor jobs.
     repairs=service.store.rows("SELECT * FROM jobs WHERE kind='edit' AND plan_item_id IS NOT NULL")
-    assert len(repairs)==2
+    assert len(repairs)==0
+    assert 1 <= len(service.store.rows('SELECT * FROM attempts')) <= 3
     assert not list((service.task/'deliverables').iterdir())
 
 

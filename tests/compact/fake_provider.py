@@ -20,6 +20,8 @@ elif op=='run':
     packet=request['packet'];out=Path(packet['writable_directory'])
     out.mkdir(parents=True,exist_ok=True)
     (out/'presentation.md').write_text('---\nmarp: true\n---\n<!-- slide-id: '+packet['presentation']+'-'+packet.get('unit',{}).get('id','deck')+'-s1 -->\n# Deterministic test content\n')
+    if packet.get('exercise_contract'):
+        (out/'exercises.json').write_text(json.dumps({'version':1,'exercises':[]}))
     response={'runtime':request['runtime'],'receipt':'executed:'+request['attempt_id'],'source_dir':'output','result':{'summary':'Deterministic fixture content, not an AI result'},
               'usage':[{'call_id':'fixture-call','counters':{'input_tokens':100,'cached_input_tokens':80,'output_tokens':5,'reasoning_tokens':0,'total_tokens':105}}]}
 else:raise ValueError(op)

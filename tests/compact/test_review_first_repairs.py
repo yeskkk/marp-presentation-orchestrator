@@ -117,7 +117,7 @@ def test_schema_7_migration_preserves_existing_records(compact_root,native_doubl
     s,h,r=completed(compact_root,decks=1)
     cfg=s.store.rows('SELECT * FROM configs');releases=s.store.rows('SELECT * FROM releases')
     c=s.store.connect();c.execute('DROP TABLE IF EXISTS plan_item_origins');c.execute('DROP TABLE IF EXISTS delivery_parts');c.execute('DROP TABLE IF EXISTS plan_changes');c.execute('DROP TABLE IF EXISTS production_batch_targets');c.execute('DROP TABLE IF EXISTS production_batches');c.execute('DROP TABLE IF EXISTS policy_values');c.execute('DROP TABLE IF EXISTS policy_cursor');c.execute('DROP INDEX IF EXISTS events_kind_id');c.execute('DROP TABLE IF EXISTS host_responses');c.execute('DROP TABLE IF EXISTS host_requests');c.execute('DROP INDEX IF EXISTS events_kind_job_id');c.execute('DROP INDEX IF EXISTS events_request_kind');c.execute('ALTER TABLE repair_cases DROP COLUMN mode');c.execute('ALTER TABLE repair_cases DROP COLUMN allow_slide_changes');c.execute('PRAGMA user_version=7');c.close()
-    s=Service(s.task);c=s.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==11
+    s=Service(s.task);c=s.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==__import__('mpres.control.store',fromlist=['Store']).Store.SCHEMA_VERSION
     assert not c.execute('PRAGMA foreign_key_check').fetchall();c.close()
     assert s.store.rows('SELECT * FROM configs')==cfg
     assert s.store.rows('SELECT * FROM releases')==releases

@@ -103,7 +103,7 @@ def prepare_edit_source(task: Path, source: Path, target: Path, *, entrypoint: s
     for entry in source.rglob('*'):
         if entry.is_symlink(): raise MPresError('Cannot prepare an author copy from symlinked evidence')
         relative=entry.relative_to(source)
-        if entry.is_file() and (relative.as_posix()==entrypoint or relative.parts[0]=='assets'):
+        if entry.is_file() and (relative.as_posix() in {entrypoint,'exercises.json'} or relative.parts[0]=='assets'):
             safe_file(task,entry);files.append((entry,Path('presentation.md') if relative.as_posix()==entrypoint else relative))
     # Validate all mathematical inputs first. Unknown versions require explicit implementation,
     # never a downgrade, removal of the .plot.json, or execution of submitted Python.

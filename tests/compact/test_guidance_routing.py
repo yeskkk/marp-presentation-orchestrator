@@ -100,7 +100,8 @@ def test_real_writer_packet_uses_selected_guides_and_existing_budget(compact_roo
     before=service.store.rows('SELECT * FROM configs')
     p=Runner(service.task).packet(job,attempt['id'])
     assert p['semantic_guidance_mode']=='write'
-    assert len(p['semantic_guidance_sources'])==2
+    assert len(p['semantic_guidance_sources'])==3
+    assert any(x.endswith('exercise-self-containment.md') for x in p['semantic_guidance_sources'])
     assert '本课 brief' in p['semantic_guidance']
     assert p['context_bytes']>len(p['semantic_guidance'].encode())
     assert service.store.rows('SELECT * FROM configs')==before

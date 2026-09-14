@@ -177,3 +177,99 @@ def test_batch_confirmation_replay_keeps_original_actor(compact_root,native_doub
     assert b.confirm(shown['batch_id'],'user A')['already_confirmed']
     with pytest.raises(MPresError,match='attribution'):
         b.confirm(shown['batch_id'],'user B')
+
+
+def test_amendment_pause_rejects_live_work_and_rolls_back(compact_root):
+    s,r=ready(compact_root,count=1);attach_requests(r,r.tick());r.tick()
+    with pytest.raises(MPresError,match='outstanding'):
+        Policy(s.task).pause('user','change teaching requirement')
+    assert s.status()['status']=='running'
+    assert not s.store.rows("SELECT * FROM events WHERE kind='policy.paused'")
+
+
+def test_amendment_pause_resume_preserves_batch_and_runtime(compact_root,native_double):
+    s,h=selected_task(compact_root);b=Batches(s.task)
+    shown=b.present(['p02']);b.confirm(shown['batch_id'],'user')
+    before=s.store.rows('SELECT * FROM configs');p=Policy(s.task)
+    p.pause('user','use reasonable hypothetical examples')
+    (s.task/'TASK.md').write_text((s.task/'TASK.md').read_text()+'\nAllow hypothetical examples.\n')
+    q=p.present();p.confirm(q['presentation_id'],'user')
+    p.resume('user continue original batch')
+    assert s.status()['status']=='running'
+    assert s.store.rows('SELECT * FROM configs')==before
+    assert Workflow(s.task).allowed()=={'p02'}
+    with pytest.raises(MPresError):p.resume('user')
+
+
+def test_blocked_draft_amendment_requires_new_confirmed_task(compact_root,native_double):
+    s,h=selected_task(compact_root);b=Batches(s.task)
+    shown=b.present(['p02']);b.confirm(shown['batch_id'],'user')
+    w=Workflow(s.task)
+    # A fixture artifact stands in for a completed unfrozen author draft.
+    with s.store.transaction() as conn:
+        artifact="r-amendment-fixture"
+        conn.execute("INSERT INTO artifacts(id,presentation,path,created_at,origin) VALUES(?,'p02','fixture-unfrozen','2026-09-14','assembly')",(artifact,))
+        conn.execute("UPDATE decks SET phase='preflight',candidate_id=? WHERE presentation='p02'",(artifact,))
+    w.block(w._deck('p02'),'unresolved historical-feedback issue')
+    p=Policy(s.task);p.pause('user','changed requirement')
+    reports=s.store.rows('SELECT id,result_json FROM attempts')
+    with pytest.raises(MPresError,match='Confirm'):
+        w.edit_after_amendment('p02','user','remove example citations')
+    (s.task/'TASK.md').write_text((s.task/'TASK.md').read_text()+'\nRemove example citations.\n')
+    q=p.present();p.confirm(q['presentation_id'],'user')
+    result=w.edit_after_amendment('p02','user','remove example citations')
+    assert s.job(result['job_id'])['input_artifact_id']==artifact
+    assert w._deck('p02')['phase']=='editing'
+    assert s.store.rows('SELECT id,result_json FROM attempts')==reports
+    with pytest.raises(MPresError):w.edit_after_amendment('p02','user','repeat')
+
+
+def test_author_decision_continues_latest_output_without_rereview(compact_root,native_double):
+    s=full_task(compact_root,decks=1);pause(s);b=Batches(s.task)
+    shown=b.present(['p01']);b.confirm(shown['batch_id'],'user')
+    host=Host(findings=True)
+    def blocked_host(req):
+        response=host(req)
+        if req['operation']=='run' and req['packet']['kind']=='revise':
+            for row in response['result']['resolutions']:row['status']='needs_decision'
+        return response
+    run_host(s,blocked_host)
+    w=Workflow(s.task);deck=w._deck('p01');assert deck['blocked_from']=='revising'
+    output=w._output(deck['active_job_id'])
+    before=s.store.rows('SELECT id,result_json FROM attempts')
+    findings=s.store.rows('SELECT * FROM findings')
+    resumed=w.resume_author_revision('p01','main interpreting existing user permission','Python plotting is already allowed by TASK; use the output work copy.')
+    assert s.job(resumed['job_id'])['input_artifact_id']==output['id']
+    assert s.store.rows('SELECT id,result_json FROM attempts')==before
+    assert s.store.rows('SELECT * FROM findings')==findings
+    assert len(s.store.rows("SELECT * FROM jobs WHERE kind='review'"))==5
+    with pytest.raises(MPresError):w.resume_author_revision('p01','main','duplicate')
+    captured=[]
+    def resumed_host(req):
+        if req['operation']=='run' and req['packet']['kind']=='revise':captured.append(req['packet'])
+        return host(req)
+    run_host(s,resumed_host)
+    assert captured[0]['author_decision']['note']==resumed['note']
+    assert w._deck('p01')['phase']=='delivered'
+
+
+def test_unfrozen_author_input_gap_continues_without_task_amendment(compact_root,native_double):
+    from test_historical_feedback import FeedbackHost
+    from feedback_fixtures import teaching_policy
+    s=full_task(compact_root,decks=1);teaching_policy(s);pause(s);b=Batches(s.task)
+    shown=b.present(['p01']);b.confirm(shown['batch_id'],'user')
+    host=FeedbackHost()
+    def missing_input(req):
+        response=host(req)
+        if req['operation']=='run' and req['packet']['kind']=='edit':
+            response['result']['feedback_checks'][0]['status']='issue'
+        return response
+    run_host(s,missing_input);w=Workflow(s.task);before=w._deck('p01')
+    assert before['phase']=='blocked' and before['blocked_from']=='preflight'
+    reports=s.store.rows('SELECT id,result_json FROM attempts')
+    continued=w.resume_author_revision('p01','main','Supply textbooks already required by TASK; read relevant sections.')
+    assert s.job(continued['job_id'])['kind']=='edit'
+    assert s.job(continued['job_id'])['input_artifact_id']==before['candidate_id']
+    assert s.store.rows('SELECT id,result_json FROM attempts')==reports
+    run_host(s,host)
+    assert w._deck('p01')['phase']=='delivered'

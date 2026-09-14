@@ -32,7 +32,7 @@ def launch_root(tmp_path):
     codex.write_text('#!'+sys.executable+'\n'+'''import os,sys,json,signal,time
 from pathlib import Path
 if '--help' in sys.argv:
-    print(os.environ.get('FAKE_HELP','Codex fixture: --cd --model --config --no-alt-screen'))
+    print(os.environ.get('FAKE_HELP','Codex fixture: --cd --model --config --no-alt-screen --sandbox --ask-for-approval'))
     raise SystemExit(int(os.environ.get('FAKE_HELP_EXIT','0')))
 Path(os.environ['CAPTURE']).write_text(json.dumps({'argv':sys.argv[1:],'cwd':os.getcwd(),
     'tty':[os.isatty(0),os.isatty(1)],'pid':os.getpid(),'task':os.environ.get('MPRES_TASK_SLUG'),'intent':os.environ.get('MPRES_STARTUP_INTENT')}))
@@ -53,10 +53,11 @@ def invoke(root,env,*args):
                           env=env,text=True,capture_output=True,timeout=20)
 
 
-def pty_run(root,env,args=(),interrupt=False,answers=None):
+def pty_run(root,env,args=(),interrupt=False,answers=None,permission_answers=None):
     import pty
     master,slave=pty.openpty()
-    p=None;output=b'';answered=0
+    p=None;output=b'';answered=0;permissions_answered=0
+    permission_replies=iter(['2'] if permission_answers is None else permission_answers)
     replies=iter(['2'] if answers is None else answers)
     try:
         p=subprocess.Popen(['bash',str(root/'start.sh'),*args],cwd=root.parent,env=env,
@@ -72,6 +73,10 @@ def pty_run(root,env,args=(),interrupt=False,answers=None):
                 prompts=output.count(b'TASK_INTENT> ')+output.count(b'TASK_SELECT> ')
                 while answered < prompts:
                     reply=next(replies,'3');answered+=1
+                    os.write(master,b'\x04' if reply=='EOF' else (reply+'\n').encode())
+                permission_prompts=output.count(b'PERMISSION_SELECT> ')+output.count(b'PERMISSION_CONFIRM> ')
+                while permissions_answered < permission_prompts:
+                    reply=next(permission_replies,'q');permissions_answered+=1
                     os.write(master,b'\x04' if reply=='EOF' else (reply+'\n').encode())
                 if interrupt and b'CODEX_FIXTURE_STARTED' in output:
                     # exec must ensure the directly launched PID is the host.
@@ -93,7 +98,7 @@ def test_no_arguments_really_launch_interactive_codex(launch_root):
     captured=json.loads(Path(env['CAPTURE']).read_text())
     assert captured['tty']==[True,True]
     assert captured['cwd']==str(root)
-    assert captured['argv']==['--cd',str(root)]
+    assert captured['argv']==['--cd',str(root),'--sandbox','workspace-write','--ask-for-approval','on-request','--config','sandbox_workspace_write.network_access=false','--config','sandbox_workspace_write.writable_roots=[]']
     assert captured['task'] is None
     assert 'CODEX_FIXTURE_STARTED' in text
 

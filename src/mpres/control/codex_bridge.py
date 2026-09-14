@@ -73,7 +73,8 @@ class Journal:
         self.path=task/'.mpres'/'codex-bridge.sqlite3'
         self.path.parent.mkdir(parents=True,exist_ok=True)
         self.lock=threading.RLock();self.sync_lock=threading.Lock()
-        self.db=sqlite3.connect(self.path,check_same_thread=False,timeout=30)
+        from .maintenance_lock import writable_connection
+        self.db=writable_connection(self.path,task,check_same_thread=False,timeout=30)
         self.db.row_factory=sqlite3.Row
         self.db.executescript('''
           CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, request TEXT NOT NULL,
@@ -342,7 +343,7 @@ class CodexBridge:
                 handle=request['session_id'];expected=request['runtime']
                 receipt=self.loaded.get(handle)
                 if receipt is None:
-                    receipt=self.transport.rpc('thread/resume',{'threadId':handle})
+                    receipt=self.transport.rpc('thread/resume',{'threadId':handle,'excludeTurns':True})
                     self.loaded[handle]=receipt
                 if receipt.get('thread',{}).get('id')!=handle:raise MPresError('Resume returned wrong thread')
                 actual=self.runtime(receipt,expected);self.journal.sync()
@@ -392,6 +393,10 @@ class CodexBridge:
         if type(cycles) is not int or cycles<1:raise MPresError('cycles must be positive')
         def execute(q):
             started=time.monotonic()
+            from .cost_report import wall_now
+            wall_started=wall_now()
+            prior=self.journal.row(q['request_id'])
+            invocation_kind='reconciliation' if prior and prior.get('sent') else 'provider_invoke'
             try:return {'request_id':q['request_id'],'status':'accepted','result':self.runner.accept(q,self.execute(q))}
             except Exception as exc:
                 from .host_journal import HostJournal
@@ -406,10 +411,11 @@ class CodexBridge:
                 return {'request_id':q['request_id'],'status':'response_rejected' if known else 'uncertain','error':str(exc)}
             finally:
                 from .store import event
-                with self.runner.store.transaction() as conn:event(conn,'provider.duration',{'request_id':q['request_id'],'seconds':time.monotonic()-started})
+                with self.runner.store.transaction() as conn:event(conn,'provider.duration',{'request_id':q['request_id'],'seconds':time.monotonic()-started,'started_at':wall_started,'finished_at':wall_now(),'invocation_kind':invocation_kind})
         # Only canonical outstanding requests may block/replay. A local historical
         # accepted=0 flag is not a second workflow state machine.
         outstanding=self.runner.store.rows("SELECT request_json FROM host_requests WHERE state<>'accepted' ORDER BY created_at")
+        from .supervision import terminal
         last={}
         for _ in range(cycles):
             if outstanding:
@@ -417,15 +423,15 @@ class CodexBridge:
                 last={'status':'reconciling','requests':requests}
             else:
                 self.runner.observe_host(self.capabilities());last=self.runner.tick();requests=last['requests']
-            if not requests:return last
+            if not requests:return terminal(self.runner.service,last,'bridge.drive')
             for q in requests:
                 if q['operation']!='capabilities':self.journal.enqueue(q)
             # tick already made admission/independence decisions transactionally.
             with ThreadPoolExecutor(max_workers=max(1,len(requests))) as pool:
                 results=list(pool.map(execute,requests))
             last={**last,'results':results}
-            if any(r['status']!='accepted' for r in results):return last
-        return last
+            if any(r['status']!='accepted' for r in results):return terminal(self.runner.service,last,'bridge.drive')
+        return terminal(self.runner.service,last,'bridge.drive',forced_reason='Authorized foreground cycle budget reached; inspect state before continuing')
 
     def close(self):
         if self.transport:self.transport.close();self.transport=None

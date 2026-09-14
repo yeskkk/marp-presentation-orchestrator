@@ -206,6 +206,58 @@
         "minLength": 1
       },
       "description": "Reference a finding once: step:<sequence>:<1-based index> or new:<1-based index>. Scoped to this review only."
+    },
+    "exercise_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question_slide_id",
+          "status",
+          "finding_index"
+        ],
+        "properties": {
+          "question_slide_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "sufficient",
+              "missing_information",
+              "not_exercise"
+            ]
+          },
+          "finding_index": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "not_exercise"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "reason"
+              ]
+            }
+          }
+        ]
+      }
     }
   },
   "$defs": {
@@ -347,6 +399,58 @@
                 "minimum": 0
               }
             }
+          }
+        },
+        "exercise_checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "question_slide_id",
+              "status",
+              "finding_index"
+            ],
+            "properties": {
+              "question_slide_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "enum": [
+                  "sufficient",
+                  "missing_information",
+                  "not_exercise"
+                ]
+              },
+              "finding_index": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "not_exercise"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "reason"
+                  ]
+                }
+              }
+            ]
           }
         }
       }

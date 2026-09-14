@@ -167,16 +167,22 @@ def test_real_old_source_copied_to_writer_not_certified(compact_root):
     assert len(s.store.rows('SELECT * FROM artifacts'))==1
 
 
-def test_complete_split_selected_scope_and_pause_without_p04(compact_root,native_double):
+@pytest.mark.parametrize('fresh',[False,True])
+def test_complete_split_selected_scope_and_pause_without_p04(compact_root,native_double,fresh):
     s=full_task(compact_root,decks=4,units=4,delivery='pilot');host=Host(findings=True);run_host(s,host)
     assert s.status()['status']=='paused'
     original=s.store.rows("SELECT * FROM releases WHERE presentation='p01'")
     original_pdf=(s.task/original[0]['pdf_path']).read_bytes()
     prop=proposal();prop['parents'][0]['parts'][0]['units']=['l01','l02'];prop['parents'][0]['parts'][1]['units']=['l03','l04']
+    if fresh:prop['parents'][0]['source_mode']='fresh'
     split(s,prop);b=Batches(s.task);x=b.present(['p02','p03']);b.confirm(x['batch_id'],'real-test-user')
     runner,last=run_host(s,host,cycles=180)
     assert s.status()['status']=='paused',(last,Workflow(s.task).status())
     assert {r['presentation'] for r in s.store.rows('SELECT * FROM releases')}=={'p01','p02-01','p02-02','p03'}
+    if fresh:
+        with s.store.transaction() as conn:
+            plan=conn.execute("SELECT * FROM plan_items WHERE presentation='p02-01' ORDER BY ordinal LIMIT 1").fetchone()
+            assert source_artifact(conn,plan)['origin']=='submission'
     assert b.status()[0]['state']=='completed'
     assert not s.store.rows("SELECT a.* FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.presentation IN ('p02','p04')")
     assert s.store.rows("SELECT * FROM releases WHERE presentation='p01'")==original
@@ -190,7 +196,7 @@ def test_schema10_upgrade_only_adds_relations(compact_root):
     for table in ('plan_item_origins','delivery_parts','plan_changes'):c.execute('DROP TABLE '+table)
     c.execute('PRAGMA user_version=10');c.close()
     for _ in range(2):
-        c=Store(s.task).connect();assert c.execute('PRAGMA user_version').fetchone()[0]==11
+        c=Store(s.task).connect();assert c.execute('PRAGMA user_version').fetchone()[0]==__import__('mpres.control.store',fromlist=['Store']).Store.SCHEMA_VERSION
         assert c.execute('PRAGMA integrity_check').fetchone()[0]=='ok';assert not c.execute('PRAGMA foreign_key_check').fetchall();c.close()
     assert {t:s.store.rows('SELECT * FROM '+t) for t in saved}==saved
 
@@ -240,3 +246,27 @@ def test_child_runtime_override_resolves_original_parent(compact_root):
         child=c.execute("SELECT * FROM jobs WHERE presentation='p02-01'").fetchone()
         assert s.expected_runtime(c,child)==s.expected_runtime(c,parent)
         assert s.expected_runtime(c,child)['model']=='chosen-test-model'
+
+
+def test_fresh_source_excludes_imported_work_from_writer(compact_root):
+    from mpres.source_policy import install_theme
+    from test_revision_quality import HEADER
+    s=paused(compact_root);source=s.task/'.mpres/artifacts/imported';source.mkdir(parents=True)
+    text=HEADER+'<!-- slide-id: p02-l01-old -->\n# Prior lesson\n\nKeep the relevant mathematical content.\n'
+    (source/'presentation.md').write_text(text);install_theme(source)
+    with s.store.transaction() as c:
+        c.execute("INSERT INTO artifacts(id,attempt_id,presentation,unit,path,entrypoint,origin,created_at) VALUES('old',NULL,'p02','l01','.mpres/artifacts/imported','presentation.md','import','2026-01-01')")
+    prop=proposal();prop['parents'][0]['source_mode']='fresh'
+    split(s,prop);b=Batches(s.task);x=b.present(['p02']);b.confirm(x['batch_id'],'user');s.materialize()
+    j=next(j for j in s.jobs() if j['presentation']=='p02-01')
+    with s.store.transaction() as c:spec=s.expected_runtime(c,j)
+    s.register_session('new-author','author',spec['model'],spec['reasoning_effort'],'actual-test-receipt')
+    a=s.bind(j['id'],'new-author');packet=Runner(s.task).packet(j,a['id'])
+    assert packet['content_origin']=='p02'
+    assert (source/'presentation.md').read_text()==text
+    from pathlib import Path
+    assert not (Path(packet['writable_directory'])/'presentation.md').exists()
+    assert 'existing_unverified_source' not in packet
+    assert not any('Reuse existing content' in v for v in packet['constraints'])
+    assert not s.store.rows('SELECT * FROM gate_runs')
+    assert len(s.store.rows('SELECT * FROM artifacts'))==1

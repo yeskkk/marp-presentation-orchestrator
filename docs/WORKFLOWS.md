@@ -106,3 +106,16 @@ slide_changes，合并目标保留；没删的页保留 ID，不能全稿重命�
 `task policy-present` 的精确差异并确认。随后 `batch present --presentation ...` 选择实际课件ID。
 确认后只安排所选ID，全部交付后暂停；未选择的下一课件保留原状态。此入口不替代规划拆分，
 显式估计超过100页须先重组。原稿返修仍用repair，不把delivered课件加入生产批次。
+
+### 明确弃用未交付旧稿后重做
+
+用户明确要求从参考资料重写时，plan proposal 的对应 parents 项可加 `source_mode: fresh`（省略为既有复用行为）。呈现和确认会记录范围及历史 artifact 截止位置；新写作不复制截止位置之前的成果，仍可复用本次后续成功稿。指定参考资料继续来自已确认课次的 sources，原 artifacts、runtime、发布历史不删除。此选项不允许将已交付稿作为新写作范围，不从 TASK 自由文本推断。
+
+### 未冻结稿收到已授权的新要求
+
+已有运行批次且无在途执行时，`task policy-pause SLUG --by ACTOR --note NOTE` 保存专门的需求修订暂停；有未对账执行则拒绝并回滚。随后修改 TASK，走 policy-present / policy-confirm 登记用户已经明确授权的精确变更。对于阻塞在 preflight 且尚未冻结的稿件，可用 `workflow edit-after-amendment SLUG --presentation ID --by ACTOR --note NOTE` 将当前不可变候选交给作者编辑。该入口要求 TASK 修订晚于阻塞记录、稿件属于活动批次；原作者报告和回执不改写，不绕过门禁或审核。最后 `task policy-resume SLUG --by ACTOR` 仅恢复原活动批次，runner 派发后续精确请求。已冻结或已交付稿不走此入口。
+
+作者已成功交回修订、但有 needs_decision 而阻塞于 revising 时，main 可解释已有授权或记录明确的新决定，再用 `workflow resume-author-revision SLUG --presentation ID --by ACTOR --note NOTE` 继续。入口限定活动批次、目标无在途执行、预算以内，基于最新成功作者输出创建 revise 并把说明交给作者；旧回执和 findings 不改写，仍由作者实际完成修订及完整后检，不追加 reviewer 验修轮次。
+同一作者 continuation 也可补足未冻结稿在 preflight 报告的输入缺口：必须已有成功 edit 输出，以当前候选创建新的 edit。新 packet 把已确认 TASK 显式点名的 `sources/*.txt` 教材制作成只读快照、作为按需参考资源提供；作者自行选择相关段落并记录真实阅读用途，清单不构成阅读证据。
+
+`transform` 数学图形 version 1/2 可增加 `labels: {inputs: [...], images: [...]}`，两个列表分别给每个输入向量和计算所得像命名，长度必须与 `vectors` 一致。名称仅允许短拉丁数学符号及简单下标，不能传入样式或坐标。编辑 `.plot.json` 后运行 `mpres figure build`；标签与坐标一并受确定性 SVG 检查约束，不能手改图绕过。

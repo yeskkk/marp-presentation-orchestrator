@@ -28,6 +28,8 @@ def response(req):
     if req['operation']=='brief':return FeedbackHost()(req)
     path=Path(req['packet']['writable_directory'])
     (path/'presentation.md').write_text('---\nmarp: true\n---\n<!-- slide-id: p01-l01-s1 -->\n# Example\n')
+    from exercise_fixtures import empty_manifest
+    empty_manifest(path)
     return {'runtime':req['runtime'],'receipt':'actual-fixture:'+req['request_id'],
             'source_dir':'output','result':{'summary':'An explicitly deterministic test result.'},
             'usage':[{'call_id':'work','counters':{}}]}

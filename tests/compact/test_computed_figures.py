@@ -112,3 +112,26 @@ def test_submission_enforces_derived_geometry_and_retains_sources(compact_root):
     p=source/'assets/l01/intersection.svg'
     p.write_text(p.read_text().replace('stroke-width: 1.5','stroke-width: 7'))
     with pytest.raises(MPresError,match='Computed SVG'):service.submit(a['id'],{'summary':'Exact line intersection'},source=source)
+
+
+@pytest.mark.parametrize('version',[1,2])
+def test_transform_labels_preserve_geometry_and_reproduce(tmp_path,version):
+    spec={'version':version,'kind':'transform','matrix':[[2,0],[0,'1/2']],'vectors':[[1,1],[1,-1]],
+          'labels':{'inputs':['v1','v2'],'images':['Dv1','Dv2']}}
+    model=mathematical_model(spec)
+    assert model['images']==[(2,Fraction(1,2)),(2,Fraction(-1,2))]
+    target=make_plot(tmp_path,spec);build(target)
+    assert 'Dv1' in target.with_name('intersection.svg').read_text()
+    assert inspect_figures(tmp_path)['success']
+    spec['labels']['images'][0]='Sv1';target.write_text(json.dumps(spec))
+    assert not inspect_figures(tmp_path)['success']
+    build(target);assert inspect_figures(tmp_path)['success']
+
+
+@pytest.mark.parametrize('labels',[
+    {'inputs':['v1'],'images':[]}, {'inputs':['v1'],'images':['Av1'],'color':'red'},
+    {'inputs':['<svg>'],'images':['Av1']}, {'inputs':['\\fontsize{5}'],'images':['Av1']},
+])
+def test_transform_labels_reject_count_and_style(labels):
+    with pytest.raises(MPresError):
+        mathematical_model({'version':2,'kind':'transform','matrix':[[1,0],[0,1]],'vectors':[[1,1]],'labels':labels})

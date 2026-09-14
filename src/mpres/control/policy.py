@@ -102,6 +102,34 @@ class Policy:
         from .service import Service
         self.service=Service(task);self.store=self.service.store
 
+    def pause(self, actor, note):
+        from .service import require_text
+        require_text(actor, 'User attribution');require_text(note, 'Amendment reason')
+        with self.store.transaction() as conn:
+            self.service.confirmed(conn)
+            if conn.execute('SELECT status FROM task').fetchone()[0]!='running':
+                raise MPresError('Only a running task can enter an amendment pause')
+            conn.execute("UPDATE task SET status='paused'")
+            quiescent(conn)  # Failure rolls back the pause as well.
+            if conn.execute("SELECT 1 FROM host_requests WHERE state<>'accepted'").fetchone():
+                raise MPresError('Reconcile outstanding requests before pausing')
+            event(conn,'policy.paused',{'actor':actor,'note':note})
+        return {'paused':True}
+
+    def resume(self, actor):
+        from .service import require_text
+        require_text(actor, 'User continuation attribution')
+        with self.store.transaction() as conn:
+            self.service.confirmed(conn);quiescent(conn)
+            last=conn.execute("SELECT kind FROM events WHERE kind IN ('policy.paused','policy.resumed') ORDER BY id DESC LIMIT 1").fetchone()
+            if not last or last['kind']!='policy.paused':
+                raise MPresError('No amendment pause to resume')
+            from .batches import active
+            if not active(conn):raise MPresError('An existing active batch is required')
+            conn.execute("UPDATE task SET status='running'")
+            event(conn,'policy.resumed',{'actor':actor})
+        return {'resumed':True}
+
     def _proposal(self,conn,handle_limit=None,context_budget_bytes=None):
         base=conn.execute('SELECT c.* FROM configs c JOIN task t ON t.config_id=c.id').fetchone()
         if not base:raise MPresError('Task must be confirmed first')

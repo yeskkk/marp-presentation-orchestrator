@@ -190,7 +190,10 @@ def inspect_source(source: Path) -> dict:
     from mpres.geometry import inspect_figures
     geometry=inspect_figures(source)
     errors.extend(geometry['errors'])
-    return {**report,'success':not errors,'errors':errors,'computed_figures':geometry}
+    from mpres.control.exercises import source_check
+    exercises=source_check(source)
+    errors.extend(exercises['errors'])
+    return {**report,'success':not errors,'errors':errors,'computed_figures':geometry,'exercises':exercises}
 
 
 def require_source(source: Path) -> None:

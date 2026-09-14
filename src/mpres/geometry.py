@@ -94,7 +94,8 @@ def mathematical_model(spec: dict) -> dict:
     kind = spec.get('kind')
     if spec['version']==3 and kind!='lines':
         raise MPresError('Geometry version 3 supports line diagrams only')
-    if kind not in kinds or set(spec) != {'version','kind'} | kinds[kind]:
+    extra = {'labels'} if kind == 'transform' and 'labels' in spec else set()
+    if kind not in kinds or set(spec) != {'version','kind'} | kinds[kind] | extra:
         raise MPresError('Geometry spec contains missing/unknown fields; pixel coordinates, styles and claimed results are forbidden')
     if kind == 'lines':
         result = solve_lines(spec['lines'])
@@ -108,6 +109,16 @@ def mathematical_model(spec: dict) -> dict:
         result = projection(spec['point'],spec['direction'])
     else:
         result = transformation(spec['matrix'],spec['vectors'])
+        if 'labels' in spec:
+            labels=spec['labels']
+            if not isinstance(labels,dict) or set(labels)!={'inputs','images'}:
+                raise MPresError('Transform labels require inputs and images lists')
+            for names in labels.values():
+                if not isinstance(names,list) or len(names)!=len(result['vectors']):
+                    raise MPresError('Transform labels must match the vector count')
+                if any(not isinstance(name,str) or not name.strip() or not re.fullmatch(r'[A-Za-z0-9_$^{}()+\- ]{1,48}',name) for name in names):
+                    raise MPresError('Transform labels must be short mathematical names without markup or style commands')
+            result['labels']=labels
     return {'kind':kind, **result}
 
 
@@ -124,6 +135,12 @@ def _xy(p):
 
 def _point_label(prefix,p):
     return prefix + '=(' + ', '.join(str(x) for x in p) + ')'
+
+
+def _transform_label(model, side, index):
+    if 'labels' in model:
+        return model['labels'][side][index]
+    return f'v{index+1}' if side=='inputs' else f'A v{index+1}'
 
 
 def _line_label(row):
@@ -173,8 +190,8 @@ def _figure_bytes_v1(spec: dict) -> tuple[bytes, dict]:
         else:
             for i,(v,w) in enumerate(zip(model['vectors'],model['images'])):
                 points += [v,w]
-                ax.plot([0,float(v[0])],[0,float(v[1])],marker='o',linestyle='--',label=_point_label(f'v{i+1}',v))
-                image,=ax.plot([0,float(w[0])],[0,float(w[1])],marker='s',label=_point_label(f'A v{i+1}',w))
+                ax.plot([0,float(v[0])],[0,float(v[1])],marker='o',linestyle='--',label=_point_label(_transform_label(model,'inputs',i),v))
+                image,=ax.plot([0,float(w[0])],[0,float(w[1])],marker='s',label=_point_label(_transform_label(model,'images',i),w))
                 image.set_gid(f'computed-image-{i}')
         xs=[float(p[0]) for p in points];ys=[float(p[1]) for p in points]
         span=max(max(xs)-min(xs),max(ys)-min(ys),2.0);margin=span*0.35
@@ -264,9 +281,9 @@ def _figure_bytes_v2(spec: dict) -> tuple[bytes, dict]:
             for i,(v,w) in enumerate(zip(model['vectors'],model['images'])):
                 points += [v,w]
                 ax.plot([0,float(v[0])],[0,float(v[1])],marker='o',linestyle='--',color=colors[i],
-                        label=_point_label(f'v{i+1}',v))
+                        label=_point_label(_transform_label(model,'inputs',i),v))
                 image,=ax.plot([0,float(w[0])],[0,float(w[1])],marker='s',color=colors[i],
-                               label=_point_label(f'A v{i+1}',w))
+                               label=_point_label(_transform_label(model,'images',i),w))
                 image.set_gid(f'computed-image-{i}')
         xs=[float(p[0]) for p in points];ys=[float(p[1]) for p in points]
         span=max(max(xs)-min(xs),max(ys)-min(ys),2.0);half=span*.85

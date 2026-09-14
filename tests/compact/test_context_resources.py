@@ -124,3 +124,18 @@ def test_audience_uses_resource_policy_but_not_whole_pdf(compact_root,native_dou
 def test_unrecognized_binary_is_not_required_text(tmp_path):
     blob=make(tmp_path,'a.bin',b'\xff\x00');p=compile_inputs(tmp_path,{'input_files':[blob]})
     assert not p['input_files'] and p['resource_manifest'][0]['kind']=='binary_resource'
+
+
+def test_explicit_task_textbooks_are_immutable_on_demand_inputs(tmp_path):
+    from mpres.control.input_packet import task_text_references
+    make(tmp_path,'sources/book.txt','Textbook'*100000)
+    make(tmp_path,'sources/unselected.txt','Not named by TASK')
+    refs=task_text_references(tmp_path,'Use `sources/book.txt`; use `sources/book.txt` again.',tmp_path/'input')
+    assert len(refs)==1
+    packet=compile_inputs(tmp_path,{'input_files':refs},references=refs)
+    check_budget(packet,10000)
+    assert not packet['input_files']
+    assert packet['resource_manifest'][0]['kind']=='approved_reference'
+    assert Path(refs[0]).read_text()=='Textbook'*100000
+    assert not Path(refs[0]).stat().st_mode & 0o222
+    assert 'unselected' not in refs[0]

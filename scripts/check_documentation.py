@@ -17,7 +17,7 @@ LEGACY_LOADERS = ['control_jobs','production','review','revision_routing','tasks
 def check(root: Path) -> dict:
     root=root.resolve();errors=[]
     current={p.name for p in (root/'templates/compact').glob('*') if p.is_file()}
-    if current != CONFIGS:errors.append('Expected exactly three active configuration templates')
+    if current != CONFIGS | {'exercises.template.json','storage-policy.template.json'}:errors.append('Expected exactly three active configuration templates')
     for p in (root/'templates').iterdir():
         if p.name not in {'README.md','compact'}:errors.append(f'Unclassified active template path: {p.relative_to(root)}')
     if not (root/'compat/legacy/templates/TASK.template.md').is_file():
@@ -43,9 +43,9 @@ def check(root: Path) -> dict:
             if not candidate.is_relative_to(root) or not candidate.exists():
                 errors.append(f'Broken/local-outside link in {p.relative_to(root)}: {target}')
     return {'success':not errors,'errors':errors,'active_documents_checked':len(files),
-            'active_configuration_templates':len(current),
+            'active_configuration_templates':len(current & CONFIGS), 'exercise_index_templates':int('exercises.template.json' in current),
             'legacy_templates':sum(p.is_file() for p in (root/'compat/legacy/templates').rglob('*')),
-            'semantic_skills':len(names)}
+            'semantic_skills':len(names-{'runtime-operations'}), 'operations_skills':int('runtime-operations' in names)}
 
 if __name__=='__main__':
     result=check(Path(__file__).resolve().parents[1]);print(json.dumps(result,ensure_ascii=False,indent=2))

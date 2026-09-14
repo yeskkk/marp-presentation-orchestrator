@@ -24,7 +24,7 @@ runner 的 task_context.action 明确 read_full／reuse／apply_delta；手动 C
 main 处理需求、教学冲突与真实授权，不健康轮询、不手工填状态、不选 worker 的模型。
 runner 决定可执行作业与机械恢复；宿主执行精确请求并提供真实 receipt/runtime/usage。
 worker 使用包内自己的指南和结果 schema，不扫描全部 skills、模板或任务目录。
-十个 skills 只承担语义工作；数据库、assignment、容量、gate、发布都不由模型声明成立。
+十个内容 skills 只承担教学语义工作；数据库、assignment、容量、gate、发布都不由模型声明成立。
 
 ## 全局边界
 
@@ -45,3 +45,10 @@ README 的实现边界必须如实保留，测试替身不冒充真实教学或�
 
 五个审核 skill 对等独立，但 .codex/agents 仍用 specialist-reviewer 按指定通道选取。
 校准示例和源码维护资料不属于运行任务的必读输入；不要扫描 tests/fixtures 作为工作指南。
+
+## 运行维护（仅 main 按需）
+
+遇到异常退出、执行未知、数据库维护或用量复盘，读取 `.agents/skills/runtime-operations/SKILL.md`，
+不要让内容 worker 阅读此维护指南。`supervision pending` 返回未确认交接和未决请求；
+前台非零退出须由实际调用宿主接收。没有原生推送能力就保持前台交接，不把落库当作唤醒。
+处理后明确 ack，但 ack 不改变执行事实、不授权重发。成本报告中的未知不当零，空档不直接叫空等。

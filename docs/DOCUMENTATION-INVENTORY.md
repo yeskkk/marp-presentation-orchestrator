@@ -11,9 +11,9 @@
 | docs/WORKFLOWS | main/维护者 | 新建、续作、两种返修、恢复、迁移分别说明 |
 | docs/OPERATIONS、HOST-PROTOCOL | 操作员/适配器 | 实际 CLI 和 runner.accept，不给 worker 当教学 prompt |
 | docs/CONTENT-CONTRACT | 维护者/内容作者按需 | source_policy、geometry、固定主题 |
-| .agents/skills 十项 | 指定语义角色 | 一般判断方法与角色边界，不包含维护校准样例 |
-| templates/compact 三项 | 用户新建任务 | 与 Service.create 和配置验证一致 |
-| control/schemas 四项 | 运行器与模型结果 | JSON Schema 加服务层实际证据验证 |
+| .agents/skills 十项教学语义＋一项 main 按需运行维护 | 指定角色 | 一般判断方法与角色边界，不包含维护校准样例 |
+| templates/compact 三项配置＋练习索引/保留策略样例 | 用户或对应程序 | Service.create 仍只复制三份配置 |
+| control/schemas 四项语义＋练习索引、保留策略、程序用量报告 | 对应程序/语义消费者 | 结构校验不代替实际证据 |
 
 ## 整顿后的边界
 
@@ -142,3 +142,8 @@ TASK 在真实会话首次实质工作时提供一次，后续复用；audience 
 | `structured/UNIT-CONTEXT-PACKET.template.yaml` | 动态文件名/兼容资料；不属新任务入口 |
 | `structured/UNIT-DELTA.template.yaml` | 动态文件名/兼容资料；不属新任务入口 |
 | `structured/UNIT-MANIFEST.template.yaml` | 动态文件名/兼容资料；不属新任务入口 |
+
+## v0.9 当前增量
+
+练习规则进入活动指南；教材缓存和输入预检由程序执行；维护/计量文档仅 main 按需读取。
+本轮未改兼容模板，不为 legacy 模板增加或执行专项测试。

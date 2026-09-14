@@ -194,6 +194,66 @@ class Workflow:
                             break
         return report
 
+    def edit_after_amendment(self, presentation: str, actor: str, note: str) -> dict:
+        """Return an unfrozen blocked draft to its author after confirmed new requirements."""
+        require_text(actor,'User attribution');require_text(note,'Authorized editing scope')
+        from .policy import quiescent
+        with self.store.transaction() as conn:
+            cfg=self.service.confirmed(conn);quiescent(conn)
+            deck=conn.execute('SELECT * FROM decks WHERE presentation=?',(presentation,)).fetchone()
+            if not deck or deck['phase']!='blocked' or deck['blocked_from']!='preflight' or deck['frozen_id']:
+                raise MPresError('Only an unfrozen draft blocked before review supports amendment editing')
+            from .batches import active, targets
+            batch=active(conn)
+            if not batch or presentation not in targets(conn,batch['id']):
+                raise MPresError('Draft must belong to the authorized active batch')
+            blocked=conn.execute("SELECT id FROM events WHERE kind='deck.blocked' AND json_extract(detail_json,'$.presentation')=? ORDER BY id DESC LIMIT 1",(presentation,)).fetchone()
+            revision=cfg.get('task_revision')
+            if not blocked or not isinstance(revision,int) or revision<=blocked['id']:
+                raise MPresError('Confirm the changed TASK after the blocking report first')
+            job=self.service.ensure_job(conn,key=f"amendment-edit:{deck['candidate_id']}:{revision}",presentation=presentation,kind='edit',artifact=deck['candidate_id'])
+            conn.execute("UPDATE decks SET phase='editing',active_job_id=?,blocked_from=NULL,block_reason=NULL WHERE presentation=?",(job,presentation))
+            conn.execute("UPDATE decisions SET resolved_at=?,answer=? WHERE presentation=? AND kind='workflow-blocked' AND resolved_at IS NULL",(utc_now(),encode({'actor':actor,'note':note,'task_revision':revision,'job_id':job}),presentation))
+            event(conn,'deck.amendment_edit_requested',{'presentation':presentation,'artifact_id':deck['candidate_id'],'task_revision':revision,'job_id':job,'actor':actor,'note':note})
+        return {'job_id':job,'task_revision':revision,'phase':'editing'}
+
+    def resume_author_revision(self, presentation: str, actor: str, note: str) -> dict:
+        """Continue a completed author's decision block, preserving its latest work."""
+        require_text(actor, 'Decision attribution'); require_text(note, 'Decision and existing authorization')
+        with self.store.transaction() as conn:
+            cfg = self.service.confirmed(conn)
+            deck = conn.execute('SELECT * FROM decks WHERE presentation=?', (presentation,)).fetchone()
+            if not deck or deck['phase'] != 'blocked' or deck['blocked_from'] not in {'revising','preflight'}:
+                raise MPresError('Only a blocked author revision supports decision continuation')
+            editing = deck['blocked_from'] == 'preflight'
+            if editing and deck['frozen_id']:
+                raise MPresError('A frozen draft cannot resume pre-review editing')
+            from .batches import active, targets
+            batch = active(conn)
+            if not batch or presentation not in targets(conn, batch['id']):
+                raise MPresError('Revision must belong to the authorized active batch')
+            if editing:
+                job = conn.execute('SELECT j.* FROM artifacts r JOIN attempts a ON a.id=r.attempt_id JOIN jobs j ON j.id=a.job_id WHERE r.id=?', (deck['candidate_id'],)).fetchone()
+            else:
+                job = conn.execute('SELECT * FROM jobs WHERE id=?', (deck['active_job_id'],)).fetchone()
+            kind = 'edit' if editing else 'revise'
+            if not job or job['kind'] != kind or job['state'] != 'succeeded':
+                raise MPresError('Author execution must be completed before continuation')
+            if conn.execute("SELECT 1 FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.presentation=? AND a.state IN ('reserved','running','uncertain')", (presentation,)).fetchone():
+                raise MPresError('Reconcile outstanding target execution before continuation')
+            output = conn.execute("SELECT r.* FROM artifacts r JOIN attempts a ON a.id=r.attempt_id WHERE a.job_id=? AND a.state='succeeded' ORDER BY r.rowid DESC LIMIT 1", (job['id'],)).fetchone()
+            if not output:
+                raise MPresError('Completed author artifact is missing')
+            count = conn.execute("SELECT count(*) FROM events WHERE kind='deck.author_decision_continued' AND json_extract(detail_json,'$.presentation')=?", (presentation,)).fetchone()[0]
+            if count >= json.loads(cfg['settings_json'])['max_attempts']:
+                raise MPresError('Author decision continuation budget exhausted')
+            new = self.service.ensure_job(conn, key=f"author-decision:{output['id']}", presentation=presentation, kind=kind, artifact=output['id'], round=deck['review_round'])
+            detail = {'presentation': presentation, 'job_id': new, 'previous_job_id': job['id'], 'artifact_id': output['id'], 'actor': actor, 'note': note}
+            conn.execute("UPDATE decks SET phase=?,candidate_id=?,active_job_id=?,blocked_from=NULL,block_reason=NULL WHERE presentation=?", ('editing' if editing else 'revising', output['id'], new, presentation))
+            conn.execute("UPDATE decisions SET resolved_at=?,answer=? WHERE presentation=? AND kind='workflow-blocked' AND resolved_at IS NULL", (utc_now(), encode(detail), presentation))
+            event(conn, 'deck.author_decision_continued', detail, new)
+        return detail
+
     def continue_delivery(self, actor: str, note: str) -> dict:
         require_text(actor, 'User confirmation attribution');require_text(note, 'Feedback/continuation note')
         with self.store.transaction() as conn:
@@ -388,7 +448,7 @@ class Workflow:
                         raise MPresError(f'Duplicate slide ID across units: {slide.slide_id}')
                     ids.add(slide.slide_id);slides.append(slide.source.strip())
                 for src in source.rglob('*'):
-                    if not src.is_file() or src.name in {'presentation.md','theme.css'}:
+                    if not src.is_file() or src.name in {'presentation.md','theme.css','exercises.json'}:
                         continue
                     dst=work/src.relative_to(source)
                     if dst.exists():
@@ -397,6 +457,8 @@ class Workflow:
                     else:
                         dst.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(src,dst)
             (work/'presentation.md').write_text('---\n'+yaml.safe_dump(front,allow_unicode=True,sort_keys=False)+'---\n'+'\n\n---\n\n'.join(slides)+'\n',encoding='utf-8')
+            from .exercises import merge_manifests
+            merge_manifests([inside(self.task,a['path']) for a in artifacts],work)
             created=snapshot(self.task,work,fixed_theme=True)
             with self.store.transaction() as conn:
                 self.service.confirmed(conn)

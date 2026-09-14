@@ -1,4 +1,4 @@
-PRAGMA user_version = 11;
+PRAGMA user_version = 12;
 CREATE TABLE task (
     singleton INTEGER PRIMARY KEY CHECK (singleton=1), title TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('draft','running','paused','completed')),
@@ -224,3 +224,5 @@ CREATE TABLE plan_item_origins (
  source_plan_item_id INTEGER NOT NULL REFERENCES plan_items(id),
  baseline_artifact_id TEXT REFERENCES artifacts(id)
 );
+
+CREATE TABLE IF NOT EXISTS maintenance_runs (id TEXT PRIMARY KEY, operation TEXT NOT NULL, actor TEXT NOT NULL, started_at TEXT NOT NULL, finished_at TEXT, state TEXT NOT NULL, plan_id TEXT, detail_json TEXT NOT NULL);

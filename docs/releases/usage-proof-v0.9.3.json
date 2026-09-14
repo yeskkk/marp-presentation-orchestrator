@@ -1,0 +1,78 @@
+{
+  "version": "0.9.3",
+  "source_original_hashes_unchanged": true,
+  "live_model_calls": 0,
+  "all_recorded_calls": 259,
+  "all_recorded_total_tokens": 80771752,
+  "selected_calls": 108,
+  "selected_counters": {
+    "input_tokens": {
+      "total": 40617982,
+      "known_sum": 40617982,
+      "known_records": 108,
+      "unknown_records": 0
+    },
+    "cached_input_tokens": {
+      "total": 33744768,
+      "known_sum": 33744768,
+      "known_records": 108,
+      "unknown_records": 0
+    },
+    "output_tokens": {
+      "total": 222022,
+      "known_sum": 222022,
+      "known_records": 108,
+      "unknown_records": 0
+    },
+    "reasoning_tokens": {
+      "total": 7522,
+      "known_sum": 7522,
+      "known_records": 108,
+      "unknown_records": 0
+    },
+    "total_tokens": {
+      "total": 40840004,
+      "known_sum": 40840004,
+      "known_records": 108,
+      "unknown_records": 0
+    },
+    "uncached_input_tokens": {
+      "total": 6873214,
+      "known_sum": 6873214,
+      "known_records": 108,
+      "unknown_records": 0
+    }
+  },
+  "selected_coverage": {
+    "attempts_with_usage": 36,
+    "attempts_expected": 36,
+    "calls_with_operation": 108,
+    "duration_events": 108,
+    "calls_with_provider_timestamps": 108,
+    "retained_index": {
+      "present": true,
+      "stale": false,
+      "cursor": 357319,
+      "source_highwater": 357319
+    },
+    "calls_with_duration_request": 108
+  },
+  "selected_timing": {
+    "provider_sum_seconds": 14427.0,
+    "provider_known_sum_seconds": 14427.0,
+    "provider_union_seconds": 7940.0,
+    "adapter_observed_sum_seconds": 14917.545806365262,
+    "adapter_observed_union_seconds": 8083.027602434158,
+    "gate_sum_seconds": 238.1789201371139,
+    "gate_known_sum_seconds": 238.1789201371139,
+    "gate_union_seconds": 238.0,
+    "observed_window_seconds": 12270.0,
+    "observed_window_start": 1789339990.0,
+    "observed_window_end": 1789352260.0,
+    "call_and_gate_union_seconds": 8178.0,
+    "window_provider_basis": "indexed_turn_timestamps",
+    "explicit_wait_union_seconds": 0,
+    "unattributed_seconds": 4092.0,
+    "coverage_warning": "Window starts at first recorded provider/gate interval, not necessarily task start. Gaps are NOT automatically idle. Historical event endpoints may have one-second precision."
+  }
+}

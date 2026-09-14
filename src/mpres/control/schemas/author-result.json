@@ -191,6 +191,15 @@
         }
       },
       "description": "仅获准删/并时提供，累计对应原返修稿；保留页不重命名。"
+    },
+    "exercise_checked_slide_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "description": "Author self-check coverage only, not proof of semantic sufficiency."
     }
   },
   "description": "作者语义结果。真实条件义务来自请求；状态/回执/源码路径不在此对象内。"

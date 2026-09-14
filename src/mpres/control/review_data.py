@@ -11,6 +11,18 @@ from mpres.util import MPresError, SubmissionRejected
 from .store import encode
 
 
+def relocate_exact_quotes(value: dict, slides: dict[str, str]) -> None:
+    """Correct only unique verbatim quote coordinates, never claims or findings."""
+    from .quote_evidence import quoted_evidence_present
+    for check in value.get('feedback_checks',[]):
+        for evidence in check.get('evidence',[]):
+            sid=evidence.get('slide_id');quote=evidence.get('quote')
+            if sid not in slides or not isinstance(quote,str) or not quote.strip():continue
+            if quoted_evidence_present(quote,slides[sid]):continue
+            matches=[key for key,text in slides.items() if quoted_evidence_present(quote,text)]
+            if len(matches)==1:evidence['slide_id']=matches[0]
+
+
 def step_catalog(service, attempt_id: str) -> list[dict]:
     rows = service.store.rows('SELECT sequence,phase,state,result_json FROM audience_steps WHERE attempt_id=? ORDER BY sequence', (attempt_id,))
     if any(row['state'] != 'completed' for row in rows):
@@ -28,6 +40,12 @@ def prepare(service, job: dict, attempt_id: str, submitted: dict) -> dict:
     value = deepcopy(submitted)
     if job['kind'] != 'review':
         return value
+    if job.get('input_artifact_id') and value.get('feedback_checks'):
+        from mpres.marp_source import parse_deck
+        from .files import inside
+        artifact=service.store.rows('SELECT path FROM artifacts WHERE id=?',(job['input_artifact_id'],))[0]
+        slides=parse_deck(inside(service.task,artifact['path'])/'presentation.md').slides
+        relocate_exact_quotes(value,{s.slide_id:s.source for s in slides})
     catalog = step_catalog(service, attempt_id) if job['channel'] == 'audience' else []
     findings = []
     aliases = {}
@@ -63,6 +81,12 @@ def prepare(service, job: dict, attempt_id: str, submitted: dict) -> dict:
             row['finding_refs'] = resolved
             row.setdefault('explanation', 'See the referenced review problems; no separate semantic claim is added.')
             row.setdefault('evidence' if field == 'feedback_checks' else 'slide_ids', [])
+    for row in value.get('exercise_checks',[]):
+        index=row.get('finding_index')
+        if index is not None:
+            key=f'new:{index+1}'
+            if key not in aliases:raise SubmissionRejected('Exercise finding index is not a submitted finding')
+            row['finding_index']=int(aliases[key].rsplit(':',1)[1])-1
     value['findings'] = findings
     return value
 
@@ -78,6 +102,9 @@ def storage_result(job: dict, result: dict) -> dict:
     if job['kind'] != 'review':
         return result
     value = deepcopy(result)
+    for row in value.get('exercise_checks',[]):
+        index=row.pop('finding_index',None)
+        row['finding_id']=f"{job['id']}:{index+1}" if index is not None else None
     value['finding_ids'] = [f"{job['id']}:{i}" for i, _ in enumerate(value.pop('findings'), 1)]
     value['storage_schema'] = 'review-references-v1'
     return value

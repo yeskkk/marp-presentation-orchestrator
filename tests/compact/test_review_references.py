@@ -81,3 +81,13 @@ def test_step_catalog_does_not_repeat_problem_text_in_final_packet(compact_root,
     assert json.loads(s.store.rows('SELECT detail_json FROM findings WHERE job_id=?',(a['job_id'],))[0]['detail_json'])==f
     assert r.accept(final,response)['already_submitted']
     assert len(s.store.rows("SELECT id FROM events WHERE kind='review.result_received' AND job_id=?",(a['job_id'],)))==1
+
+
+def test_quote_relocation_only_unique_verbatim_known_coordinates():
+    from mpres.control.review_data import relocate_exact_quotes
+    slides={'s1':'First slide.','s2':'The exact quoted sentence. Shared text.','s3':'Shared text.'}
+    for quote,old,wanted in [('The exact quoted sentence.','s1','s2'),('Shared text.','s1','s1'),('Invented wording','s1','s1'),('The exact quoted sentence.','unknown','unknown'),('First slide.','s1','s1')]:
+        raw={'feedback_checks':[{'id':'F','status':'satisfied','explanation':'unchanged','evidence':[{'quote':quote,'slide_id':old}]}],'findings':[]}
+        value=deepcopy(raw);relocate_exact_quotes(value,slides)
+        expected=deepcopy(raw);expected['feedback_checks'][0]['evidence'][0]['slide_id']=wanted
+        assert value==expected and raw['feedback_checks'][0]['evidence'][0]['slide_id']==old

@@ -1,0 +1,1 @@
+{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["version","success_days","resolved_failure_days"],"properties":{"version":{"const":1},"success_days":{"type":"integer","minimum":0,"maximum":3650},"resolved_failure_days":{"type":"integer","minimum":0,"maximum":3650}}}

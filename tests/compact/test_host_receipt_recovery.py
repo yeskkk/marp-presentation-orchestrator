@@ -146,7 +146,7 @@ def test_raw_journal_migration_is_additive_and_idempotent(compact_root):
     conn.execute('PRAGMA user_version=8');conn.close()
     for _ in range(2):
         conn=Store(service.task).connect()
-        assert conn.execute('PRAGMA user_version').fetchone()[0]==11
+        assert conn.execute('PRAGMA user_version').fetchone()[0]==__import__('mpres.control.store',fromlist=['Store']).Store.SCHEMA_VERSION
         assert conn.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
         assert not conn.execute('PRAGMA foreign_key_check').fetchall()
         conn.close()

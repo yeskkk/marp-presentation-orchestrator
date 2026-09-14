@@ -166,7 +166,8 @@ class Feedback:
             for e in evidence:
                 if not isinstance(e,dict) or set(e)!={'slide_id','quote'}: raise MPresError('Evidence requires slide_id and quote')
                 require_text(e['quote'],'Exact source excerpt')
-                if e['slide_id'] not in slides or ' '.join(e['quote'].split()) not in ' '.join(slides[e['slide_id']].split()):
+                from .quote_evidence import quoted_evidence_present
+                if e['slide_id'] not in slides or not quoted_evidence_present(e['quote'], slides[e['slide_id']]):
                     raise MPresError('Feedback evidence is not in the submitted/frozen source')
                 cited.add(e['slide_id'])
             if job['kind']=='review' and check['status']=='issue':

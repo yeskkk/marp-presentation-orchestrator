@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "exercises": [
+    {
+      "exercise_id": "p01-l01-q01",
+      "question_slide_id": "p01-l01-s03",
+      "answer_slide_ids": [
+        "p01-l01-s04"
+      ],
+      "learning_goal": "运用本课方法解决一个完整给定的问题"
+    }
+  ],
+  "non_exercises": []
+}

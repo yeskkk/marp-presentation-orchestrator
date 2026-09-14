@@ -74,7 +74,8 @@ class WireIndex:
             conn.commit()
 
     def connect(self):
-        conn = sqlite3.connect(self.path, timeout=30)
+        from .maintenance_lock import writable_connection
+        conn = writable_connection(self.path,self.journal.parent.parent,timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute('PRAGMA busy_timeout=30000')
         conn.execute('PRAGMA foreign_keys=ON')

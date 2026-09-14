@@ -21,3 +21,9 @@
 完整步骤见 [README](../README.md)，精确命令见 [操作手册](../docs/OPERATIONS.md)。
 
 结果字段与条件义务见 [SEMANTIC-RESULTS](../docs/SEMANTIC-RESULTS.md)，维护案例仅供源码工作使用，见 [维护说明](../docs/development/SEMANTIC-MAINTENANCE.md)，不加载到运行任务。
+
+## 非配置样例
+
+`exercises.template.json` 是题目 ID/题页/答案页/学习目标的轻量索引，不复制题干，
+不由 `Service.create` 放进每个新任务。`storage-policy.template.json` 是操作员明确选择的保留策略，
+不是 worker 的自检表；用量报告由程序生成并受 usage-report schema 约束，不要求模型填 token 表。

@@ -1,0 +1,5 @@
+{
+  "version": 1,
+  "success_days": 7,
+  "resolved_failure_days": 30
+}

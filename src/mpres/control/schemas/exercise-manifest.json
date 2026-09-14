@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"Single-page exercise coverage index, not a semantic pass certificate",
+  "type":"object","additionalProperties":false,"required":["version","exercises"],
+  "properties":{
+    "version":{"const":1},
+    "exercises":{"type":"array","items":{"type":"object","additionalProperties":false,
+      "required":["exercise_id","question_slide_id","answer_slide_ids","learning_goal"],
+      "properties":{
+        "exercise_id":{"type":"string","pattern":"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"},
+        "question_slide_id":{"type":"string","minLength":1},
+        "answer_slide_ids":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+        "learning_goal":{"type":"string","minLength":1,"maxLength":500}
+      }}},
+    "non_exercises":{"type":"array","items":{"type":"object","additionalProperties":false,
+      "required":["slide_id","reason"],"properties":{
+        "slide_id":{"type":"string","minLength":1},"reason":{"type":"string","minLength":1,"maxLength":500}
+      }}}
+  }
+}

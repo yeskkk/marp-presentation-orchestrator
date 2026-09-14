@@ -34,3 +34,6 @@ audience 首段提供完整角色方法，后续只提供当前步骤，最终�
 skills 写通用判断方法，不收集事故经过、旧题目、任务专名或校准题。
 维护项目源码时可以使用测试素材检验方法与格式，但维护资料不注入语义作业、不要求 worker 阅读。
 不以段落数、关键词黑名单或篇幅 lint 判断 skill 好坏；实际维护应审查职责、方法与输入输出是否对应。
+
+main 只有在恢复、清理或用量分析时按需读取 [runtime-operations](runtime-operations/SKILL.md)。
+该项不是第十一个内容角色，不提供新 reviewer 或常驻观察者；guidance.py 不把它装入 worker 包。

@@ -18,6 +18,9 @@ CHUNK_SLIDES = 12
 STEP_BUDGET = 48000
 
 
+from .quote_evidence import quoted_evidence_present
+
+
 # These signals request a semantic deletion counterfactual; they never delete or
 # fail source content by keyword. Code/math examples are excluded by the parser.
 _ATTENTION_SIGNALS = (
@@ -165,6 +168,9 @@ class Audience:
                 'result_schema':result_schema,'reading_protocol':protocol,
                 'attention_candidates':candidates,
                 'limitations':'Historical feedback was briefed earlier; this is not a blind experiment or real student study.'}
+        from .exercises import attach as attach_exercises
+        if next_row['phase']=='student':
+            attach_exercises(packet, source, slide_ids=targets)
         from .guidance import audience_guidance, attach_guidance
         attach_guidance(packet, audience_guidance(self.task.parent.parent, next_row['phase'], introduce=not self.guidance_introduced(attempt['id'])))
         # Audience/prerequisites should be read from confirmed TASK, not author
@@ -219,8 +225,11 @@ class Audience:
         if result['phase']!=row['phase'] or result['read_slide_ids']!=json.loads(row['slide_ids_json']):
             raise MPresError('Audience phase/coverage does not match the exact dispatched pages')
         _,slides=self._slides(job);text={s.slide_id:s.source for s in slides};allowed=set(result['read_slide_ids'])
+        if request['packet'].get('exercise_review'):
+            from .exercises import validate_checks
+            validate_checks(result, request['packet']['exercise_review'], allowed)
         for note in result['observations']:
-            if note['slide_id'] not in allowed or not note['quote'].strip() or note['quote'] not in text[note['slide_id']]:
+            if note['slide_id'] not in allowed or not quoted_evidence_present(note['quote'], text[note['slide_id']]):
                 raise MPresError('Audience evidence is outside the dispatched source or invented')
         for finding in result['findings']:
             if not set(finding['slide_ids'])<=allowed:raise MPresError('Audience finding cites an unread page')
@@ -246,6 +255,9 @@ class Audience:
                 conn.execute("UPDATE attempts SET state='reserved',error=NULL WHERE id=?",(attempt['id'],))
                 conn.execute("UPDATE sessions SET state='open' WHERE id=?",(attempt['session_id'],))
             event(conn,'audience.step_completed',{'attempt_id':attempt['id'],'sequence':row['sequence'],'phase':row['phase'],'slide_ids':result['read_slide_ids']},job['id'])
+            normalized_quotes = [n for n in result['observations'] if n['quote'] not in text[n['slide_id']]]
+            if normalized_quotes:
+                event(conn, 'audience.quote_format_normalized', {'attempt_id': attempt['id'], 'sequence': row['sequence'], 'artifact_id': job['input_artifact_id'], 'evidence': normalized_quotes}, job['id'])
         return {'already_recorded':False,'sequence':row['sequence']}
 
     def final_context(self, attempt_id):

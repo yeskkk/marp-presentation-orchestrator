@@ -159,7 +159,9 @@ def test_ambiguous_run_can_only_reconcile_same_attempt(compact_root):
     request=runner.tick()['requests'][0]
     service.uncertain(request['attempt_id'],'lost external result')
     assert runner.tick()['requests']==[]
-    out=Path(request['packet']['writable_directory']);(out/'presentation.md').write_text('# Recovered content')
+    out=Path(request['packet']['writable_directory']);(out/'presentation.md').write_text('---\nmarp: true\n---\n<!-- slide-id: p01-l01-s1 -->\n# Recovered content')
+    from exercise_fixtures import empty_manifest
+    empty_manifest(out)
     response={'runtime':request['runtime'],'receipt':'actual-execution-recovered','source_dir':'output','result':{'summary':'Recovered same provider call'},'usage':[{'call_id':'actual-recovered-call','counters':{}}]}
     runner.accept(request,response)
     assert service.jobs()[0]['state']=='succeeded'
@@ -196,7 +198,7 @@ def test_database_v1_upgrade_preserves_confirmed_profile(compact_root):
     before=service.store.rows('SELECT * FROM configs')
     c=service.store.connect();c.execute('DROP TABLE IF EXISTS plan_item_origins');c.execute('DROP TABLE IF EXISTS delivery_parts');c.execute('DROP TABLE IF EXISTS plan_changes');c.execute('DROP TABLE IF EXISTS production_batch_targets');c.execute('DROP TABLE IF EXISTS production_batches');c.execute('DROP TABLE IF EXISTS policy_values');c.execute('DROP TABLE IF EXISTS policy_cursor');c.execute('DROP INDEX IF EXISTS events_kind_id');c.execute('DROP TABLE IF EXISTS host_responses');c.execute('DROP TABLE IF EXISTS host_requests');c.execute('DROP INDEX IF EXISTS events_kind_job_id');c.execute('DROP INDEX IF EXISTS events_request_kind');c.execute('DROP TABLE IF EXISTS host_responses');c.execute('DROP TABLE IF EXISTS host_requests');c.execute('DROP INDEX IF EXISTS events_kind_job_id');c.execute('DROP INDEX IF EXISTS events_request_kind');c.execute('DROP TABLE audience_steps');c.execute('DROP TABLE release_versions');c.execute('DROP TABLE repair_jobs');c.execute('DROP TABLE repair_targets');c.execute('DROP TABLE attempt_briefings');c.execute('DROP TABLE feedback_rules');c.execute('DROP TABLE releases');c.execute('DROP TABLE decks');c.execute('DROP TABLE repair_cases');c.execute('DROP TABLE gate_runs');c.execute('DROP TABLE runtime_host');c.execute('DROP TABLE pool_slots');c.execute('ALTER TABLE task DROP COLUMN author_slots_limit');c.execute('PRAGMA user_version=1');c.close()
     assert service.store.rows('SELECT * FROM configs')==before
-    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==11;c.close()
+    c=service.store.connect();assert c.execute('PRAGMA user_version').fetchone()[0]==__import__('mpres.control.store',fromlist=['Store']).Store.SCHEMA_VERSION;c.close()
 
 
 def test_command_adapter_runs_jobs_without_main_scheduling(compact_root,tmp_path):

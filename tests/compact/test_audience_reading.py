@@ -134,3 +134,33 @@ def test_historical_brief_precedes_steps_and_counts_usage(compact_root,native_do
     assert brief['acknowledgement_json'] and brief['run_dispatched']
     assert len(s.store.rows('SELECT * FROM usage WHERE attempt_id=?',(aid,)))==4
     assert len(s.store.rows("SELECT * FROM participation WHERE kind='review'"))==5
+
+
+def test_quote_whitespace_does_not_invent_evidence(compact_root,native_double):
+    s,r,h,req=audience_ready(compact_root);response=h(req)
+    response['result']['observations']=[{'slide_id':req['packet']['read_slide_ids'][0],
+        'quote':'A vector is an\nordered pair.','learning_impact':'Connects vector terminology to coordinates.'}]
+    assert not r.accept(req,response)['already_recorded']
+
+
+def test_evidence_normalization_keeps_words_math_and_page_boundaries():
+    from mpres.control.audience import quoted_evidence_present as present
+    assert present('第二行加回第一行的两倍。', '第二行加回第一行的两倍：\n$$x$$')
+    assert not present('第二行减去第一行的两倍。', '第二行加回第一行的两倍：')
+    assert not present('$a-b$。', '$a+b$：')
+    assert not present('。', '：')
+    assert not present('甲。乙', '甲：乙')
+
+
+def test_math_quote_inline_display_and_final_punctuation_only():
+    from mpres.control.audience import quoted_evidence_present as present
+    source=r'$$2=-\frac12\det A\quad\Longrightarrow\quad\det A=-4.$$'
+    assert present(r'$2=-\frac12\det A\quad\Longrightarrow\quad\det A=-4$。',source)
+    assert not present(r'$2=\frac12\det A\quad\Longrightarrow\quad\det A=-4$。',source)
+    assert not present('$1.2$', '$12$')
+
+
+def test_quote_may_end_at_an_existing_clause_boundary():
+    from mpres.control.audience import quoted_evidence_present as present
+    assert present('整个矩阵乘 $k$，相当于每行都乘 $k$。','整个矩阵乘 $k$，相当于每行都乘 $k$，所以')
+    assert not present('整个矩阵乘 $k$，相当于每行都乘 $n$。','整个矩阵乘 $k$，相当于每行都乘 $k$，所以')

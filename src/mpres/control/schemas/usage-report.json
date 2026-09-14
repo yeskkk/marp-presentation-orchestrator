@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Program-generated usage report; never a model self-report",
+  "type": "object",
+  "required": [
+    "version",
+    "scope",
+    "calls_observed",
+    "counters",
+    "by_phase",
+    "calls",
+    "coverage",
+    "timing",
+    "duration_events",
+    "gates",
+    "waits",
+    "cost_currency",
+    "data_issues",
+    "notes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "scope": {
+      "type": "object",
+      "required": [
+        "task",
+        "presentations",
+        "read_only",
+        "model_calls"
+      ],
+      "properties": {
+        "task": {
+          "type": "string"
+        },
+        "presentations": {
+          "oneOf": [
+            {
+              "const": "all"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "read_only": {
+          "const": true
+        },
+        "model_calls": {
+          "const": 0
+        }
+      }
+    },
+    "calls_observed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "counters": {
+      "type": "object",
+      "required": [
+        "input_tokens",
+        "cached_input_tokens",
+        "output_tokens",
+        "reasoning_tokens",
+        "total_tokens",
+        "uncached_input_tokens"
+      ],
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "total",
+          "known_sum",
+          "known_records",
+          "unknown_records"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "total": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "known_sum": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "known_records": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "unknown_records": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object"
+    },
+    "timing": {
+      "type": "object"
+    },
+    "cost_currency": {
+      "type": "null"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "by_phase": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "calls": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "duration_events": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "waits": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "data_issues": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

@@ -15,8 +15,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog='mpres',description='One task database; semantic AI jobs; mechanical workflow control.')
     parser.add_argument('--root',type=Path)
     sub = parser.add_subparsers(dest='command',required=True)
+    storage=sub.add_parser('storage').add_subparsers(dest='operation',required=True)
+    for action in ('inspect','migrate','prune','compact'):
+        op=storage.add_parser(action);op.add_argument('slug')
+        if action in {'migrate','compact'}:op.add_argument('--by',required=True)
+        if action=='prune':
+            choice=op.add_mutually_exclusive_group(required=True)
+            choice.add_argument('--dry-run',action='store_true');choice.add_argument('--apply',metavar='PLAN_ID')
+            op.add_argument('--by');op.add_argument('--success-days',type=int);op.add_argument('--failure-days',type=int);op.add_argument('--policy',type=Path)
+            op.add_argument('--backup-dir',type=Path)
+    reports=sub.add_parser('report').add_subparsers(dest='operation',required=True)
+    op=reports.add_parser('usage');op.add_argument('slug');op.add_argument('--presentation',action='append');op.add_argument('--format',choices=['json','md','csv'],default='json');op.add_argument('--output',type=Path)
+    supervision=sub.add_parser('supervision').add_subparsers(dest='operation',required=True)
+    for action in ('pending','ack','wait-start','wait-end'):
+        op=supervision.add_parser(action);op.add_argument('slug')
+        if action!='pending':op.add_argument('--by',required=True)
+        if action=='ack':op.add_argument('handoff_id');op.add_argument('--note',required=True)
+        if action=='wait-start':op.add_argument('--reason',required=True);op.add_argument('--note',required=True);op.add_argument('--presentation')
+        if action=='wait-end':op.add_argument('wait_id')
     source = sub.add_parser('source').add_subparsers(dest='operation',required=True)
     source_check=source.add_parser('check');source_check.add_argument('directory',type=Path)
+    exercise=sub.add_parser('exercise').add_subparsers(dest='operation',required=True)
+    for action in ('candidates','check','isolate'):
+        cmd=exercise.add_parser(action);cmd.add_argument('directory',type=Path)
+        if action=='isolate':cmd.add_argument('--slide-id',required=True)
+    resource=sub.add_parser('resource').add_subparsers(dest='operation',required=True)
+    op=resource.add_parser('preflight');op.add_argument('slug');op.add_argument('--presentation')
     figure = sub.add_parser('figure').add_subparsers(dest='operation',required=True)
     fb=figure.add_parser('build');fb.add_argument('spec',type=Path)
     fc=figure.add_parser('check');fc.add_argument('directory',type=Path)
@@ -27,6 +51,9 @@ def build_parser() -> argparse.ArgumentParser:
         if action=='confirm': cmd.add_argument('--by',required=True)
     backup = task.add_parser('backup-db'); backup.add_argument('slug'); backup.add_argument('destination',type=Path)
     imp = task.add_parser('import-legacy'); imp.add_argument('old_task',type=Path); imp.add_argument('--slug',required=True)
+    for action in ('policy-pause','policy-resume'):
+        op=task.add_parser(action);op.add_argument('slug');op.add_argument('--by',required=True)
+        if action=='policy-pause':op.add_argument('--note',required=True)
     op=task.add_parser('policy-show');op.add_argument('slug')
     op=task.add_parser('policy-present');op.add_argument('slug');op.add_argument('--handle-limit',type=int);op.add_argument('--context-budget-bytes',type=int)
     op=task.add_parser('policy-confirm');op.add_argument('slug');op.add_argument('--presentation-id',type=int,required=True);op.add_argument('--by',required=True)
@@ -84,9 +111,10 @@ def build_parser() -> argparse.ArgumentParser:
         cmd=runner.add_parser(name);cmd.add_argument('slug')
         cmd.add_argument('identity')
     workflow=sub.add_parser('workflow').add_subparsers(dest='operation',required=True)
-    for name in ('advance','status','materialize','bundle','continue','retry-checks','retry-publish','recover-assembly'):
+    for name in ('advance','status','materialize','bundle','continue','retry-checks','retry-publish','recover-assembly','edit-after-amendment','resume-author-revision'):
         cmd=workflow.add_parser(name);cmd.add_argument('slug')
         if name=='continue':cmd.add_argument('--by',required=True);cmd.add_argument('--note',required=True)
+        if name in {'edit-after-amendment','resume-author-revision'}:cmd.add_argument('--presentation',required=True);cmd.add_argument('--by',required=True);cmd.add_argument('--note',required=True)
         if name in {'retry-checks','retry-publish'}:cmd.add_argument('--presentation',required=True);cmd.add_argument('--note',required=True)
         if name=='recover-assembly':cmd.add_argument('--job-id',required=True);cmd.add_argument('--note',required=True)
     feedback=sub.add_parser('feedback').add_subparsers(dest='operation',required=True)
@@ -121,6 +149,39 @@ def main(argv: list[str] | None = None) -> int:
         if args.command=='source':
             from mpres.source_policy import inspect_source
             result=inspect_source(args.directory.resolve())
+        elif args.command=='exercise':
+            from .exercises import candidates, read_manifest, isolated_question
+            source=args.directory.resolve()
+            if args.operation=='candidates':result={'candidate_slide_ids':candidates(source),'not_exhaustive':True,'semantic_sufficiency':'not_proven_by_program'}
+            elif args.operation=='isolate':result=isolated_question(source,args.slide_id)
+            else:
+                manifest=read_manifest(source,required=True)
+                result={'success':True,'exercise_count':len(manifest['exercises']),'semantic_sufficiency':'not_proven_by_program'}
+        elif args.command=='report':
+            safe_id(args.slug,label='task slug');task=root/'tasks'/args.slug
+            from .cost_report import report,render
+            value=report(task,args.presentation);text=render(value,args.format)
+            if args.output:
+                if args.output.exists():raise MPresError('Refusing to overwrite an existing report; choose a new output path')
+                args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(text,encoding='utf-8')
+                result={'report_file':str(args.output),'calls':value['calls_observed'],'read_only_task':True,'model_calls':0}
+            elif args.format=='json':result=value
+            else:print(text,end='');return 0
+        elif args.command=='storage':
+            safe_id(args.slug,label='task slug');task=root/'tasks'/args.slug
+            from . import storage
+            if args.operation=='inspect':result=storage.inspect(task)
+            elif args.operation=='migrate':
+                from contextlib import closing
+                from .store import Store
+                store=Store(task);store.migration_actor=args.by
+                with closing(store.connect()) as conn:
+                    result={'schema_version':conn.execute('PRAGMA user_version').fetchone()[0],'migration_audit':[dict(r) for r in conn.execute('SELECT * FROM migration_audit ORDER BY id')],'model_calls':0}
+            elif args.operation=='compact':result=storage.compact(task,by=args.by)
+            else:
+                policy=storage.retention_policy(args.policy)
+                options={'success_days':args.success_days if args.success_days is not None else policy['success_days'],'failure_days':args.failure_days if args.failure_days is not None else policy['resolved_failure_days']}
+                result=storage.plan(task,**options) if args.dry_run else storage.apply(task,args.apply,by=args.by,backup_dir=args.backup_dir,**options)
         elif args.command=='figure':
             from mpres.geometry import build, inspect_figures
             result=build(args.spec.resolve()) if args.operation=='build' else inspect_figures(args.directory.resolve())
@@ -134,7 +195,20 @@ def main(argv: list[str] | None = None) -> int:
         else:
             safe_id(args.slug,label='task slug')
             service=Service(root/'tasks'/args.slug)
-            if args.command=='plan':
+            if args.command=='supervision':
+                from . import supervision
+                if args.operation=='pending':result=supervision.pending(service)
+                elif args.operation=='ack':result=supervision.acknowledge(service,args.handoff_id,by=args.by,note=args.note)
+                elif args.operation=='wait-start':result=supervision.wait_start(service,reason=args.reason,by=args.by,note=args.note,presentation=args.presentation)
+                else:result=supervision.wait_end(service,args.wait_id,by=args.by)
+            elif args.command=='resource':
+                from .preflight import require_job_inputs
+                with service.store.transaction() as conn:cfg=service.confirmed(conn)
+                decks=json.loads(cfg['settings_json'])['presentations']
+                selected=[d for d in decks if not args.presentation or d['id']==args.presentation]
+                if not selected:raise MPresError('Unknown presentation for preflight')
+                result={'model_calls':0,'presentations':{d['id']:require_job_inputs(service,{'presentation':d['id'],'config_id':cfg['id']}) for d in selected}}
+            elif args.command=='plan':
                 from .planning import Planning
                 planning=Planning(service.task)
                 if args.operation=='present':result=planning.present(json.loads(args.proposal.read_text(encoding='utf-8')))
@@ -159,7 +233,9 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command=='task' and args.operation.startswith('policy-'):
                 from .policy import Policy
                 policy=Policy(service.task)
-                if args.operation=='policy-show':result=policy.show()
+                if args.operation=='policy-pause':result=policy.pause(args.by,args.note)
+                elif args.operation=='policy-resume':result=policy.resume(args.by)
+                elif args.operation=='policy-show':result=policy.show()
                 elif args.operation=='policy-present':result=policy.present(handle_limit=args.handle_limit,context_budget_bytes=args.context_budget_bytes)
                 else:result=policy.confirm(args.presentation_id,args.by)
             elif args.command=='repair':
@@ -189,6 +265,8 @@ def main(argv: list[str] | None = None) -> int:
                     from .delivery import Delivery
                     result=Delivery(service.task).bundle()
                 elif args.operation=='continue':result=workflow.continue_delivery(args.by,args.note)
+                elif args.operation=='edit-after-amendment':result=workflow.edit_after_amendment(args.presentation,args.by,args.note)
+                elif args.operation=='resume-author-revision':result=workflow.resume_author_revision(args.presentation,args.by,args.note)
                 elif args.operation=='retry-checks':result=workflow.retry_checks(args.presentation,args.note)
                 elif args.operation=='retry-publish':result=workflow.retry_publish(args.presentation,args.note)
                 elif args.operation=='recover-assembly':result=workflow.recover_assembly(args.job_id,args.note)
@@ -231,12 +309,28 @@ def main(argv: list[str] | None = None) -> int:
                 result=service.record_usage(args.attempt_id,args.call_id,json.loads(args.counters.read_text()))
             else:result=service.submit(args.attempt_id,json.loads(args.result.read_text()),source=args.source)
         print(json.dumps(result,ensure_ascii=False,indent=2))
+        if isinstance(result,dict) and result.get('needs_main_attention'):return result.get('recommended_exit_code',2)
         if isinstance(result,dict) and result.get('delivery_package', {}).get('state')=='failed': return 2
         if isinstance(result,dict) and result.get('success') is False: return 2
         if isinstance(result,dict) and (result.get('status')=='blocked' or result.get('state') in {'failed','interrupted'}): return 2
         if isinstance(result,dict) and any(x.get('status')=='response_rejected' for x in result.get('results',[])): return 2
         if isinstance(result,dict) and any(x.get('status')=='uncertain' for x in result.get('results',[])): return 3
         return 0
+    except KeyboardInterrupt:
+        failure={'status':'blocked','interrupted':True,'error':'Foreground command interrupted. Inspect retained requests; do not infer completion or resend.'}
+        if args.command in {'runner','bridge'} and args.operation in {'run','reconcile'}:
+            try:
+                from .supervision import terminal
+                failure=terminal(Service(root/'tasks'/args.slug),failure,'cli.interrupt',forced_reason=failure['error'])
+            except Exception as handoff_error:failure['handoff_error']=str(handoff_error)
+        print(json.dumps(failure,ensure_ascii=False))
+        return 130
     except (MPresError,sqlite3.Error,OSError,ValueError,TypeError) as exc:
-        print(json.dumps({'error':str(exc),'type':type(exc).__name__},ensure_ascii=False))
+        failure={'error':str(exc),'type':type(exc).__name__}
+        if args.command in {'runner','bridge'} and args.operation in {'run','reconcile'}:
+            try:
+                from .supervision import terminal
+                failure=terminal(Service(root/'tasks'/args.slug),{'status':'blocked',**failure},'cli.exception',forced_reason=str(exc))
+            except Exception as handoff_error:failure['handoff_error']=str(handoff_error)
+        print(json.dumps(failure,ensure_ascii=False))
         return 2

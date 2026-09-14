@@ -1,0 +1,684 @@
+{
+  "test_scope": "Disposable extracted database copies only; expiry clock simulated at 2027-01-01, not a production cleanup of fresh data. No artifacts removed; no model called.",
+  "default_plan": {
+    "version": 1,
+    "task": "/mnt/data/work/storage-proof/tasks/linear-algebra-v7",
+    "retention": {
+      "success_days": 7,
+      "resolved_failure_days": 30,
+      "cutoff_day_utc": "2026-09-14"
+    },
+    "file_fingerprint": {
+      "task.sqlite3": {
+        "bytes": 17297408,
+        "mtime_ns": 1789361719686189775
+      },
+      "codex-bridge.sqlite3": {
+        "bytes": 440684544,
+        "mtime_ns": 1789360035096977095
+      },
+      "codex-index.sqlite3": {
+        "bytes": 1839104,
+        "mtime_ns": 1789361724172134415
+      }
+    },
+    "rows": 214,
+    "estimated_payload_bytes": 5097907,
+    "by_reason": {
+      "exact_duplicate_gate_report": {
+        "rows": 214,
+        "payload_bytes": 5097907
+      }
+    },
+    "protected": [
+      "unresolved work",
+      "unaccepted requests",
+      "usage",
+      "requirements/authorizations",
+      "final responses",
+      "all artifact files",
+      "wire IDs/RPC/terminal evidence"
+    ],
+    "database_bytes_reclaimed": null,
+    "warning": "Payload reduction is not physical disk reclamation; compact separately. No archive is created by default.",
+    "safe_to_apply": true,
+    "plan_id": "47e40bd2ecd50901a9d66921a1203a0bae354872ef49fce82fa12840d85e05d9"
+  },
+  "before": {
+    "version": 1,
+    "task": "/mnt/data/work/storage-proof/tasks/linear-algebra-v7",
+    "read_only": true,
+    "model_calls": 0,
+    "databases": [
+      {
+        "name": "task.sqlite3",
+        "bytes": 17297408,
+        "wal_bytes": 0,
+        "schema_version": 12,
+        "freelist_bytes": 0,
+        "tables": [
+          {
+            "name": "artifacts",
+            "rows": 73,
+            "allocated_bytes": 16384
+          },
+          {
+            "name": "attempt_briefings",
+            "rows": 68,
+            "allocated_bytes": 905216
+          },
+          {
+            "name": "attempts",
+            "rows": 72,
+            "allocated_bytes": 663552
+          },
+          {
+            "name": "audience_steps",
+            "rows": 122,
+            "allocated_bytes": 487424
+          },
+          {
+            "name": "checks",
+            "rows": 236,
+            "allocated_bytes": 5275648
+          },
+          {
+            "name": "configs",
+            "rows": 1,
+            "allocated_bytes": 28672
+          },
+          {
+            "name": "decisions",
+            "rows": 16,
+            "allocated_bytes": 40960
+          },
+          {
+            "name": "decks",
+            "rows": 10,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "delivery_parts",
+            "rows": 3,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "dependencies",
+            "rows": 0,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "events",
+            "rows": 1824,
+            "allocated_bytes": 999424
+          },
+          {
+            "name": "feedback_rules",
+            "rows": 13,
+            "allocated_bytes": 36864
+          },
+          {
+            "name": "findings",
+            "rows": 239,
+            "allocated_bytes": 241664
+          },
+          {
+            "name": "gate_runs",
+            "rows": 52,
+            "allocated_bytes": 5185536
+          },
+          {
+            "name": "host_requests",
+            "rows": 108,
+            "allocated_bytes": 2162688
+          },
+          {
+            "name": "host_responses",
+            "rows": 108,
+            "allocated_bytes": 454656
+          },
+          {
+            "name": "jobs",
+            "rows": 90,
+            "allocated_bytes": 20480
+          },
+          {
+            "name": "maintenance_runs",
+            "rows": 0,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "migration_audit",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "participation",
+            "rows": 49,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "plan_changes",
+            "rows": 2,
+            "allocated_bytes": 28672
+          },
+          {
+            "name": "plan_item_origins",
+            "rows": 5,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "plan_items",
+            "rows": 37,
+            "allocated_bytes": 32768
+          },
+          {
+            "name": "policy_cursor",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "policy_values",
+            "rows": 3,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "pool_slots",
+            "rows": 11,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "production_batch_targets",
+            "rows": 3,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "production_batches",
+            "rows": 1,
+            "allocated_bytes": 8192
+          },
+          {
+            "name": "release_versions",
+            "rows": 5,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "releases",
+            "rows": 4,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "repair_cases",
+            "rows": 1,
+            "allocated_bytes": 28672
+          },
+          {
+            "name": "repair_jobs",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "repair_targets",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "runtime_host",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "sessions",
+            "rows": 11,
+            "allocated_bytes": 16384
+          },
+          {
+            "name": "task",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "usage",
+            "rows": 259,
+            "allocated_bytes": 36864
+          }
+        ]
+      },
+      {
+        "name": "codex-bridge.sqlite3",
+        "bytes": 440684544,
+        "wal_bytes": 0,
+        "schema_version": 0,
+        "freelist_bytes": 0,
+        "tables": [
+          {
+            "name": "handles",
+            "rows": 11,
+            "allocated_bytes": 28672
+          },
+          {
+            "name": "reconciled_history",
+            "rows": 1,
+            "allocated_bytes": 8192
+          },
+          {
+            "name": "request_supplements",
+            "rows": 2,
+            "allocated_bytes": 430080
+          },
+          {
+            "name": "requests",
+            "rows": 270,
+            "allocated_bytes": 9740288
+          },
+          {
+            "name": "wire",
+            "rows": 357319,
+            "allocated_bytes": 413519872
+          }
+        ]
+      },
+      {
+        "name": "codex-index.sqlite3",
+        "bytes": 1839104,
+        "wal_bytes": 0,
+        "schema_version": 1,
+        "freelist_bytes": 0,
+        "tables": [
+          {
+            "name": "issues",
+            "rows": 0,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "rpc",
+            "rows": 1243,
+            "allocated_bytes": 159744
+          },
+          {
+            "name": "source",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "threads",
+            "rows": 11,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "turns",
+            "rows": 259,
+            "allocated_bytes": 1462272
+          }
+        ]
+      }
+    ],
+    "database_bytes": 459821056,
+    "resource_cache_bytes": 0,
+    "not_counted_as_database": "Artifacts, work directories and optional caller-owned backups are not removed by this command."
+  },
+  "prune": {
+    "version": 1,
+    "task": "/mnt/data/work/storage-proof/tasks/linear-algebra-v7",
+    "retention": {
+      "success_days": 7,
+      "resolved_failure_days": 30,
+      "cutoff_day_utc": "2027-01-01"
+    },
+    "file_fingerprint": {
+      "task.sqlite3": {
+        "bytes": 17297408,
+        "mtime_ns": 1789361719686189775
+      },
+      "codex-bridge.sqlite3": {
+        "bytes": 440684544,
+        "mtime_ns": 1789360035096977095
+      },
+      "codex-index.sqlite3": {
+        "bytes": 1839104,
+        "mtime_ns": 1789361724172134415
+      }
+    },
+    "rows": 2374,
+    "estimated_payload_bytes": 272818899,
+    "by_reason": {
+      "exact_duplicate_gate_report": {
+        "rows": 214,
+        "payload_bytes": 5097907
+      },
+      "expired_tool_body": {
+        "rows": 1114,
+        "payload_bytes": 21658176
+      },
+      "expired_terminal_tool_body": {
+        "rows": 149,
+        "payload_bytes": 471266
+      },
+      "expired_stream_body": {
+        "rows": 687,
+        "payload_bytes": 3974677
+      },
+      "expired_repeated_resume_history": {
+        "rows": 206,
+        "payload_bytes": 231774219
+      },
+      "expired_read_tool_bodies": {
+        "rows": 4,
+        "payload_bytes": 9842654
+      }
+    },
+    "protected": [
+      "unresolved work",
+      "unaccepted requests",
+      "usage",
+      "requirements/authorizations",
+      "final responses",
+      "all artifact files",
+      "wire IDs/RPC/terminal evidence"
+    ],
+    "database_bytes_reclaimed": null,
+    "warning": "Payload reduction is not physical disk reclamation; compact separately. No archive is created by default.",
+    "safe_to_apply": true,
+    "plan_id": "39f4c764cc903598bbe53e6bf288624bdea4b27f631894e3e10f37edd29f9b1c",
+    "run_id": "clean-13c871097df349b2996901f8b57e85a9",
+    "state": "completed",
+    "committed_databases": [
+      "codex-bridge.sqlite3",
+      "task.sqlite3"
+    ],
+    "backup_directory": null,
+    "model_calls": 0
+  },
+  "compact": {
+    "version": 1,
+    "state": "completed",
+    "databases": [
+      "task.sqlite3",
+      "codex-bridge.sqlite3",
+      "codex-index.sqlite3"
+    ],
+    "before_bytes": 459821056,
+    "after_bytes": 184246272,
+    "reclaimed_database_bytes": 275574784,
+    "model_calls": 0,
+    "archives_created": 0
+  },
+  "after": {
+    "version": 1,
+    "task": "/mnt/data/work/storage-proof/tasks/linear-algebra-v7",
+    "read_only": true,
+    "model_calls": 0,
+    "databases": [
+      {
+        "name": "task.sqlite3",
+        "bytes": 12021760,
+        "wal_bytes": 0,
+        "schema_version": 12,
+        "freelist_bytes": 0,
+        "tables": [
+          {
+            "name": "artifacts",
+            "rows": 73,
+            "allocated_bytes": 16384
+          },
+          {
+            "name": "attempt_briefings",
+            "rows": 68,
+            "allocated_bytes": 868352
+          },
+          {
+            "name": "attempts",
+            "rows": 72,
+            "allocated_bytes": 663552
+          },
+          {
+            "name": "audience_steps",
+            "rows": 122,
+            "allocated_bytes": 487424
+          },
+          {
+            "name": "checks",
+            "rows": 236,
+            "allocated_bytes": 53248
+          },
+          {
+            "name": "configs",
+            "rows": 1,
+            "allocated_bytes": 28672
+          },
+          {
+            "name": "decisions",
+            "rows": 16,
+            "allocated_bytes": 40960
+          },
+          {
+            "name": "decks",
+            "rows": 10,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "delivery_parts",
+            "rows": 3,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "dependencies",
+            "rows": 0,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "events",
+            "rows": 1824,
+            "allocated_bytes": 999424
+          },
+          {
+            "name": "feedback_rules",
+            "rows": 13,
+            "allocated_bytes": 36864
+          },
+          {
+            "name": "findings",
+            "rows": 239,
+            "allocated_bytes": 241664
+          },
+          {
+            "name": "gate_runs",
+            "rows": 52,
+            "allocated_bytes": 5185536
+          },
+          {
+            "name": "host_requests",
+            "rows": 108,
+            "allocated_bytes": 2162688
+          },
+          {
+            "name": "host_responses",
+            "rows": 108,
+            "allocated_bytes": 454656
+          },
+          {
+            "name": "jobs",
+            "rows": 90,
+            "allocated_bytes": 20480
+          },
+          {
+            "name": "maintenance_runs",
+            "rows": 2,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "migration_audit",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "participation",
+            "rows": 49,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "plan_changes",
+            "rows": 2,
+            "allocated_bytes": 28672
+          },
+          {
+            "name": "plan_item_origins",
+            "rows": 5,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "plan_items",
+            "rows": 37,
+            "allocated_bytes": 32768
+          },
+          {
+            "name": "policy_cursor",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "policy_values",
+            "rows": 3,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "pool_slots",
+            "rows": 11,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "production_batch_targets",
+            "rows": 3,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "production_batches",
+            "rows": 1,
+            "allocated_bytes": 8192
+          },
+          {
+            "name": "release_versions",
+            "rows": 5,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "releases",
+            "rows": 4,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "repair_cases",
+            "rows": 1,
+            "allocated_bytes": 28672
+          },
+          {
+            "name": "repair_jobs",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "repair_targets",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "runtime_host",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "sessions",
+            "rows": 11,
+            "allocated_bytes": 16384
+          },
+          {
+            "name": "task",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "usage",
+            "rows": 259,
+            "allocated_bytes": 36864
+          }
+        ]
+      },
+      {
+        "name": "codex-bridge.sqlite3",
+        "bytes": 170409984,
+        "wal_bytes": 0,
+        "schema_version": 0,
+        "freelist_bytes": 0,
+        "tables": [
+          {
+            "name": "handles",
+            "rows": 11,
+            "allocated_bytes": 28672
+          },
+          {
+            "name": "reconciled_history",
+            "rows": 1,
+            "allocated_bytes": 8192
+          },
+          {
+            "name": "request_supplements",
+            "rows": 2,
+            "allocated_bytes": 430080
+          },
+          {
+            "name": "requests",
+            "rows": 270,
+            "allocated_bytes": 9613312
+          },
+          {
+            "name": "wire",
+            "rows": 357319,
+            "allocated_bytes": 144662528
+          }
+        ]
+      },
+      {
+        "name": "codex-index.sqlite3",
+        "bytes": 1814528,
+        "wal_bytes": 0,
+        "schema_version": 1,
+        "freelist_bytes": 0,
+        "tables": [
+          {
+            "name": "issues",
+            "rows": 0,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "rpc",
+            "rows": 1243,
+            "allocated_bytes": 155648
+          },
+          {
+            "name": "source",
+            "rows": 1,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "threads",
+            "rows": 11,
+            "allocated_bytes": 4096
+          },
+          {
+            "name": "turns",
+            "rows": 259,
+            "allocated_bytes": 1454080
+          }
+        ]
+      }
+    ],
+    "database_bytes": 184246272,
+    "resource_cache_bytes": 0,
+    "not_counted_as_database": "Artifacts, work directories and optional caller-owned backups are not removed by this command."
+  },
+  "verification": {
+    "index_projections_identical": true,
+    "usage_rows_identical": true,
+    "original_databases_unchanged": true
+  }
+}

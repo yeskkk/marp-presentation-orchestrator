@@ -20,154 +20,76 @@ class Store:
         self.task = task.resolve()
         self.path = self.task / '.mpres' / 'task.sqlite3'
 
+    SCHEMA_VERSION = 12
+
+    def readonly(self):
+        """No DDL, schema upgrade, lockfile creation, or hidden state changes."""
+        from .maintenance_lock import readonly_connection
+        return readonly_connection(self.path)
+
     def connect(self) -> sqlite3.Connection:
-        if not self.path.is_file():
-            raise MPresError(f'No compact task database: {self.path}')
-        conn = sqlite3.connect(self.path, timeout=30, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        conn.execute('PRAGMA foreign_keys=ON')
-        conn.execute('PRAGMA busy_timeout=30000')
-        conn.execute('PRAGMA synchronous=FULL')
-        if conn.execute('PRAGMA foreign_keys').fetchone()[0] != 1:
-            conn.close()
-            raise MPresError('SQLite foreign keys could not be enabled')
-        version = conn.execute('PRAGMA user_version').fetchone()[0]
-        if version == 1:
+        if not self.path.is_file():raise MPresError(f'No compact task database: {self.path}')
+        from .maintenance_lock import writable_connection
+        conn=writable_connection(self.path,self.task,timeout=30,isolation_level=None)
+        conn.row_factory=sqlite3.Row
+        conn.execute('PRAGMA foreign_keys=ON');conn.execute('PRAGMA busy_timeout=30000');conn.execute('PRAGMA synchronous=FULL')
+        try:
+            self._migrate(conn)
+            return conn
+        except Exception:
+            conn.close();raise
+
+    @staticmethod
+    def _audit_schema(conn):
+        conn.execute("CREATE TABLE IF NOT EXISTS migration_audit (id INTEGER PRIMARY KEY, from_version INTEGER, to_version INTEGER NOT NULL, program_version TEXT NOT NULL, trigger_json TEXT NOT NULL, actor TEXT, started_at TEXT NOT NULL, finished_at TEXT, state TEXT NOT NULL, error TEXT)")
+
+    def _migrate(self,conn):
+        import sys
+        from mpres import __version__
+        version=conn.execute('PRAGMA user_version').fetchone()[0]
+        if not 1<=version<=self.SCHEMA_VERSION:raise MPresError('Unsupported compact database schema; do not auto-recreate it')
+        self._audit_schema(conn)
+        while version<self.SCHEMA_VERSION:
+            # One serialized transition. A failed transition rolls back DDL and
+            # keeps a separate durable failure record, never forged old history.
+            conn.execute('BEGIN IMMEDIATE')
+            version=conn.execute('PRAGMA user_version').fetchone()[0]
+            if version>=self.SCHEMA_VERSION:
+                conn.commit();break
+            target=version+1;stamp=utc_now()
+            trigger=encode({'argv':sys.argv,'entry':'Store.connect','explicit_actor_label':getattr(self,'migration_actor',None),'historical_actor':'unknown'})
+            conn.execute('SAVEPOINT migration_body')
             try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 1:
-                    # Migration is additive and atomic. It does not alter any confirmed profile.
+                if target==2:
                     conn.execute("CREATE TABLE pool_slots (id INTEGER PRIMARY KEY,key TEXT NOT NULL UNIQUE,kind TEXT NOT NULL CHECK(kind IN ('write','edit','review')),channel TEXT NOT NULL,family TEXT NOT NULL,model TEXT NOT NULL,effort TEXT NOT NULL,ordinal INTEGER NOT NULL,session_id TEXT UNIQUE REFERENCES sessions(id),state TEXT NOT NULL CHECK(state IN ('pending','creating','ready','uncertain')))")
                     conn.execute("CREATE TABLE runtime_host (singleton INTEGER PRIMARY KEY CHECK(singleton=1),report_json TEXT NOT NULL,observed_at TEXT NOT NULL)")
                     conn.execute('ALTER TABLE task ADD COLUMN author_slots_limit INTEGER')
-                    conn.execute('PRAGMA user_version=2')
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                conn.close()
-                raise
-            version = 2
-        if version == 2:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 2:
-                    sql = Path(__file__).with_name('migrate_3.sql').read_text()
-                    for statement in sql.split(';'):
-                        if statement.strip():
-                            conn.execute(statement)
-                    conn.execute('PRAGMA user_version=3')
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                conn.close()
-                raise
-            version = 3
-        if version == 3:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 3:
-                    for statement in Path(__file__).with_name('migrate_4.sql').read_text().split(';'):
-                        if statement.strip():
-                            conn.execute(statement)
-                    conn.execute('PRAGMA user_version=4')
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                conn.close()
-                raise
-            version = 4
-        if version == 4:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 4:
-                    for statement in Path(__file__).with_name('migrate_5.sql').read_text().split(';'):
-                        if statement.strip(): conn.execute(statement)
-                    conn.execute('PRAGMA user_version=5')
-                conn.commit()
-            except Exception:
-                conn.rollback(); conn.close(); raise
-            version = 5
-        if version == 5:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 5:
-                    for statement in Path(__file__).with_name('migrate_6.sql').read_text().split(';'):
-                        if statement.strip(): conn.execute(statement)
-                    conn.execute('PRAGMA user_version=6')
-                conn.commit()
-            except Exception:
-                conn.rollback(); conn.close(); raise
-            version = 6
-        if version == 6:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 6:
-                    for statement in Path(__file__).with_name('migrate_7.sql').read_text().split(';'):
-                        if statement.strip(): conn.execute(statement)
-                    conn.execute('PRAGMA user_version=7')
-                conn.commit()
-            except Exception:
-                conn.rollback(); conn.close(); raise
-            version = 7
-        if version == 7:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 7:
-                    for statement in Path(__file__).with_name('migrate_8.sql').read_text().split(';'):
-                        if statement.strip(): conn.execute(statement)
-                    conn.execute('PRAGMA user_version=8')
-                conn.commit()
-            except Exception:
-                conn.rollback(); conn.close(); raise
-            version = 8
-        if version == 8:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 8:
-                    for statement in Path(__file__).with_name('migrate_9.sql').read_text().split(';'):
-                        if statement.strip(): conn.execute(statement)
-                    conn.execute('PRAGMA user_version=9')
-                conn.commit()
-            except Exception:
-                conn.rollback(); conn.close(); raise
-            version = 9
-        if version == 9:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 9:
-                    for statement in Path(__file__).with_name('migrate_10.sql').read_text().split(';'):
-                        if statement.strip(): conn.execute(statement)
-                    conn.execute('PRAGMA user_version=10')
-                conn.commit()
-            except Exception:
-                conn.rollback(); conn.close(); raise
-            version = 10
-        if version == 10:
-            try:
-                conn.execute('BEGIN IMMEDIATE')
-                if conn.execute('PRAGMA user_version').fetchone()[0] == 10:
-                    for statement in Path(__file__).with_name('migrate_11.sql').read_text().split(';'):
-                        if statement.strip(): conn.execute(statement)
-                    conn.execute('PRAGMA user_version=11')
-                conn.commit()
-            except Exception:
-                conn.rollback(); conn.close(); raise
-            version = 11
-        if version != 11:
-            conn.close()
-            raise MPresError('Unsupported compact database schema; do not auto-recreate it')
-        return conn
+                else:
+                    for statement in Path(__file__).with_name(f'migrate_{target}.sql').read_text().split(';'):
+                        if statement.strip():conn.execute(statement)
+                conn.execute(f'PRAGMA user_version={target}')
+                conn.execute('RELEASE migration_body')
+                conn.execute('INSERT INTO migration_audit(from_version,to_version,program_version,trigger_json,started_at,finished_at,state) VALUES(?,?,?,?,?,?,?)',(version,target,__version__,trigger,stamp,utc_now(),'succeeded'))
+                conn.commit();version=target
+            except Exception as exc:
+                conn.execute('ROLLBACK TO migration_body');conn.execute('RELEASE migration_body')
+                conn.execute('INSERT INTO migration_audit(from_version,to_version,program_version,trigger_json,started_at,finished_at,state,error) VALUES(?,?,?,?,?,?,?,?)',(version,target,__version__,trigger,stamp,utc_now(),'failed',f'{type(exc).__name__}: {exc}'))
+                conn.commit();raise
 
     def initialize(self, title: str) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.exists():
             raise MPresError('Task database already exists')
-        conn = sqlite3.connect(self.path)
+        from .maintenance_lock import writable_connection
+        conn = writable_connection(self.path,self.task)
         try:
             conn.execute('PRAGMA foreign_keys=ON')
             conn.executescript(Path(__file__).with_name('schema.sql').read_text())
             conn.execute('INSERT INTO task(singleton,title,status,created_at) VALUES(1,?,?,?)',
                          (title, 'draft', utc_now()))
+            self._audit_schema(conn)
+            from mpres import __version__
+            conn.execute('INSERT INTO migration_audit(to_version,program_version,trigger_json,started_at,finished_at,state) VALUES(?,?,?,?,?,?)',(self.SCHEMA_VERSION,__version__,encode({'entry':'Store.initialize'}),utc_now(),utc_now(),'initialized'))
             conn.commit()
         finally:
             conn.close()

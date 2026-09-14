@@ -11,7 +11,8 @@ from typing import Any
 
 from mpres.util import MPresError
 
-GUIDANCE_VERSION = '0.8.3'
+from mpres import __version__
+GUIDANCE_VERSION = __version__
 ROLE_GUIDES = {
     'write': 'marp-writing', 'edit': 'deck-editing', 'revise': 'deck-editing',
     'diagnose': 'problem-diagnosis',
@@ -81,7 +82,10 @@ def compile_guidance(root: Path, kind: str, *, channel: str | None = None,
         if kind not in ROLE_GUIDES:
             raise MPresError('No semantic guide for a mechanical job')
         role = ROLE_GUIDES[kind]
-    fragments = [(SHARED, None), (f'{role}/SKILL.md', None)]
+    fragments = [(SHARED, None)]
+    if kind in {'write', 'edit', 'revise'} or (kind == 'review' and channel in {'pedagogy', 'audience'}):
+        fragments.append(('_shared/exercise-self-containment.md', None))
+    fragments.append((f'{role}/SKILL.md', None))
     mode = kind
     if kind == 'edit':
         selected = 'correction' if correction else 'integration'
