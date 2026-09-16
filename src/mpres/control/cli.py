@@ -24,6 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
             choice.add_argument('--dry-run',action='store_true');choice.add_argument('--apply',metavar='PLAN_ID')
             op.add_argument('--by');op.add_argument('--success-days',type=int);op.add_argument('--failure-days',type=int);op.add_argument('--policy',type=Path)
             op.add_argument('--backup-dir',type=Path)
+    op=storage.add_parser('checkpoint');op.add_argument('slug')
+    choice=op.add_mutually_exclusive_group(required=True)
+    choice.add_argument('--dry-run',action='store_true');choice.add_argument('--apply',metavar='PLAN_ID');choice.add_argument('--resume',metavar='CHECKPOINT_ID');choice.add_argument('--status',action='store_true')
+    op.add_argument('--by');op.add_argument('--allow-missing-pdf',action='store_true',help='Archive validation only; does not claim PDF delivery ready')
+    op=storage.add_parser('policy');op.add_argument('slug');op.add_argument('--by',required=True)
+    choice=op.add_mutually_exclusive_group(required=True);choice.add_argument('--current-only',action='store_true');choice.add_argument('--manual-only',action='store_true')
+    op=storage.add_parser('evidence');op.add_argument('slug');op.add_argument('--wire-id',type=int,required=True)
     reports=sub.add_parser('report').add_subparsers(dest='operation',required=True)
     op=reports.add_parser('usage');op.add_argument('slug');op.add_argument('--presentation',action='append');op.add_argument('--format',choices=['json','md','csv'],default='json');op.add_argument('--output',type=Path)
     supervision=sub.add_parser('supervision').add_subparsers(dest='operation',required=True)
@@ -35,6 +42,9 @@ def build_parser() -> argparse.ArgumentParser:
         if action=='wait-end':op.add_argument('wait_id')
     source = sub.add_parser('source').add_subparsers(dest='operation',required=True)
     source_check=source.add_parser('check');source_check.add_argument('directory',type=Path)
+    for action in ('quote','lines'):
+        op=source.add_parser(action);op.add_argument('directory',type=Path);op.add_argument('--slide-id',required=True)
+        if action=='quote':op.add_argument('--start-line',type=int,required=True);op.add_argument('--end-line',type=int,required=True)
     exercise=sub.add_parser('exercise').add_subparsers(dest='operation',required=True)
     for action in ('candidates','check','isolate'):
         cmd=exercise.add_parser(action);cmd.add_argument('directory',type=Path)
@@ -46,6 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     fc=figure.add_parser('check');fc.add_argument('directory',type=Path)
     task = sub.add_parser('task').add_subparsers(dest='operation',required=True)
     init = task.add_parser('init'); init.add_argument('slug'); init.add_argument('--title',required=True)
+    op=task.add_parser('open');op.add_argument('slug');op.add_argument('--by',default='program:task-open')
     for action in ('present','confirm','status','metrics','jobs','materialize'):
         cmd = task.add_parser(action); cmd.add_argument('slug')
         if action=='confirm': cmd.add_argument('--by',required=True)
@@ -61,6 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
     op=plan.add_parser('show');op.add_argument('slug')
     op=plan.add_parser('present');op.add_argument('slug');op.add_argument('--proposal',type=Path,required=True)
     for action in ('confirm','cancel'):
+        op=plan.add_parser(action);op.add_argument('slug');op.add_argument('plan_change_id');op.add_argument('--by',required=True)
+    op=plan.add_parser('split-published-present');op.add_argument('slug');op.add_argument('--proposal',type=Path,required=True)
+    for action in ('split-published-confirm','split-published-run'):
         op=plan.add_parser(action);op.add_argument('slug');op.add_argument('plan_change_id');op.add_argument('--by',required=True)
     bridge=sub.add_parser('bridge').add_subparsers(dest='operation',required=True)
     for action in ('index','status','run','reconcile'):
@@ -125,7 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
         cmd=job.add_parser(op);cmd.add_argument('slug');cmd.add_argument('attempt_id')
         if op=='acknowledge':cmd.add_argument('--readback',required=True);cmd.add_argument('--receipt',required=True)
     repair=sub.add_parser('repair').add_subparsers(dest='operation',required=True)
-    op=repair.add_parser('open');op.add_argument('slug');op.add_argument('--report',required=True);op.add_argument('--presentation',action='append',required=True);op.add_argument('--by',required=True);op.add_argument('--mode',choices=['edit-first','review-first'],default='edit-first');op.add_argument('--allow-slide-changes',action='store_true')
+    op=repair.add_parser('open');op.add_argument('slug');op.add_argument('--report',required=True);op.add_argument('--presentation',action='append',required=True);op.add_argument('--by',required=True);op.add_argument('--mode',choices=['edit-first','review-first'],default='edit-first');op.add_argument('--allow-slide-changes',action='store_true');op.add_argument('--focus',choices=['reported-issues','student-expression'],default='reported-issues')
     op=repair.add_parser('status');op.add_argument('slug')
     for action in ('present','confirm','amend','cancel','materialize','bundle'):
         op=repair.add_parser(action);op.add_argument('slug');op.add_argument('case_id')
@@ -146,7 +160,13 @@ def main(argv: list[str] | None = None) -> int:
     parser=build_parser();args=parser.parse_args(argv)
     try:
         root=args.root.resolve() if args.root else find_repo_root()
-        if args.command=='source':
+        if args.command=='source' and args.operation in {'quote','lines'}:
+            from .source_evidence import quote, lines
+            result=quote(args.directory.resolve(),args.slide_id,args.start_line,args.end_line) if args.operation=='quote' else lines(args.directory.resolve(),args.slide_id)
+        elif args.command=='task' and args.operation=='open':
+            from .compatibility import open_task
+            safe_id(args.slug,label='task slug');result=open_task(root/'tasks'/args.slug,actor=args.by)
+        elif args.command=='source':
             from mpres.source_policy import inspect_source
             result=inspect_source(args.directory.resolve())
         elif args.command=='exercise':
@@ -170,7 +190,21 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command=='storage':
             safe_id(args.slug,label='task slug');task=root/'tasks'/args.slug
             from . import storage
-            if args.operation=='inspect':result=storage.inspect(task)
+            if args.operation=='checkpoint':
+                from . import checkpoints
+                if args.dry_run:result=checkpoints.plan(task,allow_missing_pdf=args.allow_missing_pdf)
+                elif args.status:result=checkpoints.status(task)
+                elif args.resume:result=checkpoints.resume(task,args.resume,by=args.by)
+                else:result=checkpoints.apply(task,args.apply,by=args.by,allow_missing_pdf=args.allow_missing_pdf)
+            elif args.operation=='policy':
+                from .checkpoints import policy
+                result=policy(task,args.current_only,by=args.by)
+            elif args.operation=='evidence':
+                from .wire_checkpoint import evidence
+                result=evidence(task/'.mpres/codex-bridge.sqlite3',args.wire_id)
+            elif args.operation=='inspect':
+                from .checkpoints import directory_usage
+                result={**storage.inspect(task),'task_directory':directory_usage(task)}
             elif args.operation=='migrate':
                 from contextlib import closing
                 from .store import Store
@@ -211,7 +245,13 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command=='plan':
                 from .planning import Planning
                 planning=Planning(service.task)
-                if args.operation=='present':result=planning.present(json.loads(args.proposal.read_text(encoding='utf-8')))
+                if args.operation.startswith('split-published-'):
+                    from .published_split import PublishedSplit
+                    split=PublishedSplit(service.task)
+                    if args.operation=='split-published-present':result=split.present(json.loads(args.proposal.read_text(encoding='utf-8')))
+                    elif args.operation=='split-published-confirm':result=split.confirm(args.plan_change_id,args.by)
+                    else:result=split.run(args.plan_change_id,args.by)
+                elif args.operation=='present':result=planning.present(json.loads(args.proposal.read_text(encoding='utf-8')))
                 elif args.operation=='confirm':result=planning.confirm(args.plan_change_id,args.by)
                 elif args.operation=='cancel':result=planning.cancel(args.plan_change_id,args.by)
                 else:result=planning.show()
@@ -224,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
                     from .codex_bridge import CodexBridge
                     with CodexBridge(service.task,executable=args.codex) as bridge:
                         result=bridge.drive(args.cycles) if args.operation=='run' else bridge.reconcile(args.request_id)
+                    if getattr(bridge,'maintenance_result',None):result['automatic_maintenance']=bridge.maintenance_result
             elif args.command=='batch':
                 from .batches import Batches
                 batches=Batches(service.task)
@@ -241,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command=='repair':
                 from .repairs import Repairs, RepairDelivery
                 repair=Repairs(service.task)
-                if args.operation=='open':result=repair.open(args.report,args.presentation,args.by,mode=args.mode,allow_slide_changes=args.allow_slide_changes)
+                if args.operation=='open':result=repair.open(args.report,args.presentation,args.by,mode=args.mode,allow_slide_changes=args.allow_slide_changes,focus=args.focus)
                 elif args.operation=='status':result=repair.status()
                 elif args.operation=='present':result=repair.present(args.case_id)
                 elif args.operation=='confirm':result=repair.confirm(args.case_id,args.version,args.by)

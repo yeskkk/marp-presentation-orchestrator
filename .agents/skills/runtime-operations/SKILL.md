@@ -13,10 +13,9 @@ description: Main-only operational recovery, storage maintenance and usage evide
 程序没有宣称支持原生宿主推送；SIGKILL 不能被进程自己捕获，重开后靠未决请求与持久证据接管。
 处理完用 `supervision ack` 写明操作者和措施；这不更改 attempt、授权或计量。
 
-维护先 `storage inspect`，再 `storage prune --dry-run`。有未决请求、活动写者或未结束门禁就不应用。
-只按程序生成的计划及保留策略清理；不直接删 accepted=0、NULL request_id 或全部历史。
-确认需要的完整调试归档已经保留后，按原计划 apply；计划变了就重新预览。
-compact 实际回收空闲空间，但需足够磁盘与维护安全点。详见 [维护手册](../../../docs/STORAGE-MAINTENANCE.md)。
+维护先 `storage inspect`。连续返修任务优先当前版本检查点：`storage checkpoint --dry-run` 后应用确切计划；用户确认 `storage policy --current-only` 后，在 adapter 关闭或重开任务的安全点自动收尾。当前正式稿及依赖、用户资料、未决工作和计量保留，旧完整内容不永久累积。不要按旧 accepted 位、NULL request_id 或年龄直接删。
+
+检查点中断先 `storage checkpoint --status` 再 `--resume`，不要启动生产覆盖暂存。历史回执用 `storage evidence --wire-id` 区分原文/已清理事实；已闭环旧请求不重新发送。维护报告看包括备份、暂存的**全目录净变化**。不要求为了清理再建一份永久全量备份。详见 [维护手册](../../../docs/STORAGE-MAINTENANCE.md)。
 
 复盘用只读 `report usage`，按课件、角色、操作分组。缓存是输入子集，推理是输出子集；
 供应端 turn 时间、适配器调用时间、并行累计、墙钟覆盖分别看；缺失不是零。

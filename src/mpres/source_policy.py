@@ -16,7 +16,7 @@ from markdown_it import MarkdownIt
 
 from mpres.util import MPresError
 
-POLICY_VERSION = 4
+POLICY_VERSION = 5
 THEME_PATH = Path(__file__).with_name('control')/'theme.css'
 FRONTMATTER = {'marp':True,'theme':'mathist-academic','paginate':True,'size':'16:9','math':'mathjax'}
 METADATA = re.compile(r'<!--\s*(?:slide-id:\s*[A-Za-z][A-Za-z0-9_.:-]{0,127}|_class:\s*(?:core|support))\s*-->')
@@ -193,7 +193,10 @@ def inspect_source(source: Path) -> dict:
     from mpres.control.exercises import source_check
     exercises=source_check(source)
     errors.extend(exercises['errors'])
-    return {**report,'success':not errors,'errors':errors,'computed_figures':geometry,'exercises':exercises}
+    from mpres.control.prose_layout import inspect as inspect_prose
+    prose=inspect_prose(source)
+    errors.extend(prose['errors'])
+    return {**report,'success':not errors,'errors':errors,'computed_figures':geometry,'exercises':exercises,'prose_layout':prose}
 
 
 def require_source(source: Path) -> None:

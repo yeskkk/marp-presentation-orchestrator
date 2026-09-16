@@ -22,7 +22,7 @@ def test_active_documentation_links_and_boundaries():
     assert report['success'],report
     assert report['semantic_skills']==10
     assert report['active_configuration_templates']==3
-    assert report['legacy_templates']>100
+    assert report['legacy_templates']==0
 
 
 def test_no_legacy_templates_in_new_task(tmp_path):

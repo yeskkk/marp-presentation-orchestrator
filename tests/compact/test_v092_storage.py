@@ -56,7 +56,7 @@ def test_additive_migration_is_audited_once_and_original_actor_not_invented(comp
     with closing(s.store.connect()) as c:
         c.execute('DROP TABLE maintenance_runs');c.execute('PRAGMA user_version=11')
     with closing(s.store.connect()) as c:
-        assert c.execute('PRAGMA user_version').fetchone()[0]==12
+        assert c.execute('PRAGMA user_version').fetchone()[0]==Store.SCHEMA_VERSION
         row=c.execute('SELECT * FROM migration_audit WHERE from_version=11').fetchone()
         assert row['state']=='succeeded' and row['actor'] is None
     with closing(s.store.connect()) as c:assert c.execute('SELECT COUNT(*) FROM migration_audit WHERE from_version=11').fetchone()[0]==1

@@ -223,7 +223,7 @@ edit-first 是另一条兼容路径，不要把两者拼成多一轮流程。旧
 
 | 位置 | 职责 |
 |---|---|
-| `src/mpres/cli.py`、`startup.py` | compact 默认入口、显式 legacy 分支、交互启动 |
+| `src/mpres/cli.py`、`startup.py` | compact 默认入口、旧入口退役提示、交互启动 |
 | `control/service.py`、`store.py`、`schema.sql`、`migrate_*.sql` | 确认/绑定/提交与短事务，schema 11 |
 | `control/runner.py`、`input_packet.py`、`audience.py` | 宿主请求、容量、必读/按需输入、分步阅读 |
 | `control/semantic.py`、`guidance.py`、`schemas/`、`feedback.py` | 语义指南、四类结果、真实反馈版本与回执 |
@@ -235,7 +235,7 @@ edit-first 是另一条兼容路径，不要把两者拼成多一轮流程。旧
 | `src/mpres/control/task_context.py` | 真实会话的 TASK 首次提供、复用、变更差异及回执记录 |
 | `.agents/skills/` | 十个独立语义技能：五个内容角色与五个审核通道；不包含维护样例 |
 | `templates/compact/` | 仅三份当前配置模板；[模板导航](templates/README.md) |
-| `compat/legacy/templates/`、`docs/legacy/` | 显式旧入口兼容材料，不注入新任务 |
+| Git 历史、`docs/legacy/` | legacy 模板已删除；历史说明不注入新任务 |
 | `docs/` | 分流程工作手册、操作/宿主/内容契约、验证与维护说明 |
 | `tests/compact/`、`tests/` | 新控制面与保留的旧回归；`tests/fixtures/semantic/` 只供源码维护 |
 
@@ -402,6 +402,13 @@ mpres --root . bridge run linear-algebra-v7 --cycles 200
 取消；已确认分配不自动改写。暂停且尚未组装时，可再次呈现并确认估计/标题调整，或将仅记录估计的范围拆分；旧确认完整保留。已在编辑/审核的稿件、已发布 p01、活动批次或活动返修
 不能套用这个规划入口。切点错误或教学范围改变仍需新的明确规划，不暗中重排。
 
+已发布稿可用独立的 `plan split-published-present / split-published-confirm /
+split-published-run` 入口，按明确确认的整课边界无损拆分。proposal 使用上述结构，页数必须
+等于实际分配页数。程序固定父发布稿及全部素材，核对页面完整、有序、不改正文；若有练习索引，
+只分配对应条目且题目与答案不能分属两稿。每个子稿分别通过当前原生 full gate 后才一并登记
+派生发布，保留原发布记录、来源映射和 runtime。该路径不调用模型，也不宣称发生新的语义审核；
+内容改写与新教学要求验收必须随后走 repair。失败检查不产生部分子稿发布，重跑复用已留存证据。
+
 选择父范围时，batch 按数据库关系展开所有实际子稿，而不是匹配文件名前缀；父子范围
 重叠选择会报错。原父稿作业仍保留作历史，但不可再绑定；只派发当前子稿，选定范围
 全部交付后暂停，p04 不会因分成更多 PDF 自动开始。Workflow 状态单独显示被替代范围。
@@ -437,3 +444,5 @@ PDF渲染仍是明确标识的替身，不代表实际模型教学质量或部�
 [计量与交接](docs/COST-AND-SUPERVISION.md)、[启动权限](docs/STARTUP-PERMISSIONS.md)
 分别服务对应流程，不一起塞进所有 worker 输入。
 新增 runtime-operations 仅 main 按需读取，十个教学语义角色与五个审核通道不变。
+
+默认 `pytest` 运行当前 `tests/compact` 流程。历史流程测试不再作为当前生产验收入口；旧任务的导入、发布拆分和源格式迁移仍在当前回归中覆盖。

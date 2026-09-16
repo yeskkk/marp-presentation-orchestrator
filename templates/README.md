@@ -16,7 +16,7 @@
 校验规则还包含服务层的实际 ID、证据、反馈和返修范围检查；JSON Schema 通过不等于交付。
 全局布局在 `src/mpres/control/theme.css`，不是一个让作者填写的 `style: |` 字段。
 
-旧模板已移至 [compat/legacy](../compat/legacy/README.md)。它们不再是新任务的输入，
+legacy 模板已从源码删除，需要时从 Git 历史提取。它们不再是新任务的输入，
 不能从旧模板挑选 SELF-CHECK、assignment 或 stage 表单拼成“更完整”的新流程。
 完整步骤见 [README](../README.md)，精确命令见 [操作手册](../docs/OPERATIONS.md)。
 
@@ -27,3 +27,5 @@
 `exercises.template.json` 是题目 ID/题页/答案页/学习目标的轻量索引，不复制题干，
 不由 `Service.create` 放进每个新任务。`storage-policy.template.json` 是操作员明确选择的保留策略，
 不是 worker 的自检表；用量报告由程序生成并受 usage-report schema 约束，不要求模型填 token 表。
+
+`current-retention-policy.template.json` 是 current-only 生命周期的结构化说明，不是让模型填写的表单，也不是另一个自动加载配置。实际策略由 `storage policy --current-only` 明确确认后存入任务数据库；预览、检查点及清理回执由程序生成。

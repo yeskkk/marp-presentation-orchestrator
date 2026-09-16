@@ -162,6 +162,8 @@ class Audience:
             result_schema['required'].append('attention_checks')
         packet={'kind':'review','channel':'audience','presentation':job['presentation'],
                 'phase':next_row['phase'],'sequence':next_row['sequence'],'artifact_id':job['input_artifact_id'],
+                'source_evidence':__import__('mpres.control.source_evidence',fromlist=['contract']).contract(source),
+                'environment':__import__('mpres.control.preflight',fromlist=['environment_manifest']).environment_manifest(),
                 'slides':content,'read_slide_ids':targets,'input_files':assets,'writable_directory':None,
                 'instructions':instruction,'continuity':prior[-2:],
                 'learner_context':'Use the confirmed audience/prerequisites; do not rely on author self-evaluation.',
@@ -218,7 +220,10 @@ class Audience:
         rows=self.rows(attempt['id']);row=next((r for r in rows if r['sequence']==request['sequence']),None)
         if not row or row['state'] not in {'dispatched','completed'}:raise MPresError('Audience step was not dispatched')
         if any(r['state']!='completed' for r in rows if r['sequence']<row['sequence']):raise MPresError('Audience steps must be sequential')
-        result=response.get('result');from jsonschema import Draft202012Validator
+        from .source_evidence import resolve
+        source,_=self._slides(job)
+        result=resolve(response.get('result'),source) if isinstance(response.get('result'),dict) else response.get('result')
+        from jsonschema import Draft202012Validator
         from .semantic import schema
         errors=list(Draft202012Validator(schema('review-result')['$defs']['audience_step']).iter_errors(result))
         if errors:raise MPresError('Invalid audience step result: '+errors[0].message)

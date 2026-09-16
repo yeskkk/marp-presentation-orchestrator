@@ -41,6 +41,9 @@ def prepare(service, job: dict, attempt_id: str, submitted: dict) -> dict:
     if job['kind'] != 'review':
         return value
     if job.get('input_artifact_id') and value.get('feedback_checks'):
+        from .source_evidence import resolve
+        artifact=service.store.rows('SELECT path FROM artifacts WHERE id=?',(job['input_artifact_id'],))[0]
+        value=resolve(value,service.task/artifact['path'])
         from mpres.marp_source import parse_deck
         from .files import inside
         artifact=service.store.rows('SELECT path FROM artifacts WHERE id=?',(job['input_artifact_id'],))[0]

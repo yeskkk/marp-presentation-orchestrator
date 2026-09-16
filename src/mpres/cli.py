@@ -1,4 +1,4 @@
-"""Default compact command line; explicit legacy escape hatch for OLD tasks only."""
+"""Compact command line; historical authoring lives in Git history."""
 from __future__ import annotations
 
 import sys
@@ -8,6 +8,6 @@ from mpres.control.cli import build_parser, main as compact_main
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == 'legacy':
-        from mpres.legacy_cli import main as legacy_main
-        return legacy_main(argv[1:])
+        print('Legacy authoring/templates were removed. Recover them from Git history, or use task import-legacy for read-only import into a new compact task.', file=sys.stderr)
+        return 2
     return compact_main(argv)

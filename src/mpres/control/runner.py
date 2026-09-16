@@ -25,6 +25,8 @@ HOST_TTL_SECONDS = 120
 
 class Runner:
     def __init__(self, task: Path):
+        from .compatibility import open_task
+        open_task(task)
         self.service = Service(task)
         self.store = self.service.store
         self.task = self.service.task
@@ -208,7 +210,8 @@ class Runner:
         work.mkdir(parents=True,exist_ok=True)
         output=work/'output';output.mkdir(exist_ok=True)
         inputs=work/'input';inputs.mkdir(exist_ok=True)
-        packet={'job_id':job['id'],'kind':job['kind'],'presentation':job['presentation'],
+        from .preflight import environment_manifest
+        packet={'environment':environment_manifest(),'job_id':job['id'],'kind':job['kind'],'presentation':job['presentation'],
                 'channel':job['channel'] or None,'writable_directory':str(output),
                 'required_result':{'summary':'Concrete semantic outcome, not a process report'},
                 'constraints':['Follow TASK requirements for materials and attribution. Plausible teaching examples may use invented or simplified data; do not impose news verification or citations when TASK excludes them. Keep mathematical relationships correct and never invent a claimed source.','Do not change task config, DB, evidence or runtime',
@@ -249,6 +252,8 @@ class Runner:
                 if entry.is_symlink(): raise MPresError('Input source contains a symlink')
                 if entry.is_file(): safe_file(self.task,entry)
             packet['frozen_source_directory']=str(path)
+            from .source_evidence import contract
+            packet['source_evidence']=contract(path)
             packet['input_files'].extend(str(p) for p in path.rglob('*') if p.is_file() and (p.name in {'presentation.md','theme.css'} or 'assets' in p.relative_to(path).parts))
             if job['kind']=='review':
                 packet['scope']='full_frozen_deck'
@@ -306,12 +311,12 @@ class Runner:
                 from .workflow import current_findings
                 decks=self.store.rows('SELECT * FROM decks WHERE presentation=?',(job['presentation'],))
                 packet['findings']=[{'finding_id':r['id'],'channel':r['channel'],**json.loads(r['detail_json'])} for r in current_findings(self.service,decks[0])] if decks else []
-                packet['required_result']['resolutions'] = 'One per finding: finding_id, status addressed|needs_decision, explanation; retain frozen slide IDs'
+                packet['required_result']['resolutions'] = 'One per finding from ALL five channels, including valid issues outside the initial focus: finding_id, addressed|needs_decision, concrete correction/recalculation or evidence-based disagreement. Initial focus alone is not a reason for needs_decision or omission. Retain stable IDs; no extra review round.'
         from .repairs import Repairs
         repair=Repairs(self.task).context(job)
         if repair:
             packet['repair_scope']=repair
-            packet['constraints'].append('Preserve unrelated correct material and retained slide IDs. Apply only the user-confirmed issue family and related forms, never unrelated polishing.')
+            packet['constraints'].append('Prioritize the confirmed repair focus. ALSO inspect and resolve every valid finding from all five current review channels within the selected deck, even outside that focus; never ignore an issue merely as out-of-scope polishing. Preserve unrelated correct material and stable IDs. Escalate only actual teaching/scope/permission conflicts or missing evidence; do not start unselected decks or a new review round.')
             if repair.get('allow_slide_changes') and job['kind'] in {'edit','revise'}:
                 packet['required_result']['slide_changes']='Cumulative against original repair target: every deleted/merged original ID, action delete|merge, target_slide_id or null, concrete reason. Retain unaffected IDs; never rename the whole deck.'
                 packet['constraints'].append('User authorized deleting/merging pages within this repair scope. This overrides retain-all-slides instructions, not mathematical or runtime constraints.')
@@ -322,14 +327,14 @@ class Runner:
             else:
                 packet['required_result']['repair_checks']='Every confirmed variant and related problem: problem_id, addressed|not_found|needs_decision, explanation, actual slide_ids. Independently inspect the whole selected deck; do not accept the author readback as proof.'
         rejected=self.store.rows("SELECT a.* FROM attempts a WHERE a.job_id=? AND a.state='failed' AND a.id<>? AND EXISTS (SELECT 1 FROM events e WHERE e.kind='attempt.content_rejected' AND json_extract(e.detail_json,'$.attempt_id')=a.id) ORDER BY a.sequence DESC LIMIT 1",(job['id'],attempt_id))
-        if rejected and job['kind'] in {'write','edit','revise'}:
+        if rejected and job['kind'] in {'write','edit','revise','review'}:
             previous=rejected[0]
             packet['submission_correction']={'attempt_id':previous['id'],'error':previous['error'],
                 'previous_result':json.loads(previous['result_json']),
                 'instruction':'Correct this known completed response within the same approved scope. Do not change runtime/theme or claim a passed gate.'}
             # Only copy bounded regular content assets, never execute prior scripts.
             prior=self.task/'.mpres'/'work'/previous['id']/'output'
-            if prior.is_dir():
+            if job['kind'] in {'write','edit','revise'} and prior.is_dir():
                 for src in prior.rglob('*'):
                     if src.is_symlink(): raise MPresError('Prior draft contains a symlink')
                     rel=src.relative_to(prior)
@@ -347,9 +352,11 @@ class Runner:
         packet['result_schema'] = deepcopy(schema(result_schema_name(job['kind'])))
         from .exercises import attach as attach_exercises
         attach_exercises(packet, path if job.get('input_artifact_id') else None)
+        from .expression import contract as expression_contract, discipline
+        packet['expression_contract']=expression_contract(job['kind'],job['channel'],source_sha256=packet.get('source_evidence',{}).get('source_sha256'))
         from .guidance import compile_guidance, attach_guidance
         guide = compile_guidance(self.task.parent.parent, job['kind'], channel=job.get('channel') or None,
-            repair=bool(repair), correction=bool(packet.get('submission_correction') or packet.get('mechanical_findings')))
+            discipline=discipline(config,task_text), repair=bool(repair), correction=bool(packet.get('submission_correction') or packet.get('mechanical_findings')))
         attach_guidance(packet, guide)
         from .semantic import teaching_context
         packet['teaching_context'] = teaching_context(config)
@@ -443,7 +450,7 @@ class Runner:
         self.service.materialize()
         from .quality import Quality
         quality = Quality(self.task)
-        for artifact in self.store.rows("SELECT a.id FROM artifacts a WHERE a.origin='submission' AND NOT EXISTS (SELECT 1 FROM gate_runs g WHERE g.artifact_id=a.id AND g.level='source')"):
+        for artifact in self.store.rows("SELECT a.id FROM artifacts a WHERE a.origin='submission' AND NOT EXISTS (SELECT 1 FROM retention_tombstones t WHERE t.path=a.path) AND NOT EXISTS (SELECT 1 FROM gate_runs g WHERE g.artifact_id=a.id AND g.level='source')"):
             quality.inspect(artifact['id'])
         admitted_presentations = (workflow.allowed() | proposals) if full else None
         requests=[]
@@ -456,6 +463,8 @@ class Runner:
             active_writes=conn.execute("SELECT count(*) FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.kind='write' AND a.state IN ('reserved','running','uncertain')").fetchone()[0]
             pending_creates=conn.execute("SELECT count(*) FROM pool_slots WHERE kind='write' AND state IN ('creating','uncertain')").fetchone()[0]
             for job in jobs:
+                if not self.service.write_scope_allowed(conn,job):
+                    continue
                 if full and job['presentation'] not in allowed:
                     continue
                 if job['kind']=='write' and (job['presentation'] not in allowed or active_writes+pending_creates>=capacity['actual_author_concurrency']):
@@ -482,6 +491,8 @@ class Runner:
             if (full and job['presentation'] not in allowed) or job['state']!='queued' or not job['family'] or (job['kind']=='write' and job['presentation'] not in allowed):
                 continue
             with self.store.transaction() as conn:
+                if not self.service.write_scope_allowed(conn,job):
+                    continue
                 active=conn.execute("SELECT count(*) FROM attempts a JOIN jobs j ON j.id=a.job_id WHERE j.kind='write' AND a.state IN ('reserved','running','uncertain')").fetchone()[0]
                 creating=conn.execute("SELECT count(*) FROM pool_slots WHERE kind='write' AND state IN ('creating','uncertain')").fetchone()[0]
                 if job['kind']=='write' and active+creating>=capacity['actual_author_concurrency']:
@@ -513,6 +524,9 @@ class Runner:
                 'release_pipeline_enabled':full, 'workflow':workflow_report}
 
     def execution_request(self, job: dict, attempt: dict) -> dict | None:
+        with self.store.transaction() as conn:
+            if not self.service.write_scope_allowed(conn,job):
+                raise MPresError('Unit writing is outside the current deck phase; do not dispatch new content')
         from .preflight import require_job_inputs
         require_job_inputs(self.service, job)
         from .feedback import Feedback
@@ -590,9 +604,40 @@ class Runner:
 
     def replay(self, request_id: str) -> dict:
         # Revalidate saved response only; never contact or restart a model.
+        rows=self.store.rows('SELECT state,request_json FROM host_requests WHERE request_id=?',(request_id,))
+        if rows and rows[0]['state']=='accepted' and '_current_checkpoint' in json.loads(rows[0]['request_json']):
+            return {'request_id':request_id,'already_settled':True,'body_pruned':True,'replayed':False,'model_calls':0,'semantic_revalidation':False}
         from .host_journal import HostJournal
         request, response = HostJournal(self.service).replay_data(request_id)
         return self.accept(request, response)
+
+    def retire_out_of_scope_write(self, request_id: str, actor: str, note: str) -> dict:
+        """Settle a genuine completed obsolete write; never retry or publish it.
+
+        A saved execution receipt and counters remain authoritative. This is an
+        operational disposition, not semantic acceptance or a session close.
+        """
+        from .host_journal import HostJournal
+        journal=HostJournal(self.service)
+        request,response=journal.replay_data(request_id)
+        if request.get('operation')!='run': raise MPresError('Only a completed content response can be retired')
+        journal.validate_execution(request,response)
+        require_text(actor,'Operational actor');require_text(note,'Scope incident explanation')
+        with self.store.transaction() as conn:
+            a=conn.execute('SELECT * FROM attempts WHERE id=?',(request['attempt_id'],)).fetchone()
+            job=conn.execute('SELECT * FROM jobs WHERE id=?',(a['job_id'],)).fetchone()
+            if job['kind']!='write' or self.service.write_scope_allowed(conn,job):
+                raise MPresError('Job is not an out-of-scope unit write')
+            recorded=bool(conn.execute("SELECT 1 FROM events WHERE kind='attempt.out_of_scope_retired' AND json_extract(detail_json,'$.attempt_id')=?",(a['id'],)).fetchone())
+            if not recorded and (a['state']!='running' or a['provider_receipt']!=response['receipt']):
+                raise MPresError('Retirement requires the exact known-completed rejected execution')
+            if not recorded:
+                conn.execute("UPDATE attempts SET state='failed',finished_at=?,error=?,result_json=? WHERE id=?",(utc_now(),note,encode(response['result']),a['id']))
+                conn.execute("UPDATE jobs SET state='blocked' WHERE id=?",(job['id'],))
+                conn.execute("UPDATE sessions SET state='open' WHERE id=?",(a['session_id'],))
+                event(conn,'attempt.out_of_scope_retired',{'attempt_id':a['id'],'request_id':request_id,'actor':actor,'note':note,'content_used':False,'retry_authorized':False},job['id'])
+        journal.state(request_id,accepted=True)
+        return {'retired':True,'already_recorded':recorded,'content_used':False,'retry_authorized':False,'session_closed':False}
 
     def _accept(self, request: dict, response: dict) -> dict:
         if not isinstance(response,dict):

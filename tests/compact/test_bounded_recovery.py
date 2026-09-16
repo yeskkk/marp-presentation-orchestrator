@@ -126,6 +126,44 @@ def test_content_rejections_have_hard_total_attempt_bound(compact_root,native_do
     count=len(h.calls);r.run(cycles=10,interval=0);assert len(h.calls)==count
 
 
+def test_main_rejected_review_receives_correction_without_new_round(compact_root,native_double):
+    s=full_task(compact_root,decks=1);h=Host();seen=[]
+    def adapter(req):
+        res=h(req)
+        if req['operation']=='run' and req['packet']['kind']=='review' and req['packet']['channel']=='pedagogy':
+            seen.append(req)
+            if len(seen)==1:
+                s.started(req['attempt_id'],res['receipt'])
+                s.reject_completed(req['attempt_id'],'Fixture main inspected a nonliteral quote; copy source.',res['result'])
+        return res
+    r=Runner(s.task);r.invoke=adapter;r.run(cycles=100,interval=0)
+    assert len(seen)==2
+    assert seen[1]['packet']['submission_correction']['attempt_id']==seen[0]['attempt_id']
+    assert seen[1]['packet']['writable_directory'] is None
+    assert len(s.store.rows("SELECT * FROM jobs WHERE kind='review'"))==5
+
+
+def test_retire_only_known_completed_out_of_scope_write(compact_root):
+    from mpres.control.host_journal import HostJournal
+    s,r=ready(compact_root,count=1);attach_requests(r,r.tick())
+    req=r.tick()['requests'][0];res=Host()(req);journal=HostJournal(s)
+    journal.receive(req,res);journal.validate_execution(req,res)
+    s.started(req['attempt_id'],res['receipt'])
+    journal.state(req['request_id'],error='Fixture rejected evidence')
+    with pytest.raises(MPresError,match='out-of-scope'):
+        r.retire_out_of_scope_write(req['request_id'],'main','Fixture scope incident')
+    with s.store.transaction() as c:
+        c.execute("INSERT INTO decks(presentation,config_id,ordinal,phase) VALUES('p01',1,0,'editing') ON CONFLICT(presentation) DO UPDATE SET phase='editing'")
+    saved=journal.replay_data(req['request_id'])
+    result=r.retire_out_of_scope_write(req['request_id'],'main','Fixture scope incident')
+    assert result['retired'] and not result['content_used'] and not result['retry_authorized']
+    assert r.retire_out_of_scope_write(req['request_id'],'main','Fixture scope incident')['already_recorded']
+    assert journal.replay_data(req['request_id'])==saved
+    assert not journal.pending()
+    assert not s.store.rows('SELECT * FROM artifacts')
+    assert s.job(s.attempt(req['attempt_id'])['job_id'])['state']=='blocked'
+
+
 def test_rejected_receipt_replay_does_not_requeue_twice(compact_root):
     s,r=ready(compact_root,count=1);attach_requests(r,r.tick());req=r.tick()['requests'][0];h=Host()
     res=h(req);Path(req['packet']['writable_directory'],'presentation.md').write_text('<div>no</div>')

@@ -21,7 +21,7 @@ _RELEASES = """SELECT r.presentation,r.artifact_id,r.gate_id,r.pdf_path,
                      a.path AS source_path,g.pdf_path AS checked_pdf_path
               FROM releases r JOIN artifacts a ON a.id=r.artifact_id
               JOIN gate_runs g ON g.id=r.gate_id
-              WHERE r.state='committed' ORDER BY r.presentation"""
+              WHERE r.state='committed' AND NOT EXISTS (SELECT 1 FROM delivery_parts p WHERE p.parent=r.presentation AND p.presentation<>p.parent) ORDER BY r.presentation"""
 _CHUNK = 1024 * 1024
 
 

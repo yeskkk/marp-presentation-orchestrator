@@ -80,8 +80,10 @@ def settings_document(value: Any) -> dict:
         raise MPresError('Recovery retries must be integers from 0 to 3')
     teaching = value.get('teaching')
     if teaching is not None:
-        if not isinstance(teaching, dict) or set(teaching) != {'audience','proof_depth'}:
+        if not isinstance(teaching, dict) or (set(teaching)-{'audience','proof_depth','discipline'} or not {'audience','proof_depth'}<=set(teaching)):
             raise MPresError('teaching requires audience and proof_depth only')
+        if teaching.get('discipline','auto') not in {'auto','mathematics','general'}:
+            raise MPresError('teaching.discipline must be auto, mathematics or general')
         require_text(teaching['audience'], 'Student audience, not workflow instructions')
         if teaching['proof_depth'] not in {'minimal','explanatory','rigorous'}:
             raise MPresError('proof_depth must be minimal, explanatory or rigorous')
@@ -312,6 +314,14 @@ class Service:
             return False
         return True
 
+    @staticmethod
+    def write_scope_allowed(conn, job) -> bool:
+        if job['kind']!='write': return True
+        deck=conn.execute('SELECT phase FROM decks WHERE presentation=?',(job['presentation'],)).fetchone()
+        # Published split children retain their curricular units, but those rows
+        # are not authorization to rewrite a deck already assembled or in repair.
+        return deck is None or deck['phase']=='units'
+
     def bind(self, job_id: str, handle: str) -> dict:
         from .feedback import Feedback
         Feedback(self.task).seed()
@@ -320,6 +330,8 @@ class Service:
             job = conn.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
             if job is None:
                 raise MPresError('Unknown job ID; no state has been written')
+            if not self.write_scope_allowed(conn,job):
+                raise MPresError('Unit writing is outside the current deck phase; use its approved editing job')
             from .planning import superseded
             if superseded(conn,job['presentation']):
                 raise MPresError('Superseded parent is not an executable delivery job')
@@ -445,9 +457,6 @@ class Service:
             inside(self.task,relative.as_posix())
             if not source.is_dir() or any(p.is_symlink() for p in source.rglob('*')):
                 raise MPresError('Submission requires a directory without symlinks')
-        if source is not None:
-            from mpres.source_policy import require_source
-            require_source(source)
         if attempt['state'] == 'succeeded':
             if attempt['result_json'] not in {canonical, encode(result)}:
                 raise MPresError('Duplicate submission differs; accepted results are immutable')
@@ -462,6 +471,9 @@ class Service:
                 if old_files != new_files:
                     raise MPresError('Duplicate submission source differs from its accepted revision')
             return {'attempt_id':attempt_id,'already_submitted':True}
+        if source is not None:
+            from mpres.source_policy import require_source
+            require_source(source)
         if attempt['state'] not in {'running','uncertain'} or not attempt['provider_receipt']:
             raise MPresError('An acknowledged execution receipt is required before submitting')
         needs_source = job['kind'] in {'write','edit','revise'}

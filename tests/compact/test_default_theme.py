@@ -82,7 +82,7 @@ def test_old_theme_gate_is_never_reused(compact_root):
         q.require_pass(aid, 'source')
     new = q.inspect(aid)
     assert new['id'] != old['id'] and new['state'] == 'passed'
-    assert json.loads(new['detail_json'])['source_policy_version'] == POLICY_VERSION == 4
+    assert json.loads(new['detail_json'])['source_policy_version'] == POLICY_VERSION == 5
 
 
 def test_old_artifact_is_preserved_and_new_edit_gets_new_project_theme(compact_root):

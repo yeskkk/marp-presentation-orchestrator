@@ -68,9 +68,18 @@ class WireIndex:
             st = self.journal.stat()
             old = conn.execute('SELECT * FROM source').fetchone()
             identity = (str(self.journal), st.st_dev, st.st_ino)
-            if old and tuple(old[k] for k in ('path','device','inode')) != identity:
-                raise MPresError('Wire source was replaced; build a new sidecar, do not reuse its cursor')
-            conn.execute('INSERT OR IGNORE INTO source(singleton,path,device,inode) VALUES(1,?,?,?)', identity)
+            from .wire_checkpoint import read_seed,restore,TABLES
+            from .maintenance_lock import readonly_connection
+            with closing(readonly_connection(self.journal)) as src:seed=read_seed(src)
+            replaced=old and tuple(old[k] for k in ('path','device','inode')) != identity
+            if replaced or not old or (seed and old['cursor']<seed['highwater']):
+                # A moved task gets a fresh projection, NEVER the previous path's
+                # cursor. Settled raw rows may already have a verified seed.
+                for table in TABLES:conn.execute('DELETE FROM '+table)
+                cursor=0
+                if seed:restore(conn,seed);cursor=seed['highwater']
+                conn.execute('DELETE FROM source')
+                conn.execute('INSERT INTO source(singleton,path,device,inode,cursor) VALUES(1,?,?,?,?)',(*identity,cursor))
             conn.commit()
 
     def connect(self):

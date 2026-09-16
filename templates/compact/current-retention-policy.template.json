@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "mode": "current-only",
+  "activation": "explicit storage policy confirmation",
+  "automatic_boundary": ["adapter_closed", "task_open"],
+  "keep": ["current_release_and_dependencies", "user_sources", "unfinished_work", "requirements_and_authorizations", "usage_and_execution_facts"],
+  "collect": ["superseded_releases", "closed_work", "obsolete_reports", "settled_wire_bodies", "obsolete_managed_maintenance_backups"],
+  "unresolved_execution": "block_collection",
+  "missing_current_pdf": "defer_automatic_collection"
+}

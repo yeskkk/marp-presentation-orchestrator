@@ -73,7 +73,7 @@ def assemble(root: Path, fragments: list[tuple[str, str | None]], mode: str) -> 
 
 
 def compile_guidance(root: Path, kind: str, *, channel: str | None = None,
-                     repair: bool = False, correction: bool = False) -> dict[str, Any]:
+                     repair: bool = False, correction: bool = False, discipline: str | None = None) -> dict[str, Any]:
     if kind == 'review':
         if channel not in REVIEW_GUIDES:
             raise MPresError('A review needs one assigned channel; never guess or load all five')
@@ -82,7 +82,8 @@ def compile_guidance(root: Path, kind: str, *, channel: str | None = None,
         if kind not in ROLE_GUIDES:
             raise MPresError('No semantic guide for a mechanical job')
         role = ROLE_GUIDES[kind]
-    fragments = [(SHARED, None)]
+    fragments = [(SHARED, None), ('_shared/student-facing-expression.md',None)]
+    if discipline=='mathematics':fragments.append(('_shared/mathematical-expression.md',None))
     if kind in {'write', 'edit', 'revise'} or (kind == 'review' and channel in {'pedagogy', 'audience'}):
         fragments.append(('_shared/exercise-self-containment.md', None))
     fragments.append((f'{role}/SKILL.md', None))
@@ -111,13 +112,13 @@ def compile_guidance(root: Path, kind: str, *, channel: str | None = None,
 def audience_guidance(root: Path, phase: str, *, introduce: bool = False) -> dict[str, Any]:
     if phase not in {'student', 'production_language'}:
         raise MPresError('Unknown audience guidance phase')
-    fragments = [(SHARED, None), ('audience-review/SKILL.md', None)] if introduce else []
+    fragments = [(SHARED, None), ('_shared/student-facing-expression.md',None), ('audience-review/SKILL.md', None)] if introduce else []
     fragments.append(('audience-review/references/steps.md', phase))
     return assemble(root, fragments, 'audience:' + phase)
 
 
 def audience_synthesis_guidance(root: Path, *, repair: bool = False, introduce: bool = False) -> dict[str, Any]:
-    fragments = [(SHARED, None), ('audience-review/SKILL.md', None)] if introduce else []
+    fragments = [(SHARED, None), ('_shared/student-facing-expression.md',None), ('audience-review/SKILL.md', None)] if introduce else []
     fragments.append(('audience-review/references/steps.md', 'synthesis'))
     if repair:
         fragments.append(('_shared/review-scope.md', None))

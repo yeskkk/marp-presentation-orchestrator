@@ -321,6 +321,7 @@ class CodexBridge:
         return self._source(request,response)
 
     def execute(self,request):
+        if '_current_checkpoint' in request:raise MPresError('Settled request body was pruned; it cannot be re-executed or resent')
         if request['operation']=='capabilities':return self.capabilities()
         if request.get('operation') not in {'create','brief','run','audience_step'}:raise MPresError('Unsupported bridge operation')
         identity=request['request_id'];key=request.get('session_id') or 'create-pool'
@@ -369,6 +370,8 @@ class CodexBridge:
     def reconcile(self,request_id):
         """Read-only reconciliation, never a start/resume/retry of a model turn."""
         from .host_journal import HostJournal
+        settled=self.runner.store.rows('SELECT state,request_json FROM host_requests WHERE request_id=?',(request_id,))
+        if settled and settled[0]['state']=='accepted' and '_current_checkpoint' in json.loads(settled[0]['request_json']):return self.runner.replay(request_id)
         q=self.runner.store.rows('SELECT request_json FROM host_requests WHERE request_id=?',(request_id,))
         if not q:raise MPresError('No canonical business request to reconcile')
         request=json.loads(q[0]['request_json']);response=self.completed(request)
@@ -437,6 +440,9 @@ class CodexBridge:
         if self.transport:self.transport.close();self.transport=None
         if self.journal:self.journal.close();self.journal=None
         if getattr(self,'ownership',None):self.ownership.close();self.ownership=None
+        if getattr(self,'task',None) and getattr(self,'runner',None):
+            from .checkpoints import maybe_run
+            self.maintenance_result=maybe_run(self.task)
 
     def __enter__(self):return self
     def __exit__(self,*args):self.close()

@@ -69,7 +69,9 @@ def test_truncated_or_replaced_source_not_silently_reused(tmp_path):
     with pytest.raises(MPresError,match='truncated'):i.sync()
     replacement=raw(tmp_path/'new') if False else tmp_path/'replacement'
     p.rename(replacement);new=raw(tmp_path)
-    with pytest.raises(MPresError,match='replaced'):WireIndex(new)
+    rebuilt=WireIndex(new)
+    assert rebuilt.sync()['cursor']==0
+    assert rebuilt.summary()['turns']==0  # old identity/cursor is never reused
 
 
 def test_concurrent_index_sync_never_double_projects(tmp_path):

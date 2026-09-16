@@ -1,3 +1,7 @@
+# v0.9.4
+
+旧任务接续、运行修复合并、精确引文与真实工具环境；删除 legacy 模板。详见 docs/releases/v0.9.4.md。
+
 ## 0.9.2
 
 - Audited schema 12; read-only storage inspection, pinned cleanup plans, protected retention, cooperative locks, VACUUM, canonical gate reports, lean resume.
@@ -11,6 +15,23 @@
 运行副本修复归并、活动教学规则与桥接回归基线。详见 docs/releases/v0.9.0.md。
 
 # Changelog
+
+## 0.9.6
+
+- Add recoverable current-release checkpoints across managed files, closed work, obsolete backups and settled journals; preserve user sources and minimal authoritative facts.
+- Rebuild wire routing/usage projections from original evidence and atomically store a verified seed before pruning bodies; preserve monotonic wire IDs and historical receipt resolution.
+- Add schema 13, explicit automatic safe-boundary policy, tombstones, moved-task index recovery, and full-directory net-space reporting.
+- Keep identity delivery parts as current releases; never mistake p03 -> p03 for a superseded parent.
+
+
+## 0.9.5
+
+- Make page titles optional and route a concise mathematical-language reference only to mathematics tasks.
+- Enforce explicit sentence display breaks conservatively at the Markdown structural gate; preserve opaque notation and do not rewrite prose automatically.
+- Expand repair author responsibility to every valid five-channel finding within authorized presentations; initial focus is priority, not an exclusion rule.
+- Add a versioned whole-student-expression repair contract without another reviewer or post-author review round.
+- Preserve effective parent/child course order when opening split releases.
+
 
 ## 0.8.10
 

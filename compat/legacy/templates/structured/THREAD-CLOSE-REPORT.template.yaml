@@ -1,7 +1,0 @@
-schema_version: 1
-handle_id: "[[HANDLE_ID]]"
-requested_utc: "[[UTC]]"
-operation: "[[RUNTIME_OPERATION]]"
-result: "closed|idle_reusable|failed"
-capacity_released: false
-notes: "[[NOTES]]"

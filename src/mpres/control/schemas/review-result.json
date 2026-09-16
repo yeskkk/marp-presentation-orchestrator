@@ -78,8 +78,7 @@
             "items": {
               "type": "object",
               "required": [
-                "slide_id",
-                "quote"
+                "slide_id"
               ],
               "additionalProperties": false,
               "properties": {
@@ -90,8 +89,48 @@
                 "quote": {
                   "type": "string",
                   "minLength": 1
+                },
+                "source_ref": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sha256",
+                    "slide_id",
+                    "start_line",
+                    "end_line"
+                  ],
+                  "properties": {
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[a-f0-9]{64}$"
+                    },
+                    "slide_id": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "start_line": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "end_line": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  }
                 }
-              }
+              },
+              "anyOf": [
+                {
+                  "required": [
+                    "quote"
+                  ]
+                },
+                {
+                  "required": [
+                    "source_ref"
+                  ]
+                }
+              ]
             }
           },
           "finding_refs": {
@@ -299,7 +338,6 @@
             "additionalProperties": false,
             "required": [
               "slide_id",
-              "quote",
               "learning_impact"
             ],
             "properties": {
@@ -315,8 +353,48 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 1200
+              },
+              "source_ref": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sha256",
+                  "slide_id",
+                  "start_line",
+                  "end_line"
+                ],
+                "properties": {
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "slide_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "start_line": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "end_line": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                }
               }
-            }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "quote"
+                ]
+              },
+              {
+                "required": [
+                  "source_ref"
+                ]
+              }
+            ]
           }
         },
         "findings": {

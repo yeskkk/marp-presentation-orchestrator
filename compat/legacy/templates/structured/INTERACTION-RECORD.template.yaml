@@ -1,7 +1,0 @@
-schema_version: 1
-presentation_id: "[[PRESENTATION_ID]]"
-unit_id: "[[UNIT_ID]]"
-task_kind: "[[TASK_KIND]]"
-canonical: true
-interactions: []
-mcq_items: []

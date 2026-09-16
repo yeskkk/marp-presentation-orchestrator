@@ -100,7 +100,9 @@ def test_real_writer_packet_uses_selected_guides_and_existing_budget(compact_roo
     before=service.store.rows('SELECT * FROM configs')
     p=Runner(service.task).packet(job,attempt['id'])
     assert p['semantic_guidance_mode']=='write'
-    assert len(p['semantic_guidance_sources'])==3
+    assert len(p['semantic_guidance_sources'])==5
+    assert any(x.endswith('student-facing-expression.md') for x in p['semantic_guidance_sources'])
+    assert any(x.endswith('mathematical-expression.md') for x in p['semantic_guidance_sources'])
     assert any(x.endswith('exercise-self-containment.md') for x in p['semantic_guidance_sources'])
     assert '本课 brief' in p['semantic_guidance']
     assert p['context_bytes']>len(p['semantic_guidance'].encode())
@@ -114,7 +116,7 @@ def test_real_audience_steps_and_final_get_different_guides(compact_root,native_
     requests,last=finish_steps(runner,host,req)
     assert [r['packet']['semantic_guidance_mode'] for r in requests]==[
         'audience:student','audience:production_language']
-    assert len(requests[0]['packet']['semantic_guidance_sources'])==3
+    assert len(requests[0]['packet']['semantic_guidance_sources'])==4
     assert len(requests[1]['packet']['semantic_guidance_sources'])==1
     assert last['packet']['semantic_guidance_mode']=='review:audience:synthesis'
     assert last['packet']['semantic_guidance_sources'][-1].endswith('#synthesis')

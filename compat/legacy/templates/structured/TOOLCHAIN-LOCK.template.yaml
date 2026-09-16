@@ -1,4 +1,0 @@
-schema_version: 1
-source: repository/TOOLCHAIN-LOCK.yaml
-smoke_required_before_production: true
-last_smoke_report: .mpres/toolchain-smoke.yaml

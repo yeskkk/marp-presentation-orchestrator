@@ -31,8 +31,13 @@ class Repairs:
         return rows[0]
 
     def open(self, report: str, presentations: list[str], actor: str, *,
-             mode: str = 'edit-first', allow_slide_changes: bool = False) -> dict:
+             mode: str = 'edit-first', allow_slide_changes: bool = False, focus: str = 'reported-issues') -> dict:
+        from .compatibility import open_task
+        state=open_task(self.task,actor=actor)
+        if set(presentations)&set(state['superseded_parents']):
+            raise MPresError('Repair current leaf releases, not a superseded parent; use task open to list the current presentations')
         require_text(report,'Verbatim user problem'); require_text(actor,'User request attribution')
+        if focus not in {'reported-issues','student-expression'}:raise MPresError('Unknown repair focus')
         if mode not in {'edit-first','review-first'} or type(allow_slide_changes) is not bool:
             raise MPresError('Invalid repair mode or slide-change authorization')
         if not presentations or len(set(presentations))!=len(presentations):
@@ -58,6 +63,7 @@ class Repairs:
             first=targets[0]
             job=self.service.ensure_job(conn,key='repair-proposal:'+case_id,presentation=first[0],kind='diagnose',artifact=first[1])
             conn.execute('INSERT INTO repair_jobs VALUES(?,?,?)',(job,case_id,'proposal'))
+            event(conn,'repair.review_contract',{'case_id':case_id,'version':2,'focus':focus,'incidental_findings':'all_five_channels_within_selected_decks','coverage':'all_student_visible_text','older_focus_only_restrictions':'superseded_for_this_confirmed_case_only'},job)
             event(conn,'repair.requested',{'case_id':case_id,'presentations':presentations,'actor':actor},job)
         return {**self.describe(case_id),'proposal_job_id':job,'source_edits_authorized':False}
 
@@ -75,7 +81,9 @@ class Repairs:
     def describe(self, case_id: str) -> dict:
         case=self.case(case_id)
         inspected=self.store.rows("SELECT j.presentation,j.input_artifact_id FROM jobs j JOIN repair_jobs r ON r.job_id=j.id WHERE r.case_id=? AND r.stage='proposal'",(case_id,))
-        return {'case_id':case_id,'state':case['state'],'report':case['report'],
+        contracts=self.store.rows("SELECT detail_json FROM events WHERE kind='repair.review_contract' AND json_extract(detail_json,'$.case_id')=? ORDER BY id DESC LIMIT 1",(case_id,))
+        contract=json.loads(contracts[0]['detail_json']) if contracts else {'version':1,'focus':'historical_confirmed_scope','incidental_findings':'all_five_channels_within_selected_decks'}
+        return {'review_contract':contract,'case_id':case_id,'state':case['state'],'report':case['report'],
                 'mode':case['mode'],'allow_slide_changes':bool(case['allow_slide_changes']),
                 'proposal_version':case['proposal_version'],
                 'targets':self.store.rows('SELECT presentation,baseline_artifact_id,baseline_pdf_path,release_revision FROM repair_targets WHERE case_id=? ORDER BY presentation',(case_id,)),
@@ -334,7 +342,9 @@ class RepairDelivery(Delivery):
             return {'state':'superseded','format':'directory','case_id':self.case_id,
                     'presentations':[r['presentation'] for r in selected],
                     'history':[{'presentation':r['presentation'],'pdf':str(self.task/r['pdf_path']),
-                                'source':str(self.task/r['source_path'])} for r in selected]}
+                                'source':str(self.task/r['source_path']),
+                                'content_retained':(self.task/r['source_path']).is_dir(),
+                                'replay_available':(self.task/r['source_path']).is_dir()} for r in selected]}
         return super().status()
 
     def materialize(self) -> dict:

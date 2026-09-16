@@ -17,7 +17,7 @@ def main():
     for path in (root/'src').rglob('*.py'):
         try:ast.parse(path.read_text(),filename=str(path))
         except SyntaxError as exc:errors.append(str(exc))
-    if {p.name for p in (root/'templates'/'compact').glob('*')} != {'TASK.template.md','task.template.yaml','TASK-RUNTIME-PROFILE.template.yaml','exercises.template.json','storage-policy.template.json'}:errors.append('Expected exactly three compact configuration templates')
+    if {p.name for p in (root/'templates'/'compact').glob('*')} != {'TASK.template.md','task.template.yaml','TASK-RUNTIME-PROFILE.template.yaml','exercises.template.json','storage-policy.template.json','current-retention-policy.template.json'}:errors.append('Expected exactly three compact configuration templates')
     profile=yaml.safe_load((root/'templates/compact/TASK-RUNTIME-PROFILE.template.yaml').read_text())
     if profile['runtime_changes_during_task'] != 'forbidden':errors.append('Dynamic runtime enabled')
     if [profile['defaults'][f]['reasoning_effort'] for f in ('planner','author','reviewer')] != ['high','medium','low']:errors.append('Runtime defaults changed')

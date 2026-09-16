@@ -17,11 +17,10 @@ LEGACY_LOADERS = ['control_jobs','production','review','revision_routing','tasks
 def check(root: Path) -> dict:
     root=root.resolve();errors=[]
     current={p.name for p in (root/'templates/compact').glob('*') if p.is_file()}
-    if current != CONFIGS | {'exercises.template.json','storage-policy.template.json'}:errors.append('Expected exactly three active configuration templates')
+    if current != CONFIGS | {'exercises.template.json','storage-policy.template.json','current-retention-policy.template.json'}:errors.append('Expected exactly three active configuration templates')
     for p in (root/'templates').iterdir():
         if p.name not in {'README.md','compact'}:errors.append(f'Unclassified active template path: {p.relative_to(root)}')
-    if not (root/'compat/legacy/templates/TASK.template.md').is_file():
-        errors.append('Missing explicit compatibility template archive')
+    # Historical templates are intentionally absent; source history is their archive.
     for name in LEGACY_LOADERS:
         text=(root/f'src/mpres/{name}.py').read_text()
         if re.search(r'root\s*/\s*[\"\']templates[\"\']',text):

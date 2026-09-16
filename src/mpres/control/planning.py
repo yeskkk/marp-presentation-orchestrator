@@ -165,6 +165,8 @@ class Planning:
         with self.store.transaction() as conn:
             row=conn.execute('SELECT * FROM plan_changes WHERE id=?',(ident,)).fetchone()
             if not row:raise MPresError('Unknown plan change')
+            if json.loads(row['baseline_json']).get('kind') == 'published-lossless-split-v1':
+                raise MPresError('Use split-published-confirm for a committed deck partition')
             if row['state']=='confirmed':
                 if row['confirmed_by']!=actor:raise MPresError('Conflicting confirmation attribution')
                 return {'plan_change_id':ident,'already_confirmed':True}
