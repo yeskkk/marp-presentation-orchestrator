@@ -358,6 +358,8 @@ class Service:
             if session is None or not self.eligible(conn,job,session):
                 raise MPresError('Session is unavailable, runtime-incompatible or not independent')
             seq = conn.execute('SELECT coalesce(max(sequence),0)+1 FROM attempts WHERE job_id=?',(job_id,)).fetchone()[0]
+            from .telemetry import pin_job
+            pin_job(conn, dict(job))
             attempt = uid('a')
             conn.execute("INSERT INTO attempts(id,job_id,session_id,sequence,state,started_at) VALUES(?,?,?,?,'reserved',?)",
                          (attempt,job_id,handle,seq,utc_now()))
@@ -469,7 +471,13 @@ class Service:
                 old_files=comparable_files(frozen)
                 new_files=comparable_files(source)
                 if old_files != new_files:
-                    raise MPresError('Duplicate submission source differs from its accepted revision')
+                    # Preserve immutable-source refusal while reporting an actual
+                    # computed-asset integrity error rather than hiding it behind
+                    # the generic duplicate diagnostic (v0.9.6 regression test).
+                    from mpres.geometry import inspect_figures
+                    figures=inspect_figures(source)
+                    detail='; '+ '; '.join(figures['errors']) if not figures['success'] else ''
+                    raise MPresError('Duplicate submission source differs from its accepted revision'+detail)
             return {'attempt_id':attempt_id,'already_submitted':True}
         if source is not None:
             from mpres.source_policy import require_source

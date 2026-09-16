@@ -394,47 +394,84 @@ class CodexBridge:
 
     def drive(self,cycles=100):
         if type(cycles) is not int or cycles<1:raise MPresError('cycles must be positive')
+        # Provider waits stay parallel. Only acceptance and workflow admission
+        # share this short control lock, so no tick sees a half-accepted result.
+        control = threading.RLock()
+        stop_admission = threading.Event()
+
         def execute(q):
             started=time.monotonic()
             from .cost_report import wall_now
             wall_started=wall_now()
             prior=self.journal.row(q['request_id'])
             invocation_kind='reconciliation' if prior and prior.get('sent') else 'provider_invoke'
-            try:return {'request_id':q['request_id'],'status':'accepted','result':self.runner.accept(q,self.execute(q))}
+            try:
+                def accept_response(response):
+                    with control:
+                        try:
+                            return self.runner.accept(q,response)
+                        except Exception:
+                            # Latch while the same lock still protects acceptance.
+                            stop_admission.set()
+                            raise
+                if q['operation']=='create':
+                    # A newly created handle must not briefly look like an
+                    # unrelated external session to another admission tick.
+                    with control:result=accept_response(self.execute(q))
+                else:
+                    result=accept_response(self.execute(q))
+                return {'request_id':q['request_id'],'status':'accepted','result':result}
             except Exception as exc:
-                from .host_journal import HostJournal
-                journal=HostJournal(self.runner.service)
-                known=False
-                if q['operation']!='create':
-                    try:a,b=journal.replay_data(q['request_id']);journal.validate_execution(a,b);known=True
-                    except Exception:pass
-                if not known:
-                    if q['operation']=='create':self.runner.creation_uncertain(q['slot_id'],str(exc))
-                    else:self.runner.service.uncertain(q['attempt_id'],str(exc))
-                return {'request_id':q['request_id'],'status':'response_rejected' if known else 'uncertain','error':str(exc)}
+                with control:
+                    stop_admission.set()
+                    from .host_journal import HostJournal
+                    journal=HostJournal(self.runner.service)
+                    known=False
+                    if q['operation'] not in {'create','capabilities'}:
+                        try:a,b=journal.replay_data(q['request_id']);journal.validate_execution(a,b);known=True
+                        except Exception:pass
+                    if not known:
+                        if q['operation']=='create':self.runner.creation_uncertain(q['slot_id'],str(exc))
+                        elif q.get('attempt_id'):self.runner.service.uncertain(q['attempt_id'],str(exc))
+                    return {'request_id':q['request_id'],'status':'response_rejected' if known else 'uncertain','error':str(exc)}
             finally:
                 from .store import event
-                with self.runner.store.transaction() as conn:event(conn,'provider.duration',{'request_id':q['request_id'],'seconds':time.monotonic()-started,'started_at':wall_started,'finished_at':wall_now(),'invocation_kind':invocation_kind})
-        # Only canonical outstanding requests may block/replay. A local historical
-        # accepted=0 flag is not a second workflow state machine.
+                try:
+                    with control, self.runner.store.transaction() as conn:
+                        event(conn,'provider.duration',{'request_id':q['request_id'],'seconds':time.monotonic()-started,
+                            'started_at':wall_started,'finished_at':wall_now(),'invocation_kind':invocation_kind})
+                except Exception:
+                    stop_admission.set()
+                    raise
+
+        # Only the canonical request journal owns dispatch/acceptance. The
+        # existing execute() guard still refuses pruned settled request bodies.
         outstanding=self.runner.store.rows("SELECT request_json FROM host_requests WHERE state<>'accepted' ORDER BY created_at")
+        def admit(in_flight):
+            nonlocal outstanding
+            with control:
+                if stop_admission.is_set():
+                    return {'status':'blocked','requests':[],
+                        'reason':'A provider result needs reconciliation; no additional admission'}
+                if outstanding:
+                    requests=[json.loads(r['request_json']) for r in outstanding];outstanding=[]
+                    value={'status':'reconciling','requests':requests}
+                else:
+                    self.runner.observe_host(self.capabilities())
+                    value=self.runner.tick(_in_flight=in_flight)
+                for q in value.get('requests',[]):
+                    if q['operation']!='capabilities':self.journal.enqueue(q)
+                return value
+
+        from .rolling import drive
         from .supervision import terminal
-        last={}
-        for _ in range(cycles):
-            if outstanding:
-                requests=[json.loads(r['request_json']) for r in outstanding];outstanding=[]
-                last={'status':'reconciling','requests':requests}
-            else:
-                self.runner.observe_host(self.capabilities());last=self.runner.tick();requests=last['requests']
-            if not requests:return terminal(self.runner.service,last,'bridge.drive')
-            for q in requests:
-                if q['operation']!='capabilities':self.journal.enqueue(q)
-            # tick already made admission/independence decisions transactionally.
-            with ThreadPoolExecutor(max_workers=max(1,len(requests))) as pool:
-                results=list(pool.map(execute,requests))
-            last={**last,'results':results}
-            if any(r['status']!='accepted' for r in results):return terminal(self.runner.service,last,'bridge.drive')
-        return terminal(self.runner.service,last,'bridge.drive',forced_reason='Authorized foreground cycle budget reached; inspect state before continuing')
+        limit=self.runner.settings()['provider']['handle_limit']
+        if type(limit) is not int or limit<1:raise MPresError('Confirm the allowed handle limit before driving')
+        last=drive(admit,execute,workers=limit,cycles=cycles)
+        from .telemetry import observed_wait
+        observed_wait(self.runner.service,last,origin='bridge.drive.terminal')
+        reason='Authorized foreground admission budget reached; inspect state before continuing' if last['rolling']['budget_exhausted'] else None
+        return terminal(self.runner.service,last,'bridge.drive',forced_reason=reason)
 
     def close(self):
         if self.transport:self.transport.close();self.transport=None

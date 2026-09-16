@@ -1,3 +1,11 @@
+# v0.9.7 (rebuilt from the supplied v0.9.6)
+
+- Preserve all 302 baseline files, original tests, active skills, expression rules, compatibility and current-checkpoint implementation; do not use the rejected earlier v0.9.7 as a baseline.
+- Add schema 14 dispatch-time cost scope and observed scheduler state, with read-only case/batch/time reporting and evidence-only historical attribution.
+- Advance independent Codex bridge successors after individual accepted results; stop admissions on failure and drain already-issued requests without retries.
+- Preserve computed-asset refusal while exposing the actual integrity error on a conflicting duplicate submission.
+- See `docs/RELEASE-v0.9.7.md` and `docs/UPGRADE-v0.9.7.md` for provenance, migration and test boundaries.
+
 # v0.9.4
 
 旧任务接续、运行修复合并、精确引文与真实工具环境；删除 legacy 模板。详见 docs/releases/v0.9.4.md。

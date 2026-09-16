@@ -409,7 +409,15 @@ class Runner:
             event(conn,'packet.input_resumed',{'attempt_id':attempt_id},a['job_id'])
         return {'attempt_id':attempt_id,'state':'reserved','provider_calls':0,'next_action':'runner tick'}
 
-    def tick(self) -> dict:
+    def tick(self, *, _in_flight=frozenset()) -> dict:
+        # Only the owning foreground bridge supplies its actual in-flight IDs.
+        # Manual/command-adapter calls retain the normal recovery barrier.
+        result = self._tick(_in_flight=_in_flight)
+        from .telemetry import observed_wait
+        observed_wait(self.service, result, in_flight=_in_flight)
+        return result
+
+    def _tick(self, *, _in_flight=frozenset()) -> dict:
         """Reserve and return exact operations, never a narrative launch plan.
 
         Repeated ticks do not issue creating slots or claimed jobs again. The bridge
@@ -432,7 +440,7 @@ class Runner:
         if full and not (workflow.allowed() | proposals):
             return {'status': 'blocked', 'requests': [], 'workflow': workflow_report, 'release_pipeline_enabled': True}
         from .host_journal import HostJournal
-        pending_responses=HostJournal(self.service).pending()
+        pending_responses=[r for r in HostJournal(self.service).pending() if r['request_id'] not in _in_flight]
         if pending_responses:
             return {'status':'blocked','reason':'Saved provider response awaits revalidation; do not rerun the model',
                     'requests':[],'pending_responses':pending_responses}

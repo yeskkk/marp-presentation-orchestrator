@@ -20,7 +20,7 @@ class Store:
         self.task = task.resolve()
         self.path = self.task / '.mpres' / 'task.sqlite3'
 
-    SCHEMA_VERSION = 13
+    SCHEMA_VERSION = 14
 
     def readonly(self):
         """No DDL, schema upgrade, lockfile creation, or hidden state changes."""

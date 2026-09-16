@@ -61,6 +61,8 @@ def wait_start(service,*,reason,by,note,presentation=None):
     value={'wait_id':'wait-'+uuid.uuid4().hex,'reason':reason,'by':by,'note':note,'presentation':presentation}
     with service.store.transaction() as c:
         if presentation and not c.execute('SELECT 1 FROM jobs WHERE presentation=?',(presentation,)).fetchone():raise MPresError('Unknown wait presentation')
+        from .telemetry import control_scope
+        value.update(control_scope(c,presentation=presentation))
         event(c,'main.wait_started',value)
     return value
 

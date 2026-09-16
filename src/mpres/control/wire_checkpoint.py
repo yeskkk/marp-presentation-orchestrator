@@ -81,6 +81,11 @@ def compact_envelope(raw, checkpoint_id, *, response=False):
     new={k:v for k,v in value.items() if k in keys}
     if not response and isinstance(value.get('packet'),dict):
         p=value['packet'];new['packet']={k:v for k,v in p.items() if k in {'kind','channel','presentation','context_bytes'}}
+        if isinstance(p.get('repair_scope'),dict) and p['repair_scope'].get('case_id'):
+            new['packet']['repair_scope']={'case_id':p['repair_scope']['case_id']}
+        if isinstance(p.get('cost_context'),dict):
+            new['packet']['cost_context']={k:v for k,v in p['cost_context'].items()
+                if k in {'job_id','repair_case_id','batch_id','source','recorded_at'}}
         if isinstance(p.get('task_context'),dict):
             new['packet']['task_context']={k:v for k,v in p['task_context'].items() if k in {'action','digest','version'}}
     new['_current_checkpoint']={'id':checkpoint_id,'sha256':digest(raw),'original_bytes':len(raw.encode()),

@@ -16,12 +16,16 @@
     "waits",
     "cost_currency",
     "data_issues",
-    "notes"
+    "notes",
+    "by_case",
+    "by_batch",
+    "by_attempt",
+    "automatic_waits"
   ],
   "additionalProperties": false,
   "properties": {
     "version": {
-      "const": 1
+      "const": 2
     },
     "scope": {
       "type": "object",
@@ -148,6 +152,30 @@
       }
     },
     "data_issues": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "by_case": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "by_batch": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "by_attempt": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "automatic_waits": {
       "type": "array",
       "items": {
         "type": "object"

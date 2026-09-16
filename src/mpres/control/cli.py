@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     choice=op.add_mutually_exclusive_group(required=True);choice.add_argument('--current-only',action='store_true');choice.add_argument('--manual-only',action='store_true')
     op=storage.add_parser('evidence');op.add_argument('slug');op.add_argument('--wire-id',type=int,required=True)
     reports=sub.add_parser('report').add_subparsers(dest='operation',required=True)
-    op=reports.add_parser('usage');op.add_argument('slug');op.add_argument('--presentation',action='append');op.add_argument('--format',choices=['json','md','csv'],default='json');op.add_argument('--output',type=Path)
+    op=reports.add_parser('usage');op.add_argument('slug');op.add_argument('--presentation',action='append');op.add_argument('--case',dest='case_id');op.add_argument('--batch',dest='batch_id');op.add_argument('--since');op.add_argument('--until');op.add_argument('--format',choices=['json','md','csv'],default='json');op.add_argument('--output',type=Path)
     supervision=sub.add_parser('supervision').add_subparsers(dest='operation',required=True)
     for action in ('pending','ack','wait-start','wait-end'):
         op=supervision.add_parser(action);op.add_argument('slug')
@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command=='report':
             safe_id(args.slug,label='task slug');task=root/'tasks'/args.slug
             from .cost_report import report,render
-            value=report(task,args.presentation);text=render(value,args.format)
+            value=report(task,args.presentation,case_id=args.case_id,batch_id=args.batch_id,since=args.since,until=args.until);text=render(value,args.format)
             if args.output:
                 if args.output.exists():raise MPresError('Refusing to overwrite an existing report; choose a new output path')
                 args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(text,encoding='utf-8')
